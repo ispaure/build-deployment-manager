@@ -44,8 +44,11 @@ class ProjectBridge:
         environment = dict(os.environ)
         for key in ('PYTHONPATH', 'PYTHONHOME'):
             environment.pop(key, None)
+        from .settings import SettingsStore
+        account_defaults = SettingsStore(self.registry.directory).account_defaults(
+            descriptor['project_id'], descriptor.get('account_fields', {}))
         result = subprocess.run([str(python), str(script)], cwd=self.root,
-            input=json.dumps(dict(schema=1, action=action, values=values)), text=True,
+            input=json.dumps(dict(schema=1, action=action, values=values, account_defaults=account_defaults)), text=True,
             capture_output=True, timeout=300, env=environment)
         redact = Redactor(environment.get(name) for name in ('GH_TOKEN','GITHUB_TOKEN','FIREBASE_TOKEN'))
         if result.returncode:

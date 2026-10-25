@@ -40,7 +40,7 @@ class ManagerWindow(QWidget):
         self.controls.addWidget(self.projects,1)
         self.buttons = []
         for label,action in [('Add project',self.add),('Locate moved checkout',self.locate),
-                              ('Trust adapter',self.trust),('Remove registration',self.remove)]:
+                              ('Trust adapter',self.trust),('Accounts',self.accounts),('Remove registration',self.remove)]:
             button=QPushButton(label);button.clicked.connect(action)
             self.controls.addWidget(button);self.buttons.append(button)
         self.layout.addLayout(self.controls)
@@ -107,6 +107,16 @@ class ManagerWindow(QWidget):
                 QMessageBox.StandardButton.No)==QMessageBox.StandardButton.Yes:
                 self.registry.trust(key);self.refresh()
         self.guarded(review)
+
+    def accounts(self):
+        from .accounts_ui import AccountsDialog
+        from .settings import SettingsStore
+        key=self.projects.currentData()
+        def show():
+            row,descriptor=self.registry.resolve(key)
+            if AccountsDialog(SettingsStore(self.registry.directory),descriptor['project_id'],self).exec():
+                if self.panel:self.panel.invalidate()
+        if key:self.guarded(show)
 
     def remove(self):
         key=self.projects.currentData()

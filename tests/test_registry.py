@@ -48,5 +48,3 @@ class RegistryTests(unittest.TestCase):
         descriptor=json.loads((moved/'build-project.json').read_text());descriptor['schema']=9
         (moved/'build-project.json').write_text(json.dumps(descriptor))
         with self.assertRaisesRegex(ValueError,'schema'):inspect(moved)
-
-
