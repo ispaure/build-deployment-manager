@@ -143,6 +143,19 @@ class Parallels:
             raise RuntimeError(f'Guest command failed ({result.returncode}); verify guest tools and prerequisites. ' + detail)
         return result.stdout
 
+    def execute_idempotent(self, selector, argv, *, data=None, timeout=60):
+        """Caller guarantees safe replay, including after an unknown outcome."""
+        for attempt in range(3):
+            try:
+                return self.execute(selector, argv, data=data, timeout=timeout)
+            except RuntimeError as error:
+                message = str(error)
+                transient = '(255)' in message and any(detail in message for detail in
+                    ('Invalid argument', 'Unable to open new session'))
+                if attempt == 2 or not transient:
+                    raise
+                time.sleep(.5)
+
     def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout):
         payload = base64.b64encode(json.dumps(dict(argv=argv, environment=environment)).encode()).decode()
         command = ['python3', workspace + '/.manager-guest.py', workspace, token, str(uid)]
@@ -192,7 +205,7 @@ class Parallels:
         return digest
 
     def collect(self, selector, workspace, token, destination):
-        raw = self.execute(selector, ['python3', '-c', COLLECT, workspace, token], timeout=120)
+        raw = self.execute_idempotent(selector, ['python3', '-c', COLLECT, workspace, token], timeout=120)
         data = base64.b64decode(raw.strip(), validate=True)
         destination = Path(destination)
         destination.mkdir(parents=True, exist_ok=False)
@@ -205,13 +218,7 @@ class Parallels:
     def cleanup(self, selector, argv, *, timeout=60):
         # Only callers supplying idempotent, ownership-checked cleanup scripts
         # use this path. Never retry tests, uploads or arbitrary mutations.
-        for attempt in range(3):
-            try:
-                return self.execute(selector, argv, timeout=timeout)
-            except RuntimeError as error:
-                if attempt == 2 or '(255)' not in str(error) or 'Invalid argument' not in str(error):
-                    raise
-                time.sleep(.2)
+        return self.execute_idempotent(selector, argv, timeout=timeout)
 
     def remove(self, selector, workspace, token):
         self.cleanup(selector, ['python3', '-c', REMOVE, workspace, token], timeout=30)
@@ -221,7 +228,7 @@ class Parallels:
 path=pathlib.Path(sys.argv[1])
 if not path.exists(): print('false'); raise SystemExit(0)
 ''' + OWNED + "\nprint('true')\n"
-        return self.execute(selector, ['python3', '-c', code, workspace, token], timeout=30).strip() == b'true'
+        return self.execute_idempotent(selector, ['python3', '-c', code, workspace, token], timeout=30).strip() == b'true'
 
     def shutdown(self, selector):
         subprocess.run([self.executable, 'stop', selector], check=True, timeout=120)

@@ -89,3 +89,16 @@ class ParallelsTransportTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'ownership'):
                 client.cleanup(VM,['owned-cleanup'])
             self.assertEqual(execute.call_count,1)
+
+    def test_idempotent_setup_retries_session_admission_but_never_other_errors(self):
+        client = Parallels('/fixture/prlctl')
+        transient = RuntimeError('Guest command failed (255): Unable to open new session')
+        with patch.object(client, 'execute', side_effect=[transient, b'written']) as execute, patch('build_manager.parallels.time.sleep'):
+            self.assertEqual(client.execute_idempotent(VM, ['owned-plan-write'], data=b'plan'), b'written')
+            self.assertEqual(execute.call_args_list[0], execute.call_args_list[1])
+        with patch.object(client, 'execute', side_effect=transient) as execute, patch('build_manager.parallels.time.sleep'):
+            with self.assertRaises(RuntimeError): client.execute_idempotent(VM, ['owned-plan-write'])
+            self.assertEqual(execute.call_count, 3)
+        with patch.object(client, 'execute', side_effect=RuntimeError('Guest command failed (1): ownership mismatch')) as execute:
+            with self.assertRaisesRegex(RuntimeError, 'ownership'): client.execute_idempotent(VM, ['owned-plan-write'])
+            self.assertEqual(execute.call_count, 1)
