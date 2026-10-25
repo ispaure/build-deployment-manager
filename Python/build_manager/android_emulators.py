@@ -108,6 +108,20 @@ class AndroidEmulator:
                 try:
                     if self.invoke('-s',record['serial'],'shell','getprop','sys.boot_completed',timeout=10)=='1':
                         self.verify(record)
+                        # The emulator launcher may exec its QEMU backend. Capture
+                        # the ready command only after checking the same creation
+                        # time and the unique AVD identity, never just its PID.
+                        ready_identity = identity(child.pid)
+                        initial_identity = record['process_started']
+                        if os.name != 'nt':
+                            if (not ready_identity or not initial_identity
+                                    or ready_identity.split()[:5] != initial_identity.split()[:5]
+                                    or name not in ready_identity):
+                                raise RuntimeError('Owned emulator creation identity changed during startup.')
+                        elif ready_identity != initial_identity:
+                            raise RuntimeError('Owned emulator creation identity changed during startup.')
+                        record['process_started'] = ready_identity
+                        self.marker.write_text(json.dumps(record))
                         return record
                 except (OSError,subprocess.SubprocessError,RuntimeError):
                     pass
@@ -133,6 +147,14 @@ class AndroidEmulator:
         try:
             self.verify(record)
             self.invoke('-s',record['serial'],'emu','kill')
+            # A successful console shutdown can briefly leave a defunct process
+            # whose command no longer contains its AVD token. Wait for it to
+            # disappear before considering a creation-checked signal fallback.
+            if record.get('pid') and self.child is None:
+                from .process_identity import identity
+                deadline = time.monotonic()+5
+                while identity(record['pid']) is not None and time.monotonic()<deadline:
+                    time.sleep(.1)
         except (subprocess.SubprocessError, RuntimeError):
             pass  # Already stopped/startup failed; verify the owned PID below.
         if record.get('pid'):

@@ -9,6 +9,21 @@ from build_manager.android_emulators import AndroidEmulator
 
 
 class AndroidLeaseTests(unittest.TestCase):
+    def test_console_shutdown_waits_for_transient_defunct_process_without_signalling(self):
+        with TemporaryDirectory() as folder:
+            root=Path(folder);client=AndroidEmulator(root/'sdk',root/'owned');client.workspace.mkdir()
+            (client.workspace/'avds').mkdir();(client.workspace/'user').mkdir()
+            record=dict(token='fixture',name='build-manager-fixture',serial='emulator-5580',
+                        workspace=str(client.workspace.resolve()),pid=123,process_started='owned launcher')
+            client.marker.write_text(json.dumps(record))
+            with patch.object(client,'invoke',side_effect=['build-manager-fixture\nOK','OK']), \
+                 patch('build_manager.process_identity.identity',side_effect=['defunct command',None,None]), \
+                 patch('build_manager.process_identity.stop_owned') as stop:
+                client.cleanup()
+                stop.assert_not_called()
+            self.assertFalse(client.marker.exists());self.assertFalse((client.workspace/'avds').exists())
+            self.assertTrue((client.workspace/'removed-lease.json').exists())
+
     def test_incomplete_sdk_fails_without_starting_or_creating_avd(self):
         with TemporaryDirectory() as folder, patch('build_manager.android_emulators.subprocess.check_output') as run:
             root=Path(folder);client=AndroidEmulator(root/'missing-sdk',root/'owned')
