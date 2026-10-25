@@ -54,7 +54,12 @@ class ParallelsTransportTests(unittest.TestCase):
             client = Parallels('/fixture/prlctl')
             with patch.object(client, 'execute') as execute:
                 client.stage(VM, root, '/var/tmp/example', 'example', 1000, 1000, members=['public.py'])
-            data = base64.b64decode(execute.call_args.kwargs['data'])
+            import json, hashlib
+            envelope = json.loads(execute.call_args.kwargs['data'])
+            data = base64.b64decode(envelope['archive'])
+            runner = base64.b64decode(envelope['runner'])
+            self.assertEqual(runner, Path(__import__('build_manager.parallels', fromlist=['x']).__file__).with_name('guest.py').read_bytes())
+            self.assertEqual(hashlib.sha256(runner).hexdigest(), execute.call_args.args[1][-1])
             with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
                 self.assertEqual(archive.getnames(), ['public.py'])
                 self.assertNotIn(b'synthetic-secret', archive.extractfile('public.py').read())
@@ -72,6 +77,7 @@ class ParallelsTransportTests(unittest.TestCase):
         with patch('build_manager.parallels.subprocess.Popen',return_value=process) as spawn:
             self.assertEqual(client.run_owned(VM,'/var/tmp/owned','owned',1000,arguments,{},Event(),timeout=10),0)
         self.assertLess(len(' '.join(spawn.call_args.args[0])),1000)
+        self.assertIn('/var/tmp/owned/.manager-guest.py', shlex.split(' '.join(spawn.call_args.args[0][3:])))
         self.assertEqual(json.loads(base64.b64decode(saved[0]))['argv'],arguments)
 
     def test_only_idempotent_cleanup_retries_known_tools_failure(self):

@@ -16,11 +16,15 @@ from .redaction import Redactor
 
 STAGE = '''import base64,hashlib,io,json,os,pathlib,sys,tarfile
 path=pathlib.Path(sys.argv[1]); token=sys.argv[2]; expected=sys.argv[3]; uid=int(sys.argv[4]); gid=int(sys.argv[5])
-data=base64.b64decode(sys.stdin.buffer.read(),validate=False)
+request=json.loads(sys.stdin.buffer.read())
+data=base64.b64decode(request['archive'],validate=True)
+runner=base64.b64decode(request['runner'],validate=True)
+if hashlib.sha256(runner).hexdigest()!=sys.argv[6]: raise ValueError('Guest helper digest mismatch')
 if hashlib.sha256(data).hexdigest()!=expected: raise ValueError('Source transfer digest mismatch')
 path.mkdir(parents=True,exist_ok=False)
 (path/'.manager-owned.json').write_text(json.dumps(dict(token=token)))
 with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive: archive.extractall(path/'source',filter='data')
+(path/'.manager-guest.py').write_bytes(runner)
 for root,dirs,files in os.walk(path):
  os.chown(root,uid,gid)
  for name in files: os.chown(os.path.join(root,name),uid,gid,follow_symlinks=False)
@@ -141,7 +145,7 @@ class Parallels:
 
     def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout):
         payload = base64.b64encode(json.dumps(dict(argv=argv, environment=environment)).encode()).decode()
-        command = ['python3', workspace + '/source/build_manager/guest.py', workspace, token, str(uid)]
+        command = ['python3', workspace + '/.manager-guest.py', workspace, token, str(uid)]
         # Parallels guest tools impose a command-line limit even for Linux.
         # Carry trusted structured data over stdin, as the Windows transport does.
         process = subprocess.Popen(self.command(vm, command), stdin=subprocess.PIPE)
@@ -180,8 +184,11 @@ class Parallels:
                     archive.add(Path(snapshot) / relative, arcname=str(relative))
         payload = data.getvalue()
         digest = hashlib.sha256(payload).hexdigest()
-        self.execute(selector, ['python3', '-c', STAGE, workspace, token, digest, str(uid), str(gid)],
-                     data=base64.b64encode(payload), timeout=180)
+        runner = Path(__file__).with_name('guest.py').read_bytes()
+        envelope = json.dumps(dict(archive=base64.b64encode(payload).decode(),
+                                   runner=base64.b64encode(runner).decode())).encode()
+        self.execute(selector, ['python3', '-c', STAGE, workspace, token, digest, str(uid), str(gid),
+                                hashlib.sha256(runner).hexdigest()], data=envelope, timeout=180)
         return digest
 
     def collect(self, selector, workspace, token, destination):
