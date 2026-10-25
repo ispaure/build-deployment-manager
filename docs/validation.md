@@ -18,6 +18,10 @@ locking, atomic-state, Unicode-path and cleanup acceptance. Their isolated Pytho
 3.12.2 environments run the same pinned manager/commonUtils sources. Windows uses
 native junction fixtures without Developer Mode or symlink privilege changes;
 POSIX signal-only cases remain explicit skips, alongside Windows process-job checks.
+Project filesystem suites may additionally require actual Windows symbolic links.
+The dedicated VM setup supports explicitly approved Developer Mode and preserves
+that approval across recreation, as described in [VM setup](virtual-machines.md).
+Its normal-user symlink probe is separate from completing the project's suite.
 Report publication retries transient Windows sharing conflicts for at most two
 seconds, and closing a project panel cancels/drains its history reader before
 releasing project files. Raw attempts and corrections remain in ignored evidence.
