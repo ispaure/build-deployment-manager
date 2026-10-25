@@ -6,6 +6,10 @@ The `.venv` belongs to this manager. No project or Blender environment is used
 for manager dependencies. Ordinary setup uses the lockfile and never pulls Git
 or changes a branch. Preserve local submodule changes before initialization.
 
+For authorized local Fedora/Windows testing, use the manager's
+[dedicated test machines](virtual-machines.md) controls. Their VM bundles and
+private installation state stay in the ignored checkout-local `VM/` directory.
+
 Run headless plans with `.venv/bin/python -m build_manager PLAN --output RESULTS`.
 Plans are trusted executable configuration, not incoming documents. Inspect the
 source, commands and destinations first. External effects require `--confirm`.

@@ -39,7 +39,7 @@ class ManagerWindow(QWidget):
         self.controls.addWidget(self.projects,1)
         self.buttons = []
         for label,action in [('Add project',self.add),('Locate moved checkout',self.locate),
-                              ('Trust adapter',self.trust),('Accounts',self.accounts),('Remove registration',self.remove)]:
+                              ('Trust adapter',self.trust),('Accounts',self.accounts),('Test machines',self.test_machines),('Remove registration',self.remove)]:
             button=QPushButton(label);button.clicked.connect(action)
             self.controls.addWidget(button);self.buttons.append(button)
         self.layout.addLayout(self.controls)
@@ -122,6 +122,10 @@ class ManagerWindow(QWidget):
     def remove(self):
         key=self.projects.currentData()
         if key:self.guarded(lambda:self.registry.remove(key));self.refresh()
+
+    def test_machines(self):
+        from .vm_ui import VMDialog
+        VMDialog(self).exec()
 
     def closeEvent(self,event):
         if self.active:

@@ -5,6 +5,9 @@ prerequisites; Linux supports native Linux/Android; Windows supports native Wind
 Android. Hosted targets are separate. Capability states distinguish unsupported,
 unconfigured, unavailable and ready. No remote, architecture or device fallback is
 selected implicitly. VM adapters are macOS-only and retain all owner holds.
+New [dedicated Fedora and Windows machines](virtual-machines.md) can be created
+under the manager checkout's ignored `VM/` folder with explicit ownership receipts;
+their initialization does not adopt or change held/personal guests.
 
 Android SDK/JDK paths are explicit. Image ABI is checked against actual host CPU;
 acceleration is Hypervisor.Framework, KVM or WHPX according to host. Missing tools,

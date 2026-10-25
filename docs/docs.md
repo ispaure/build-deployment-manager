@@ -9,6 +9,7 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Workflow review and recovery](workflows.md)
 - [Bounded scheduling and resource ownership](scheduling.md)
 - [Host capabilities and Android](hosts.md)
+- [Dedicated Fedora and Windows test machines](virtual-machines.md)
 - [Provider extension boundaries](providers.md)
 - [Validation scope and remaining acceptance](validation.md)
 - [Guided testing and delivery implementation plan](ui-improvement-plan.md)
