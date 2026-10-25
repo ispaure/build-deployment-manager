@@ -112,6 +112,31 @@ class DedicatedVMTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'checksum mismatch'): windows_helpers(self.folder.name)
             download.assert_not_called()
 
+    def test_windows_symlink_policy_requires_approval_and_survives_bundle_removal(self):
+        vm = WindowsVM(self.folder.name, self.client)
+        with patch.object(vm, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'Explicit approval'):
+                vm.enable_symlink_testing()
+            run.assert_not_called()
+        self.assertFalse(vm.symlink_policy())
+        record = dict(uuid=self.record['uuid'])
+        with patch.object(vm, 'selected', return_value=(record, dict(status='running'))), patch.object(vm, 'status', return_value={}), patch.object(vm, 'run') as run:
+            vm.enable_symlink_testing(approved=True)
+            self.assertEqual(run.call_args.args[:3], ('exec', record['uuid'], 'reg.exe'))
+            self.assertIn('AllowDevelopmentWithoutDevLicense', run.call_args.args)
+        self.assertTrue(WindowsVM(self.folder.name, self.client).symlink_policy())
+        from build_manager.vm_bootstrap import windows_bootstrap
+        self.assertNotIn('AllowDevelopmentWithoutDevLicense', windows_bootstrap())
+        self.assertIn('AllowDevelopmentWithoutDevLicense', windows_bootstrap(developer_mode=vm.symlink_policy()))
+
+    def test_windows_initializer_consumes_persisted_symlink_policy(self):
+        vm = WindowsVM(self.folder.name, self.client)
+        save_json(vm.root / 'windows-policy.json', dict(schema=1, developer_mode_approved=True))
+        record = dict(uuid=self.record['uuid'], media='fixture.iso', media_sha256='0'*64)
+        with patch.object(vm, 'ensure'), patch.object(vm, 'selected', return_value=(record, dict(status='stopped'))), patch.object(vm, 'initialize'), patch.object(vm, 'run'), patch.object(vm, 'status'), patch('build_manager.vm_bootstrap.windows_seed', return_value=Path('seed.iso')) as seed:
+            vm.initialize_unattended('fixture.iso', '0'*64)
+        seed.assert_called_once_with(vm.root, developer_mode=True)
+
     def test_low_host_storage_stops_before_creating_a_guest(self):
         self.client.inventory.return_value=[]
         with patch('build_manager.vm.platform.system',return_value='Darwin'),patch('build_manager.vm.shutil.disk_usage',return_value=Mock(free=1024)),patch.object(self.vm,'run') as run:

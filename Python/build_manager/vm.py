@@ -278,6 +278,32 @@ class LinuxVM(VM):
 class WindowsVM(VM):
     kind, distribution, memory = 'Windows', 'win-11', 6144
 
+    def symlink_policy(self):
+        path = self.root / 'windows-policy.json'
+        if linked(path):
+            raise ValueError('Windows policy cannot be a symlink.')
+        if not path.exists():
+            return False
+        data = json.loads(path.read_text())
+        if data != dict(schema=1, developer_mode_approved=True):
+            raise ValueError('Invalid Windows initialization policy.')
+        return True
+
+    def enable_symlink_testing(self, *, approved=False):
+        """Record explicit role approval outside the disposable guest bundle."""
+        if not approved:
+            raise ValueError('Explicit approval is required for Windows Developer Mode.')
+        with workspace_lock(self.root / '.provision.lock'):
+            record, row = self.selected()
+            if not record or not row or row['status'] != 'running':
+                raise ValueError('Start the recorded Windows guest before enabling symlink testing.')
+            self.symlink_policy()  # Reject linked or malformed policy before any mutation.
+            save_json(self.root / 'windows-policy.json', dict(schema=1, developer_mode_approved=True))
+            self.run('exec', record['uuid'], 'reg.exe', 'add',
+                     r'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock',
+                     '/v', 'AllowDevelopmentWithoutDevLicense', '/t', 'REG_DWORD', '/d', '1', '/f')
+        return dict(self.status(), developer_mode=True, recreation_policy_saved=True)
+
     def initialize(self, media, sha256):
         return super().initialize(media, sha256)
 
@@ -295,7 +321,7 @@ class WindowsVM(VM):
             record, row = self.selected()
             if row['status'] != 'stopped' or record.get('ever_started'):
                 raise ValueError('Guest changed while preparing setup; installation stopped.')
-            seed = windows_seed(self.root)
+            seed = windows_seed(self.root, developer_mode=self.symlink_policy())
             self.run('set', record['uuid'], '--device-add', 'cdrom', '--image', seed)
             self.run('set', record['uuid'], '--device-set', 'cdrom1', '--connect')
             self.run('set', record['uuid'], '--device-bootorder', 'cdrom0 hdd0')
@@ -315,11 +341,12 @@ class WindowsVM(VM):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kind', choices=('linux', 'windows'))
-    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands', 'open-console'))
+    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands', 'enable-symlink-testing', 'open-console'))
     parser.add_argument('--checkout', type=Path, required=True)
     parser.add_argument('--media', type=Path)
     parser.add_argument('--sha256', default='')
     parser.add_argument('--approve-guest-commands', action='store_true', help='Explicitly release blanket VM isolation for the selected owned guest; host sharing stays off')
+    parser.add_argument('--approve-developer-mode', action='store_true', help='Approve Windows symlink capability for this owned guest and future recreations')
     args = parser.parse_args(argv)
     try:
         vm = (LinuxVM if args.kind == 'linux' else WindowsVM)(args.checkout)
@@ -333,6 +360,10 @@ def main(argv=None):
             result = method(args.media, args.sha256)
         elif args.action == 'enable-guest-commands':
             result = vm.enable_guest_commands(approved=args.approve_guest_commands)
+        elif args.action == 'enable-symlink-testing':
+            if not isinstance(vm, WindowsVM):
+                raise ValueError('Symlink policy applies only to Windows.')
+            result = vm.enable_symlink_testing(approved=args.approve_developer_mode)
         elif args.action == 'open-console':
             result = vm.open_console()
         elif args.action in ('start', 'stop'):

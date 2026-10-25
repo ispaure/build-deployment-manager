@@ -163,11 +163,19 @@ try {
 '''
 
 
-def windows_seed(root):
+def windows_bootstrap(*, developer_mode=False):
+    """Opt-in symlink capability; security and sharing settings stay unchanged."""
+    if not developer_mode:
+        return WINDOWS_BOOTSTRAP
+    return WINDOWS_BOOTSTRAP.replace("try {", "try {\n New-Item -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Force | Out-Null\n Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Name AllowDevelopmentWithoutDevLicense -Type DWord -Value 1", 1)
+
+
+def windows_seed(root, *, developer_mode=False):
     """Bundle reviewed local installers, driver media and a protected test login."""
     root = Path(root)
     windows_helpers(root)
-    folder = root / 'windows-seed'
+    stem = 'windows-seed-symlinks' if developer_mode else 'windows-seed'
+    folder = root / stem
     folder.mkdir(mode=0o700, exist_ok=True)
     credential = root / 'windows-login.json'
     if credential.exists():
@@ -176,8 +184,8 @@ def windows_seed(root):
         from .profiles import save_json
         password = secrets.token_urlsafe(24) + 'aA1!'
         save_json(credential, dict(user='BDMTest', password=password))
-    seed = root / 'windows-seed.iso'
-    receipt = root / 'windows-seed-checksum.json'
+    seed = root / (stem + '.iso')
+    receipt = root / (stem + '-checksum.json')
     if seed.exists():
         if seed.is_symlink() or not receipt.is_file():
             raise ValueError('Existing setup media has no ownership checksum; inspect it before reuse.')
@@ -193,7 +201,7 @@ def windows_seed(root):
     shutil.copytree(folder / 'Tools/Drivers', folder / 'Drivers', dirs_exist_ok=True)
     (folder / 'Autounattend.xml').write_text(windows_answer(password))
     (folder / 'Autounattend.xml').chmod(0o600)
-    (folder / 'bootstrap.ps1').write_text(WINDOWS_BOOTSTRAP)
+    (folder / 'bootstrap.ps1').write_text(windows_bootstrap(developer_mode=developer_mode))
     subprocess.run(['hdiutil', 'makehybrid', '-iso', '-joliet', '-default-volume-name', 'BDMSETUP',
                     '-o', str(seed), str(folder)], check=True, timeout=120)
     seed.chmod(0o600)

@@ -30,6 +30,9 @@ class VMWorker(QThread):
                 result = vm.initialize_unattended(self.media, self.digest)
             elif self.action == 'enable-guest-commands':
                 result = vm.enable_guest_commands(approved=True)
+            elif self.action == 'enable-symlink-testing':
+                if self.kind != 'Windows': raise ValueError('Symlink policy requires Windows.')
+                result = vm.enable_symlink_testing(approved=True)
             elif self.action == 'open-console':
                 result = vm.open_console()
             elif self.action in ('start', 'stop'):
@@ -71,6 +74,8 @@ class VMDialog(QDialog):
         layout.addLayout(actions)
         control = QPushButton('Allow guest test commands…'); control.clicked.connect(self.approve_commands)
         layout.addWidget(control); self.buttons.append(control)
+        symlinks = QPushButton('Allow Windows filesystem tests…'); symlinks.clicked.connect(self.approve_symlinks)
+        layout.addWidget(symlinks); self.buttons.append(symlinks)
         media = QHBoxLayout(); self.iso = QLineEdit(); self.iso.setPlaceholderText('OS installer ISO path')
         self.iso.setAccessibleName('Operating system installer ISO')
         browse = QPushButton('Choose ISO'); browse.clicked.connect(self.choose_media)
@@ -128,6 +133,17 @@ class VMDialog(QDialog):
                'first-boot-required':'Finish OS setup','test-tools-ready':'Test tools ready'}
         self.details.setText(f"{result['name']} · {states.get(result['state'],result['state'])} · {setup.get(result['setup'],result['setup'])}\n{result['requirements']}\n{result['storage']}")
         self.output.appendPlainText(json.dumps(result, indent=2))
+
+    def approve_symlinks(self):
+        if self.kind.currentText() != 'Windows':
+            self.output.appendPlainText('Select Windows to configure filesystem testing.'); return
+        if QMessageBox.question(self, 'Allow Windows symbolic links?',
+                'Enable Developer Mode for this checkout’s owned Windows test machine? '
+                'This lets the normal test user create symbolic links. The approval is saved '
+                'for future recreation of this machine. Host sharing stays disabled.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.launch('enable-symlink-testing')
 
     def finish(self):
         for control in [*self.buttons, self.kind, self.checkout, self.iso, self.digest]: control.setEnabled(True)

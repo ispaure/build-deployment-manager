@@ -61,8 +61,19 @@ Choose the ISO and SHA-256, then **Initialize fresh Windows guest**. This route
 is restricted to a stopped VM that has never been started: its answer file
 partitions the new empty disk, installs Windows 11 Pro and configures the local
 test account. Windows licensing/activation remains the owner's responsibility;
-no product key, activation bypass, Developer Mode or security-policy bypass is
-provided. For a manually managed installation use **Verify and attach installer**.
+no product key or activation bypass is provided. Developer Mode is off by default.
+For a manually managed installation use **Verify and attach installer**.
+
+Filesystem suites that create symbolic links require explicit approval of Windows
+Developer Mode. For the running, recorded Windows guest, use
+`windows enable-symlink-testing --approve-developer-mode --checkout /path/to/build-deployment-manager`
+with `python -m build_manager.vm`. This changes only its
+`AllowDevelopmentWithoutDevLicense` registry value and saves the approval in
+protected `VM/windows-policy.json`, outside the disposable guest bundle. Recovery
+and fresh initialization reuse this policy and generate a separate checksum-recorded
+symlink-enabled setup ISO. Retained default setup media is never overwritten.
+Keep the policy file when deleting a guest bundle; deleting all VM metadata loses
+the approval and requires approving it again. Host sharing stays disabled.
 
 Setup downloads checksum-pinned official Python ARM64 and MinGit installers into
 `VM/media` when absent. It copies bundled Parallels guest drivers/tools and creates
