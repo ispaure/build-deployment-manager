@@ -171,4 +171,15 @@ class WindowsGuest:
                         shutil.copyfileobj(source, output)
 
     def remove_paths(self, paths):
-        self.call(REMOVE, values=dict(paths=paths), timeout=120)
+        # Deletion is idempotent and revalidates the ownership marker each time.
+        # Parallels occasionally loses a completed job's return-code handle.
+        # Never apply this retry to test execution or source staging.
+        for attempt in range(3):
+            try:
+                self.call(REMOVE, values=dict(paths=paths), timeout=120)
+                return
+            except RuntimeError as error:
+                if (attempt == 2 or 'Windows guest command failed (255)' not in str(error)
+                        or 'PrlJob_GetRetCode: Invalid argument' not in str(error)):
+                    raise
+                time.sleep(.5)
