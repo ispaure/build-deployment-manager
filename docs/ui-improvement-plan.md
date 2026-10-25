@@ -135,8 +135,13 @@ native fixtures. The manager cannot claim project adoption by documenting it.
 
 Implement 9 and 5 as independent headless contracts, then 1–4 and 6, then 7–8,
 followed by 10–11. Brief 12 is a published integration requirement; adoption
-now has local source implementation in both owning repositories. Its remaining
-acceptance requires configured native runtimes and exact-source hosted receipts.
+now has local source implementation in both owning repositories. Recorded local
+acceptance includes exact-package Blender 5.2.2 and Logistics Android/iOS native
+and core-runtime checks at their retained source identities. Future delivery still
+requires matching exact-source gates and hosted receipts; those local results do
+not certify newer application changes. Windows/Linux x64 Android remains deferred
+to the separate original-series follow-ups 11/12. The numbering in this UI plan
+is independent of that original Obsidian brief series.
 Owning projects explicitly pin the reviewed manager implementation; the commits
 must be available remotely before hosted setup can consume those pins. Existing generic transports remain the route
 to GitHub and mobile. This work adds no App Store/Play submission, automatic push,

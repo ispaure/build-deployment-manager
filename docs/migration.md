@@ -23,8 +23,9 @@ separate. Reference availability does not establish provider publish permission.
 
 The GUI Accounts dialog stores protected file/helper/environment-name references,
 never key/token contents. Project adapters declare allowed account field mappings.
-Logistics currently maps shared TestFlight account JSON references only. Firebase
-CLI and existing Git credential-helper behavior remain project-owned.
+Logistics maps shared TestFlight account JSON references and GitHub reference/kind
+pairs; Blue Hole maps GitHub reference/kind pairs. Destinations remain project-owned.
+Firebase CLI and existing Git credential-helper behavior remain project-owned.
 
 Explicit legacy import validates and records a checksum before publishing private
 settings. Repeating an unchanged import is idempotent; changed legacy input stops
