@@ -8,3 +8,4 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Historical data and migration](migration.md)
 - [Workflow review and recovery](workflows.md)
 - [Bounded scheduling and resource ownership](scheduling.md)
+- [Host capabilities and Android](hosts.md)
