@@ -75,7 +75,8 @@ class ProjectBridge:
             descriptor_sha256=self.row['descriptor'],checkout=str(self.root)))
 
     def settings_view(self):
-        return self.call('settings')
+        from .providers import settings_rows
+        return dict(self.call('settings'), **settings_rows(self.platforms))
 
     def save_settings(self, values):
         return self.call('save_settings', changes=values)

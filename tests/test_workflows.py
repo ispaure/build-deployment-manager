@@ -80,3 +80,7 @@ class WorkflowTests(unittest.TestCase):
         first=Executor().run(plan,output)
         result=Executor().run(plan,output,resume=True,approvals=[approve(plan,'effect',first)])
         self.assertEqual(result['status'],'passed')
+
+    def test_invalid_serialized_commands_and_future_schema_fail_without_execution(self):
+        for data in ([],{},dict(phases=[dict(argv='shell command')])):
+            with self.assertRaises(ValueError):Plan.from_data(data)

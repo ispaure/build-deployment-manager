@@ -22,8 +22,11 @@ class Phase:
     effect: str = 'inherit'
     resources: dict[str, int] = field(default_factory=dict)
     artifact_types: dict[str, str] = field(default_factory=dict)
+    provider: str = ''
 
     def __post_init__(self):
+        from .providers import require_provider
+        require_provider(self.provider)
         if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish'}:
             raise ValueError('Unsupported step effect.')
         if any(not isinstance(name,str) or not name or type(amount) is not int or amount<1 for name,amount in self.resources.items()):
@@ -54,6 +57,8 @@ class Plan:
     adapter: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        if not all(isinstance(value,dict) for value in (self.source,self.settings,self.adapter,self.resources,self.capacities)):
+            raise ValueError('Source, settings, adapter and resource data must be objects.')
         if type(self.max_workers) is not int or not 1<=self.max_workers<=16:
             raise ValueError('Choose 1–16 bounded workers.')
         if self.schema != 1:
@@ -90,7 +95,16 @@ class Plan:
 
     @classmethod
     def from_data(cls, data):
-        data = dict(data)
-        data['phases'] = tuple(Phase(**dict(row, argv=tuple(row['argv']),
-            dependencies=tuple(row.get('dependencies', ())))) for row in data['phases'])
-        return cls(**data)
+        try:
+            if not isinstance(data,dict) or not isinstance(data.get('phases'),(list,tuple)):
+                raise ValueError('Plan must be an object with structured phases.')
+            data=dict(data)
+            phases=[]
+            for row in data['phases']:
+                if not isinstance(row,dict) or not isinstance(row.get('argv'),(list,tuple)):
+                    raise ValueError('Plan commands must be argument lists, never shell strings.')
+                phases.append(Phase(**dict(row,argv=tuple(row['argv']),dependencies=tuple(row.get('dependencies',())))))
+            data['phases']=tuple(phases)
+            return cls(**data)
+        except (TypeError,KeyError) as error:
+            raise ValueError('Invalid or unsupported plan fields; preserve the original and inspect a new plan.') from error
