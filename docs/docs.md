@@ -11,3 +11,6 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Host capabilities and Android](hosts.md)
 - [Provider extension boundaries](providers.md)
 - [Validation scope and remaining acceptance](validation.md)
+- [Guided testing and delivery implementation plan](ui-improvement-plan.md)
+- [Project test organization contract](test-organization.md)
+- [Testing and delivery in the guided UI](guided-ui.md)

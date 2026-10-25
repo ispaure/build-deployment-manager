@@ -47,6 +47,8 @@ def inspect(root):
     for key in ('platforms','operations'):
         if not isinstance(capabilities.get(key),list) or not capabilities[key] or any(not isinstance(v,str) or not v for v in capabilities[key]):
             raise ValueError('Declare a nonempty list of project '+key+'.')
+    from .test_results import validate_suites
+    validate_suites(data.get('test_suites', []), capabilities)
     if not (root/data['bridge']).resolve().is_relative_to(root):
         raise ValueError('Project bridge must remain inside its checkout.')
     return data, hashlib.sha256(raw).hexdigest()
@@ -120,7 +122,7 @@ class Registry:
         self.mutate(update)
 
     def selections(self, key, choices):
-        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag'}
+        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite'}
         if set(choices) - allowed or any(not isinstance(value, str) for value in choices.values()):
             raise ValueError('Invalid project selections.')
         def update(data):

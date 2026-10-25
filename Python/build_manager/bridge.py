@@ -25,6 +25,7 @@ class ProjectBridge:
             raise ValueError('Result storage must remain project-owned.')
         self.run_options = self.descriptor.get('run_options', {})
         self.workflow_presets = self.descriptor.get('presets', {})
+        self.test_suites = self.descriptor.get('test_suites', [])
 
     def operations_for(self, target):
         return tuple(self.descriptor['capabilities'].get('operations_by_target', {}).get(target, self.operations))
@@ -69,10 +70,17 @@ class ProjectBridge:
     def make_plan(self, operation, target, backend, **values):
         if operation not in self.operations_for(target) or target not in self.platforms or backend not in self.backend_options(target, operation):
             raise ValueError('Unsupported project operation, platform or backend.')
+        suite = values.get('suite')
+        if suite and not any(row['id'] == suite and target in row['platforms']
+                             and operation in row['operations'] for row in self.test_suites):
+            raise ValueError('Unsupported test suite for this operation and platform.')
         from dataclasses import replace
         plan = Plan.from_data(self.call('plan', operation=operation, target=target, backend=backend, **values))
-        return replace(plan, adapter=dict(api=1,project_id=self.descriptor['project_id'],
-            descriptor_sha256=self.row['descriptor'],checkout=str(self.root)))
+        identity = dict(api=1, project_id=self.descriptor['project_id'],
+                        descriptor_sha256=self.row['descriptor'], checkout=str(self.root))
+        if suite:
+            identity['test_suite'] = suite
+        return replace(plan, adapter=identity)
 
     def settings_view(self):
         from .providers import settings_rows

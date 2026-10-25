@@ -27,6 +27,8 @@ class WorkflowTests(unittest.TestCase):
         result=Executor().run(plan,output,resume=True,approvals=[permission])
         self.assertEqual(result['status'],'passed');self.assertEqual(counter.read_text(),'accepted')
         self.assertEqual(result['phases'][0]['started_at'],first['phases'][0]['started_at'])
+        self.assertEqual(len(result['attempts']), 2)
+        self.assertAlmostEqual(result['seconds'], first['seconds'] + result['attempt_seconds'])
         self.assertEqual(Executor().run(plan,output,resume=True)['status'],'passed')
 
     def test_recovery_never_repeats_uncertain_effect_and_artifact_loss_is_explicit(self):

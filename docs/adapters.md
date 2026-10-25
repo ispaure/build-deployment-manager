@@ -37,3 +37,10 @@ Use `build-manager add PATH`, `list`, `inspect REGISTRATION`, `trust REGISTRATIO
 --backend BACKEND --output PLAN` provides headless parity. Run saved plans through
 `python -m build_manager`. GUI checkout switching is disabled while work is active;
 selections are stored per registration. Source and destinations remain in each plan.
+
+Optional `test_suites` metadata provides applicable named suites in the guided UI;
+the selected ID is forwarded through the isolated plan bridge and retained in
+adapter identity. The headless planner accepts the same selection with `--suite ID`.
+Projects must honor the selection and emit declared `junit`
+artifacts for individual case visibility. See the [test organization contract](test-organization.md)
+for schema, suite layout, reporting and release-gate adoption requirements.

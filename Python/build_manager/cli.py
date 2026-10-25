@@ -21,6 +21,7 @@ def main(argv=None):
     plan.add_argument('--project'); plan.add_argument('--operation', required=True)
     plan.add_argument('--target', required=True); plan.add_argument('--backend', required=True)
     plan.add_argument('--revision', default='working-tree'); plan.add_argument('--pattern', default='')
+    plan.add_argument('--suite', help='Project-declared test suite ID')
     plan.add_argument('--release-tag', default=''); plan.add_argument('--output',type=Path,required=True)
     args = parser.parse_args(argv)
     registry = Registry(args.registry)
@@ -35,8 +36,9 @@ def main(argv=None):
             row, descriptor = registry.resolve(args.project); result = dict(registration=row, descriptor=descriptor)
         elif args.command == 'plan':
             from .bridge import ProjectBridge
+            options = dict(suite=args.suite) if args.suite else {}
             plan = ProjectBridge(registry, args.project).make_plan(args.operation, args.target, args.backend,
-                revision=args.revision, pattern=args.pattern, release_tag=args.release_tag)
+                revision=args.revision, pattern=args.pattern, release_tag=args.release_tag, **options)
             plan.save(args.output); result = dict(plan=str(args.output), identity=plan.identity)
         else:
             getattr(registry,args.command)(args.project); result=dict(status=args.command)

@@ -95,6 +95,16 @@ class Executor:
             from .profiles import save_json
             save_json(output/'result.json',sanitize(report))
         started = time.monotonic()
+        from .history import valid_seconds
+        previous_seconds = report.get('seconds', 0) if resume else 0
+        if not valid_seconds(previous_seconds) or not isinstance(report.get('attempts', []), list):
+            raise ValueError('Retained run timing is invalid; preserve and inspect a new run.')
+        attempt_started_at = timestamp()
+        def finish_timing():
+            elapsed = time.monotonic() - started
+            report.update(finished_at=timestamp(), attempt_seconds=elapsed, seconds=previous_seconds + elapsed)
+            report.setdefault('attempts', []).append(dict(started_at=attempt_started_at,
+                finished_at=report['finished_at'], seconds=elapsed, status=report['status']))
         resources = Resources(getattr(self, 'resource_directory', None))
         def execute(phase):
             try:
@@ -127,7 +137,7 @@ class Executor:
                 rows = {row['id']:row for row in previous if row['status']=='passed'}
                 report['status'] = 'running'
                 report['phases'] = list(rows.values())
-                report['attempt_started_at'] = timestamp()
+                report['attempt_started_at'] = attempt_started_at
                 save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
@@ -194,12 +204,12 @@ class Executor:
                 else:
                     for path in report.get('holds', ()):durable_hold(path,owner,release=True)
                     report['holds'] = []
-                report.update(finished_at=timestamp(),seconds=time.monotonic()-started)
+                finish_timing()
                 save()
         except (OSError, ValueError, RuntimeError) as error:
             uncertain=any(row.get('status') in {'unknown','running'} and row.get('effect') in EXTERNAL for row in report['phases'])
-            report.update(status='unknown' if uncertain else 'cancelled' if self.cancelled.is_set() else 'failed', error=Redactor()(str(error)), finished_at=timestamp(),
-                          seconds=time.monotonic() - started)
+            report.update(status='unknown' if uncertain else 'cancelled' if self.cancelled.is_set() else 'failed', error=Redactor()(str(error)))
+            finish_timing()
             save()
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
         return report
@@ -261,19 +271,35 @@ class Executor:
             row['exit_code'] = process.returncode
             if row['status'] == 'running':
                 row['status'] = 'passed' if process.returncode == 0 else 'failed'
-            if row['status'] == 'passed' and phase.artifacts:
+            if phase.artifacts and row['status'] in {'passed', 'failed'}:
                 row['artifacts'] = []
                 directory = output / 'artifacts'
                 directory.mkdir(exist_ok=True)
                 for index, value in enumerate(phase.artifacts):
                     source = Path(value)
                     if not source.is_file():
+                        if row['status'] != 'passed':
+                            continue
                         raise RuntimeError('Expected prepared artifact/report is missing: ' + source.name)
+                    # Failed commands retain test reports, not potentially incomplete
+                    # deployment artifacts that could be mistaken for prepared output.
+                    kind = phase.artifact_types.get(value, 'file')
+                    if row['status'] != 'passed' and kind != 'junit':
+                        continue
                     destination = directory / f'{phase.id}-{index}{source.suffix}'
                     shutil.copyfile(source, destination)
                     row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=phase.artifact_types.get(value, 'file'),
                                                    sha256=hashlib.sha256(destination.read_bytes()).hexdigest()))
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                    if kind == 'junit':
+                        from .test_results import read_junit
+                        cases = read_junit(destination)
+                        for case in cases:
+                            case.update({key: Redactor(environment.get(name) for name in secret_environment)(case[key])
+                                         for key in ('name', 'classname', 'suite', 'message')})
+                        row.setdefault('tests', []).extend(cases)
+                        if any(case['status'] in {'failed', 'error'} for case in cases):
+                            row.update(status='failed', error='JUnit report contains failing tests.')
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             row.update(status='failed', error=redact(str(error)))
         finally:
             if process is not None:

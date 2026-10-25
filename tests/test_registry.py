@@ -53,3 +53,42 @@ class RegistryTests(unittest.TestCase):
         root=self.fixture('broken')
         (root/'build-project.json').write_text('[]')
         with self.assertRaisesRegex(ValueError,'object'):inspect(root)
+
+    def test_suite_metadata_is_validated_before_trust_and_selection_is_recorded(self):
+        root = self.fixture('suites')
+        path = root / 'build-project.json'
+        descriptor = json.loads(path.read_text())
+        suite = dict(id='portable.contracts', label='Contracts', tier='contracts',
+                     platforms=['native'], operations=['Check'])
+        descriptor['test_suites'] = [suite, suite]
+        path.write_text(json.dumps(descriptor))
+        with self.assertRaisesRegex(ValueError, 'unique'):
+            self.registry.add(root)
+        descriptor['test_suites'] = [suite]
+        path.write_text(json.dumps(descriptor))
+        key = self.registry.add(root)
+        self.registry.trust(key)
+        bridge = ProjectBridge(self.registry, key)
+        # The fixture bridge has no manager or project imports: it echoes the
+        # selected suite into a plain executable plan through the real protocol.
+        (root / 'bridge.py').write_text('''import json,sys
+from pathlib import Path
+values=json.load(sys.stdin)['values']
+plan=dict(project='suites',operation='Check',source={'suite':values.get('suite')},
+    workspace=str(Path.cwd()/'workspace'),phases=[dict(id='contracts',argv=[sys.executable,'-c','pass'],cwd=str(Path.cwd()))])
+print(json.dumps(dict(schema=1,result=plan)))
+''')
+        plan = bridge.make_plan('Check', 'native', 'Local', suite='portable.contracts')
+        self.assertEqual(plan.source['suite'], 'portable.contracts')
+        self.assertEqual(plan.adapter['test_suite'], 'portable.contracts')
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from build_manager.cli import main
+        output = root / 'selected-plan.json'
+        with redirect_stdout(StringIO()):
+            self.assertEqual(main(['--registry', str(self.registry.directory), 'plan', '--project', key,
+                '--operation', 'Check', '--target', 'native', '--backend', 'Local', '--suite', 'portable.contracts',
+                '--output', str(output)]), 0)
+        self.assertEqual(json.loads(output.read_text())['adapter']['test_suite'], 'portable.contracts')
+        with self.assertRaisesRegex(ValueError, 'suite'):
+            bridge.make_plan('Check', 'native', 'Local', suite='unknown')

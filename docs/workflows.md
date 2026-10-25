@@ -19,6 +19,13 @@ After reviewing an awaiting step, use `--resume --confirm --approve-step STEP`.
 Passed work is reused after checksum verification; only unsuccessful harmless
 steps retry. Manager/dependency or plan identity changes require a new inspection.
 
+The [guided UI](guided-ui.md) offers Configure, Review, Run and results, and
+project-owned History. Review and continue delivery opens the current retained
+run directly with source/settings and verified artifact evidence in one approval
+dialog. Step clocks, declared JUnit cases and failure details remain attached to
+their original run. Active duration accumulates across resume attempts; time spent
+waiting between attempts for human approval is excluded.
+
 Interrupted harmless work is retryable. A running/failed/timeout external effect
 has an unknown outcome until its provider reconciles the recorded operation.
 The recovery API accepts a project reconciler that returns a verified receipt or

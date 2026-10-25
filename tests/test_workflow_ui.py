@@ -8,7 +8,7 @@ import time
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-from PySide6.QtWidgets import QApplication,QFileDialog,QMessageBox
+from PySide6.QtWidgets import QApplication,QFileDialog
 from build_manager import Plan,Phase
 from build_manager.ui import ManagerPanel
 
@@ -35,6 +35,22 @@ class WorkflowUITests(unittest.TestCase):
                 while panel.cancel.isEnabled():app.processEvents();time.sleep(.01);self.assertLess(time.monotonic(),deadline)
                 return json.loads(panel.result.read_text())
             first=finish();self.assertEqual(first['status'],'awaiting_review');self.assertFalse(effect.exists())
-            with patch.object(QFileDialog,'getOpenFileName',return_value=(str(panel.result),'')),patch.object(QMessageBox,'question',return_value=QMessageBox.StandardButton.Yes):
-                panel.resume_workflow()
-            self.assertEqual(finish()['status'],'passed');self.assertTrue(effect.exists());panel.close()
+            self.assertTrue(panel.continue_run.isEnabled())
+            with patch.object(panel,'confirm_continuation',return_value=False):
+                panel.continue_run.click()
+            self.assertFalse(effect.exists())
+            artifact.write_text('changed after preparation')
+            with patch.object(panel, 'confirm_continuation', return_value=True) as approval:
+                panel.continue_run.click()
+            approval.assert_not_called()
+            self.assertIn('missing or changed', panel.status.text())
+            self.assertFalse(effect.exists())
+            artifact.write_text('prepared')
+            original_result = panel.result
+            with patch.object(QFileDialog,'getOpenFileName',side_effect=AssertionError('direct continuation must not browse')),patch.object(panel,'confirm_continuation',return_value=True):
+                panel.continue_run.click()
+            last = finish()
+            self.assertEqual(last['status'],'passed');self.assertTrue(effect.exists())
+            self.assertEqual(panel.result, original_result)
+            self.assertEqual(last['phases'][0]['started_at'], first['phases'][0]['started_at'])
+            panel.close()

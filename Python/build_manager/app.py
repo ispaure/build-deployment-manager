@@ -74,7 +74,8 @@ class ManagerWindow(QWidget):
                 self.panel=ManagerPanel(project,self)
                 for name,value in project.row.get('selections', {}).items():
                     control=getattr(self.panel,name)
-                    if name in ('operation','platform','backend'):control.setCurrentText(value)
+                    if name == 'suite':control.setCurrentIndex(max(0,control.findData(value)))
+                    elif name in ('operation','platform','backend'):control.setCurrentText(value)
                     else:control.setText(value)
                 self.panel.selection_changed.connect(lambda choices:self.registry.selections(key,choices))
                 self.panel.busy_changed.connect(self.set_active)
