@@ -5,10 +5,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from build_manager.retention import lease, prune
+from build_manager.retention import lease, prune, remove_tree
 
 
 class RetentionTests(unittest.TestCase):
+    def test_owned_scratch_with_readonly_git_objects_can_be_removed(self):
+        import stat
+        with TemporaryDirectory() as directory:
+            root = Path(directory)/'scratch'; (root/'.git/objects').mkdir(parents=True)
+            blob = root/'.git/objects/blob'; blob.write_bytes(b'owned fixture')
+            blob.chmod(stat.S_IREAD)
+            outside = Path(directory)/'retained'; outside.write_text('retained')
+            remove_tree(root)
+            self.assertFalse(root.exists())
+            self.assertEqual(outside.read_text(), 'retained')
+
     def test_old_outputs_pruned_but_recent_pinned_active_and_links_survive(self):
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve() / 'builds'

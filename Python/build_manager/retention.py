@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import os
 import shutil
+import stat
 import time
 
 from .locking import workspace_lock
@@ -12,6 +13,24 @@ from commonUtils.filesystem.links import is_junction
 def linked(path):
     """Both symlinks and Windows junctions redirect ownership boundaries."""
     return path.is_symlink() or is_junction(path)
+
+
+def remove_tree(path):
+    """Remove caller-owned scratch, including Windows read-only Git objects."""
+    path = Path(path)
+    def readonly(function, name, error):
+        target = Path(name)
+        if (os.name != 'nt' or not isinstance(error, PermissionError) or linked(target)
+                or target.stat().st_mode & stat.S_IWRITE):
+            raise error
+        target.chmod(target.stat().st_mode | stat.S_IWRITE)
+        function(name)
+    if path.is_symlink():
+        path.unlink()
+    elif is_junction(path):
+        path.rmdir()
+    else:
+        shutil.rmtree(path, onexc=readonly)
 
 
 def durable_hold(path, owner, *, days=7, release=False):
@@ -69,7 +88,7 @@ def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, no
                         continue
                     rows.append(str(path))
                     if apply:
-                        shutil.rmtree(path)
+                        remove_tree(path)
             except RuntimeError:
                 # A running build or snapshot materializer owns this entry.
                 continue
@@ -133,7 +152,7 @@ def delete_owned(root, names, *, eligible, lock_path=None):
                     if pinned(path):
                         skipped.append(name + ': pinned by .keep')
                         continue
-                    shutil.rmtree(path)
+                    remove_tree(path)
                     removed.append(str(path))
             except (RuntimeError, OSError) as error:
                 skipped.append(name + ': ' + str(error))
