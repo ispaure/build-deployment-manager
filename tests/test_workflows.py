@@ -100,3 +100,14 @@ class WorkflowTests(unittest.TestCase):
         try:result=Executor(cancelled=cancelled,event=event).run(plan,self.root/'result')
         finally:timer.cancel()
         self.assertEqual(result['status'],'cancelled');self.assertEqual(marker.read_text(),'cleaned')
+
+    def test_remote_controller_cleanup_grace_round_trips_and_stays_bounded(self):
+        phase = replace(self.phase('controller', 'pass'), stop_grace=240)
+        plan = Plan('Fixture','remote cleanup',{},(phase,),str(self.root/'workspace'))
+        self.assertEqual(Plan.from_data(plan.data()).phases[0].stop_grace,240)
+        legacy = plan.data()
+        legacy['phases'][0].pop('stop_grace')
+        self.assertEqual(Plan.from_data(legacy).phases[0].stop_grace,1)
+        for invalid in (0,301,float('inf'),float('nan')):
+            with self.subTest(grace=invalid), self.assertRaises(ValueError):
+                replace(phase,stop_grace=invalid)

@@ -40,3 +40,13 @@ and declared snapshot resources receive durable seven-day holds while awaiting
 review/reconciliation. Active runs additionally hold OS leases. Terminal completion
 releases only that run's holds. Expired/missing artifacts stop continuation clearly.
 Existing .keep pins remain untouched. Project retention policy remains authoritative.
+
+
+## Remote-controller cleanup grace
+
+A VM controller can declare up to 300 seconds of bounded cooperative shutdown
+before the local process group is forcibly retired. This gives it time to stop
+its owned guest work, collect evidence and clean up remote files. The default is
+still one second; existing plans retain that default when the field is absent.
+This grace does not extend a test's execution timeout or authorize unrelated guest
+operations. Windows child processes remain owned by their process job.
