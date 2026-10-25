@@ -14,3 +14,16 @@ with `python -m pip install --no-deps -e /path/to/manager` supplies the headless
 engine to an existing project interpreter without changing its dependencies.
 
 Run generic contracts with `.venv/bin/python -m build_manager.contracts`.
+
+## GUI launchers
+
+Double-click `LaunchBuildManager_MAC.command`, run
+`bash LaunchBuildManager_LINUX_UV.sh`, or use `LaunchBuildManager_WIN.bat`.
+The wrappers delegate runtime/environment setup to pinned commonUtils with
+`launch_config.ini`. They resolve their checkout from their own location, pass
+application arguments separately and return the application's exit code.
+`--smoke-exit --registry PATH` performs a harmless GUI startup/normal-close check.
+Native Linux/Windows acceptance requires permitted real hosts; syntax and portable
+fixtures alone do not establish it. Missing config/submodule diagnostics stop
+before dependency setup. For per-machine launch overrides, set
+`COMMONUTILS_PERSONAL_CONFIG_FILE` to a private INI; see commonUtils' launcher guide.

@@ -112,4 +112,3 @@ class SettingsAndStorageUITests(unittest.TestCase):
         self.assertTrue(dialog.controls['identity.app'].isReadOnly())
         dialog.save()
         self.assertEqual(project.saved, {'notes.body': 'First line\nSecond line', 'vm.scope': 'ubuntu'})
-
