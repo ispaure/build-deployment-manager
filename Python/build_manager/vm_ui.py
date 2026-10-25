@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout,
-                              QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
+                              QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QMessageBox)
 
 
 class VMWorker(QThread):
@@ -28,6 +28,8 @@ class VMWorker(QThread):
             elif self.action == 'initialize-windows':
                 if self.kind != 'Windows': raise ValueError('Windows initialization requires Windows.')
                 result = vm.initialize_unattended(self.media, self.digest)
+            elif self.action == 'enable-guest-commands':
+                result = vm.enable_guest_commands(approved=True)
             elif self.action in ('start', 'stop'):
                 result = vm.power(self.action)
             else:
@@ -65,6 +67,8 @@ class VMDialog(QDialog):
             button = QPushButton(label); button.clicked.connect(lambda checked=False, action=action: self.launch(action))
             actions.addWidget(button); self.buttons.append(button)
         layout.addLayout(actions)
+        control = QPushButton('Allow guest test commands…'); control.clicked.connect(self.approve_commands)
+        layout.addWidget(control); self.buttons.append(control)
         media = QHBoxLayout(); self.iso = QLineEdit(); self.iso.setPlaceholderText('OS installer ISO path')
         self.iso.setAccessibleName('Operating system installer ISO')
         browse = QPushButton('Choose ISO'); browse.clicked.connect(self.choose_media)
@@ -105,6 +109,15 @@ class VMDialog(QDialog):
         self.worker.finished.connect(self.finish)
         self.output.appendPlainText(action.replace('ensure', 'Create or recover') + '…')
         self.worker.start()
+
+    def approve_commands(self):
+        if QMessageBox.question(self, 'Allow guest commands for this dedicated machine?',
+                f"Enable Parallels guest-command control for Build Deployment Manager ({self.kind.currentText()})? "
+                'This turns off blanket VM isolation. Host folders, profile, clipboard and cloud sharing stay disabled. '
+                'Only the owned machine at this checkout’s recorded UUID will be changed.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.launch('enable-guest-commands')
 
     def show_result(self, result):
         import json

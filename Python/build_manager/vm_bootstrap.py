@@ -82,7 +82,7 @@ def import_fedora_disk(image, destination, event=lambda message: None):
         raw.unlink(missing_ok=True)
 
 
-def fedora_seed(root, uid):
+def fedora_seed(root, uid, *, preserve_host_keys=False):
     """No password login, private per-checkout SSH key, no host-home sharing."""
     root = Path(root)
     key = root / 'linux-ssh'
@@ -98,9 +98,12 @@ def fedora_seed(root, uid):
     config = dict(hostname='bdm-fedora', manage_etc_hosts=True, ssh_pwauth=False,
                   users=[dict(name='manager', lock_passwd=True, shell='/bin/bash', ssh_authorized_keys=[public])],
                   packages=['python3', 'python3-pip', 'git', 'gcc', 'make', 'perl', 'kernel-devel', 'kernel-headers',
-                            'xorg-x11-server-Xvfb', 'xauth', 'mesa-libEGL', 'libxkbcommon-x11', 'xcb-util-cursor'],
-                  runcmd=[['sh', '-c', 'mkdir -p /mnt/bdm-tools; for d in /dev/sr*; do mount -o ro "$d" /mnt/bdm-tools 2>/dev/null || continue; if test -f /mnt/bdm-tools/install; then /mnt/bdm-tools/install --install-unattended-with-deps; r=$?; umount /mnt/bdm-tools; test "$r" = 0 || exit "$r"; break; fi; umount /mnt/bdm-tools; done'],
-                          ['sh', '-c', 'systemctl enable --now sshd; touch /var/lib/cloud/bdm-bootstrap-complete']])
+                            'xorg-x11-server-Xvfb', 'xauth', 'mesa-libEGL', 'mesa-libGL', 'fontconfig',
+                            'dejavu-sans-fonts', 'libxkbcommon-x11', 'xcb-util-cursor'],
+                  runcmd=[['sh', '-ec', 'mkdir -p /mnt/bdm-tools; found=0; for d in /dev/sr*; do mount -o ro "$d" /mnt/bdm-tools 2>/dev/null || continue; if test -f /mnt/bdm-tools/install; then /mnt/bdm-tools/install --install-unattended-with-deps; umount /mnt/bdm-tools; found=1; break; fi; umount /mnt/bdm-tools; done; test "$found" = 1; systemctl enable --now sshd; touch /var/lib/cloud/bdm-bootstrap-complete']])
+    if preserve_host_keys:
+        # Only maintenance of an already initialized owned guest uses this.
+        config['ssh_deletekeys'] = False
     (folder / 'user-data').write_text('#cloud-config\n' + json.dumps(config, indent=2))
     (folder / 'meta-data').write_text(json.dumps({'instance-id':uid, 'local-hostname':'bdm-fedora'}))
     seed = root / ('seed-' + uid + '.iso')

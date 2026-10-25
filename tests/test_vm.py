@@ -16,6 +16,8 @@ class DedicatedVMTests(unittest.TestCase):
         self.client = Mock(executable='prlctl')
         self.vm = LinuxVM(self.folder.name, self.client)
         self.vm.root.mkdir()
+        storage = patch('build_manager.vm.shutil.disk_usage',return_value=Mock(free=64*1024**3))
+        storage.start();self.addCleanup(storage.stop)
         self.record = dict(schema=1, name=self.vm.name, uuid='00000000-0000-0000-0000-000000000001',
                            bundle=str(self.vm.root / (self.vm.name + '.pvm')), state='installation-required')
 
@@ -108,6 +110,23 @@ class DedicatedVMTests(unittest.TestCase):
         with patch('build_manager.vm_bootstrap.urllib.request.urlopen') as download:
             with self.assertRaisesRegex(ValueError,'checksum mismatch'): windows_helpers(self.folder.name)
             download.assert_not_called()
+
+    def test_low_host_storage_stops_before_creating_a_guest(self):
+        self.client.inventory.return_value=[]
+        with patch('build_manager.vm.platform.system',return_value='Darwin'),patch('build_manager.vm.shutil.disk_usage',return_value=Mock(free=1024)),patch.object(self.vm,'run') as run:
+            with self.assertRaisesRegex(ValueError,'24 GiB'):self.vm.ensure()
+            run.assert_not_called()
+
+    def test_guest_control_requires_explicit_approval_and_keeps_individual_sharing_off(self):
+        with patch.object(self.vm,'run') as run:
+            with self.assertRaisesRegex(ValueError,'Explicit approval'):self.vm.enable_guest_commands()
+            run.assert_not_called()
+        with self.owned() as run:
+            self.vm.enable_guest_commands(approved=True)
+            mutations=[call.args for call in run.call_args_list if call.args[0]=='set']
+            self.assertEqual(mutations[-1],('set',self.record['uuid'],'--isolate-vm','off'))
+            self.assertIn('--shared-clipboard',str(mutations[:-1]))
+            self.assertIn('--shf-host',str(mutations[:-1]))
 
     def test_cached_recreation_recipe_uses_matching_initializer_and_clears_pending_state(self):
         recipe=dict(kind='fedora-cloud',media='/owned/media.qcow2',sha256='0'*64)

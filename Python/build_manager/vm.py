@@ -180,6 +180,21 @@ class VM:
                     setup=record.get('state', 'installation-required') if record else 'not-created',
                     requirements=self.requirements(), note='Run Check readiness after OS and guest tools installation.')
 
+    def enable_guest_commands(self, *, approved=False):
+        """Explicit operator action; never part of automatic guest initialization."""
+        if approved is not True:
+            raise ValueError('Explicit approval is required to release blanket VM isolation for guest commands.')
+        with workspace_lock(self.root / '.provision.lock'):
+            record, row = self.selected()
+            if not row:
+                raise ValueError('Create or recover this owned guest first.')
+            self.run('set', record['uuid'], '--shf-host', 'off', '--shf-guest', 'off')
+            self.run('set', record['uuid'], '--shared-profile', 'off', '--shared-clipboard', 'off', '--shared-cloud', 'off')
+            self.run('set', record['uuid'], '--isolate-vm', 'off')
+            record['guest_command_control'] = 'explicitly-approved'
+            save_json(self.record, record)
+        return self.status()
+
     def readiness(self):
         record, row = self.selected()
         if not row or row['status'] != 'running':
@@ -282,17 +297,18 @@ class WindowsVM(VM):
         return 'Windows 11 ARM64, completed Windows setup/license, Parallels Tools, Python ≥3.12, Git and an interactive test user. Nested Android acceleration is a separate gate.'
 
     def probe(self, uid):
-        script = "$ErrorActionPreference='Stop';$v=& python -c 'import json,platform,sys;print(json.dumps(dict(system=platform.system(),architecture=platform.machine(),python=sys.version,python_version=list(sys.version_info[:3]))))';if($LASTEXITCODE -ne 0){throw 'Python unavailable'};$r=$v|ConvertFrom-Json;$r|Add-Member git (Get-Command git -ErrorAction Stop).Source;$r|ConvertTo-Json -Compress"
+        script = "$ErrorActionPreference='Stop';$env:Path=[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User');$v=& python -c 'import json,platform,sys;print(json.dumps(dict(system=platform.system(),architecture=platform.machine(),python=sys.version,python_version=list(sys.version_info[:3]))))';if($LASTEXITCODE -ne 0){throw 'Python unavailable'};$r=$v|ConvertFrom-Json;$r|Add-Member -NotePropertyName git -NotePropertyValue (Get-Command git -ErrorAction Stop).Source;$r|ConvertTo-Json -Compress"
         return json.loads(self.client.powershell(uid, script))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kind', choices=('linux', 'windows'))
-    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness'))
+    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands'))
     parser.add_argument('--checkout', type=Path, required=True)
     parser.add_argument('--media', type=Path)
     parser.add_argument('--sha256', default='')
+    parser.add_argument('--approve-guest-commands', action='store_true', help='Explicitly release blanket VM isolation for the selected owned guest; host sharing stays off')
     args = parser.parse_args(argv)
     try:
         vm = (LinuxVM if args.kind == 'linux' else WindowsVM)(args.checkout)
@@ -304,6 +320,8 @@ def main(argv=None):
             method = {'initialize': vm.initialize, 'initialize-cloud': getattr(vm, 'initialize_cloud', None),
                       'initialize-windows':getattr(vm, 'initialize_unattended', None)}[args.action]
             result = method(args.media, args.sha256)
+        elif args.action == 'enable-guest-commands':
+            result = vm.enable_guest_commands(approved=args.approve_guest_commands)
         elif args.action in ('start', 'stop'):
             result = vm.power(args.action)
         else:

@@ -29,7 +29,10 @@ All initialization and power mutations share one checkout-level lock.
 Fresh guests start with blanket host isolation and host folders, profiles,
 clipboard and cloud sharing disabled. Parallels guest commands require the
 blanket isolation setting to be released separately; the manager does not change
-it implicitly. Keep the narrower sharing controls disabled. The guest's initial
+it implicitly. **Allow guest test commands…** describes the boundary change and
+requires an explicit operator decision; the CLI equivalent requires
+`enable-guest-commands --approve-guest-commands`. The narrower sharing controls
+stay disabled. The guest's initial
 SSH credential or Windows test login is private to `VM/`; it is never included
 in command previews or result summaries. Existing personal/held VMs are not used,
 cloned, unlocked, started or modified by dedicated-machine setup.
