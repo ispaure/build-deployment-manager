@@ -20,11 +20,14 @@ class Phase:
     kind: str = 'test'
     artifacts: tuple[str, ...] = ()
     effect: str = 'inherit'
+    resources: dict[str, int] = field(default_factory=dict)
     artifact_types: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish'}:
             raise ValueError('Unsupported step effect.')
+        if any(not isinstance(name,str) or not name or type(amount) is not int or amount<1 for name,amount in self.resources.items()):
+            raise ValueError('Invalid step resources.')
         if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', self.id) or not self.argv or not all(isinstance(v, str) and v for v in self.argv)
                 or not self.cwd or not 0 < self.timeout <= 14400):
             raise ValueError('A phase needs a name, structured command, working directory and bounded timeout.')
@@ -44,10 +47,15 @@ class Plan:
     secret_environment: tuple[str, ...] = ('GH_TOKEN', 'GITHUB_TOKEN', 'FIREBASE_TOKEN')
     resource_locks: tuple[str, ...] = ()
     schema: int = 1
+    max_workers: int = 1
+    capacities: dict[str, int] = field(default_factory=dict)
+    resources: dict[str, int] = field(default_factory=dict)
     settings: dict = field(default_factory=dict)
     adapter: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        if type(self.max_workers) is not int or not 1<=self.max_workers<=16:
+            raise ValueError('Choose 1–16 bounded workers.')
         if self.schema != 1:
             raise ValueError('Unsupported plan schema; keep the original and migrate explicitly.')
         if not self.project or not self.phases or self.effect not in {'inspect', 'test', 'build', 'deploy', 'upload', 'publish'}:

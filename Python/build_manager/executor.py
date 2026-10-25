@@ -65,6 +65,7 @@ class Executor:
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
         from .identity import runtime_identity
         from .models import Plan
+        from .resources import Resources
         from .workflows import EXTERNAL, recover, review_identity, verify_artifacts
         plan = Plan.from_data(plan.data())
         if plan.effect in EXTERNAL and not confirmed:
@@ -91,6 +92,7 @@ class Executor:
             from .profiles import save_json
             save_json(output/'result.json',sanitize(report))
         started = time.monotonic()
+        resources = Resources(getattr(self, 'resource_directory', None))
         def execute(phase):
             try:
                 from dataclasses import replace
@@ -100,7 +102,9 @@ class Executor:
                     phase=replace(phase,environment=dict(phase.environment,
                         BUILD_MANAGER_APPROVED_PLAN=plan.identity,BUILD_MANAGER_APPROVED_ARTIFACTS=json.dumps(artifacts),
                         BUILD_MANAGER_OPERATION_ID=rows[phase.id]['operation_id']))
-                return self.run_phase(phase, output, plan.secret_environment)
+                with resources.acquire(phase.resources, plan.capacities, cancelled=self.cancelled,
+                        timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always):
+                    return self.run_phase(phase, output, plan.secret_environment)
             except (OSError, ValueError, RuntimeError) as error:
                 return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() else 'failed',
                             error=Redactor()(str(error)),seconds=0)
@@ -111,6 +115,9 @@ class Executor:
                 locks.enter_context(lease(output))
                 locks.enter_context(lease(plan.workspace))
                 locks.enter_context(workspace_lock(Path(plan.workspace) / 'operation.lock'))
+                locks.enter_context(resources.acquire(plan.resources,plan.capacities,cancelled=self.cancelled,
+                    timeout=max(phase.timeout for phase in plan.phases),
+                    event=lambda value:self.event(dict(value,phase='workflow'))))
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
                 previous = recover(plan,report,reconcile=reconcile) if resume else []
@@ -121,14 +128,14 @@ class Executor:
                 save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
-                with ThreadPoolExecutor(max_workers=1) as pool:
+                with ThreadPoolExecutor(max_workers=plan.max_workers) as pool:
                     while pending or running:
                         changed = False
                         for phase in list(pending):
-                            if len(running)>=1:break
+                            if len(running)>=plan.max_workers:break
                             if any(name not in rows or rows[name]['status']=='running' for name in phase.dependencies):continue
                             if phase.always and running:continue
-                            if phase.always and 1>1 and any(not p.always for p in pending):continue
+                            if phase.always and not phase.dependencies and plan.max_workers>1 and any(not p.always for p in pending):continue
                             blocked = any(rows[name]['status']!='passed' for name in phase.dependencies)
                             row = None
                             effect = phase.effect if phase.effect!='inherit' else plan.effect
@@ -188,7 +195,7 @@ class Executor:
                 save()
         except (OSError, ValueError, RuntimeError) as error:
             uncertain=any(row.get('status') in {'unknown','running'} and row.get('effect') in EXTERNAL for row in report['phases'])
-            report.update(status='unknown' if uncertain else 'failed', error=Redactor()(str(error)), finished_at=timestamp(),
+            report.update(status='unknown' if uncertain else 'cancelled' if self.cancelled.is_set() else 'failed', error=Redactor()(str(error)), finished_at=timestamp(),
                           seconds=time.monotonic() - started)
             save()
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))

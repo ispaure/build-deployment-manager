@@ -7,3 +7,4 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Adapter contract and ownership](adapters.md)
 - [Historical data and migration](migration.md)
 - [Workflow review and recovery](workflows.md)
+- [Bounded scheduling and resource ownership](scheduling.md)

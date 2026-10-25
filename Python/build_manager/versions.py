@@ -21,7 +21,7 @@ def next_number(path, *, existing=(), minimum=1):
 
 def reserve_number(path, *, existing=(), minimum=1, maximum, override=None):
     path = Path(path)
-    with workspace_lock(path.with_suffix('.lock')):
+    with workspace_lock(path.with_suffix('.lock'), timeout=30):
         number = next_number(path, existing=existing, minimum=minimum)
         if override is not None:
             selected = str(override)
