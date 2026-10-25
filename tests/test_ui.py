@@ -4,6 +4,7 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from pathlib import Path
 import sys
+import subprocess
 from tempfile import TemporaryDirectory
 import time
 import unittest
@@ -44,6 +45,25 @@ class ManagerUITests(unittest.TestCase):
         temporary = TemporaryDirectory(prefix='manager-ui-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+
+    def test_idle_panel_and_application_shutdown_exit_cleanly(self):
+        code = '''from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from PySide6.QtWidgets import QApplication
+from build_manager.ui import ManagerPanel
+app=QApplication([])
+with TemporaryDirectory() as folder:
+ project=SimpleNamespace(platforms=('fixture',),operations=('Test',),description='Fixture',
+  runner_directory=Path.cwd(),results_directory=Path(folder),backend_options=lambda *_:('Local',))
+ panel=ManagerPanel(project)
+ panel.close()
+ app.processEvents()
+ app.shutdown()
+'''
+        result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[1],
+                                capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def inspect(self, panel):
         panel.inspect_plan()
