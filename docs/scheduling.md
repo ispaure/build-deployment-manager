@@ -26,3 +26,8 @@ Plan-level resource amounts may reserve capacity for an entire owned device
 session, while step resources cover build/cache/signing work. Logistics declares a
 conservative host mobile-session budget and explicit cleanup dependencies between
 iOS devices. Increasing workers alone cannot bypass that sequencing.
+
+POSIX phases may declare a bounded `stop_grace` (default one second, at most thirty)
+before group escalation. Logistics mobile helpers use five seconds so their nested
+native-tool cleanup can retire its owned groups. Windows uses job termination;
+POSIX signal-grace evidence does not establish a Windows graceful-stop path.

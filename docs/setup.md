@@ -27,3 +27,9 @@ Native Linux/Windows acceptance requires permitted real hosts; syntax and portab
 fixtures alone do not establish it. Missing config/submodule diagnostics stop
 before dependency setup. For per-machine launch overrides, set
 `COMMONUTILS_PERSONAL_CONFIG_FILE` to a private INI; see commonUtils' launcher guide.
+
+Execution uses an identifiable Git checkout and initialized commonUtils so results
+can record both revisions and dirty identities. Use editable installation for
+project integration; an installation without those Git identities stops with a
+setup message before executing work. This does not require a manager release or
+self-update service.

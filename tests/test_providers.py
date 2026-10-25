@@ -4,7 +4,6 @@ from unittest.mock import Mock
 import unittest
 from build_manager import Phase,Plan,Executor
 from build_manager.providers import settings_rows,require_provider
-from build_manager.hosts import capabilities,android_abi
 
 
 class ProviderCapabilityTests(unittest.TestCase):

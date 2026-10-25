@@ -48,3 +48,14 @@ class GitHubContractTests(unittest.TestCase):
             client = GitHub('fixture/second-project', transport=lambda *args: result)
             with self.assertRaises((RuntimeError, ValueError)):
                 client.wait(42, self.commit)
+
+
+class CredentialReferenceTests(unittest.TestCase):
+    def test_missing_selected_environment_never_falls_back_to_another_account(self):
+        from build_manager.github import credential_token
+        from unittest.mock import patch
+        with patch('subprocess.run') as helper:
+            with self.assertRaisesRegex(ValueError,'missing'):
+                credential_token(reference='SELECTED_TOKEN',kind='environment-name',environment={})
+            helper.assert_not_called()
+        self.assertEqual(credential_token(reference='SELECTED_TOKEN',kind='environment-name',environment={'SELECTED_TOKEN':'synthetic'}),'synthetic')

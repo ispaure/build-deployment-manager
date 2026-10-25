@@ -5,15 +5,19 @@ from .settings import SettingsStore,reference_status
 
 
 class AccountsDialog(QDialog):
-    def __init__(self,store=None,project=None,parent=None):
+    def __init__(self,store=None,project=None,parent=None,*,providers=None):
         super().__init__(parent)
         self.store=store or SettingsStore();self.project=project
+        self.providers=tuple(providers or ('github','firebase','testflight'))
         self.setWindowTitle('Accounts · protected references')
         layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form)
         self.accounts=QComboBox();self.accounts.addItem('New account reference','')
-        for key,row in self.store.read()['accounts'].items():self.accounts.addItem(key,key)
-        self.name=QLineEdit();self.provider=QComboBox();self.provider.addItems(['github','firebase','testflight'])
-        self.kind=QComboBox();self.kind.addItems(['protected-file','credential-helper','environment-name','firebase-cli'])
+        for key,row in self.store.read()['accounts'].items():
+            if row['provider'] in self.providers:self.accounts.addItem(key,key)
+        self.name=QLineEdit();self.provider=QComboBox();self.provider.addItems(self.providers)
+        self.kind=QComboBox();self.kind.addItems(['credential-helper','environment-name'])
+        self.provider.currentTextChanged.connect(self.provider_changed)
+        self.provider_changed()
         self.reference=QLineEdit();self.status=QLabel('References only. Destinations and signing identities remain project-owned.')
         self.status.setWordWrap(True)
         for label,control in [('Account',self.accounts),('Reference name',self.name),('Provider',self.provider),
@@ -24,6 +28,10 @@ class AccountsDialog(QDialog):
         self.accounts.currentIndexChanged.connect(self.selected)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
+
+    def provider_changed(self,*_):
+        choices={'github':('credential-helper','environment-name'),'firebase':('firebase-cli',),'testflight':('protected-file',)}
+        self.kind.clear();self.kind.addItems(choices[self.provider.currentText()])
 
     def selected(self,*_):
         key=self.accounts.currentData()
@@ -37,7 +45,13 @@ class AccountsDialog(QDialog):
         if path:self.reference.setText(path)
 
     def inspect(self):
-        self.status.setText(reference_status(self.reference.text())+'. Provider read access and signing are verified separately by the project; publish permission is not implied.')
+        import os,shutil
+        kind=self.kind.currentText()
+        if kind=='protected-file':status=reference_status(self.reference.text())
+        elif kind=='environment-name':status='configured' if os.environ.get(self.reference.text()) else 'missing environment reference'
+        elif kind=='credential-helper':status='Git helper reference configured; login not verified' if shutil.which('git') else 'Git is unavailable'
+        else:status='Existing Firebase CLI authentication reference; verify it through the project'
+        self.status.setText(status+'. Provider read access and signing are verified separately; publish permission is not implied.')
 
     def save(self):
         try:

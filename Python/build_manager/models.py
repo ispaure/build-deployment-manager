@@ -23,6 +23,7 @@ class Phase:
     resources: dict[str, int] = field(default_factory=dict)
     artifact_types: dict[str, str] = field(default_factory=dict)
     provider: str = ''
+    stop_grace: float = 1
 
     def __post_init__(self):
         from .providers import require_provider
@@ -32,7 +33,7 @@ class Phase:
         if any(not isinstance(name,str) or not name or type(amount) is not int or amount<1 for name,amount in self.resources.items()):
             raise ValueError('Invalid step resources.')
         if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', self.id) or not self.argv or not all(isinstance(v, str) and v for v in self.argv)
-                or not self.cwd or not 0 < self.timeout <= 14400):
+                or not self.cwd or not 0 < self.timeout <= 14400 or not 0 < self.stop_grace <= 30):
             raise ValueError('A phase needs a name, structured command, working directory and bounded timeout.')
         if any('\x00' in v for v in (*self.argv, self.cwd)):
             raise ValueError('Command arguments cannot contain NUL.')

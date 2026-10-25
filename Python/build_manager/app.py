@@ -113,7 +113,8 @@ class ManagerWindow(QWidget):
         key=self.projects.currentData()
         def show():
             row,descriptor=self.registry.resolve(key)
-            if AccountsDialog(SettingsStore(self.registry.directory),descriptor['project_id'],self).exec():
+            if AccountsDialog(SettingsStore(self.registry.directory),descriptor['project_id'],self,
+                    providers=descriptor['capabilities'].get('providers',())).exec():
                 if self.panel:self.panel.invalidate()
         if key:self.guarded(show)
 

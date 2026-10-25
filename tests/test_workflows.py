@@ -84,3 +84,17 @@ class WorkflowTests(unittest.TestCase):
     def test_invalid_serialized_commands_and_future_schema_fail_without_execution(self):
         for data in ([],{},dict(phases=[dict(argv='shell command')])):
             with self.assertRaises(ValueError):Plan.from_data(data)
+
+    @unittest.skipIf(sys.platform=='win32','POSIX signal grace; Windows uses owned job termination')
+    def test_declared_grace_allows_owned_helper_cleanup_before_escalation(self):
+        from threading import Event,Timer
+        from dataclasses import replace
+        marker=self.root/'retired';cancelled=Event();timer=Timer(.05,cancelled.set)
+        code=f'import signal,time;from pathlib import Path\ndef stop(*_):\n time.sleep(1.2);Path({str(marker)!r}).write_text("cleaned");raise SystemExit(0)\nsignal.signal(signal.SIGTERM,stop);print("ready",flush=True);time.sleep(30)'
+        def event(value):
+            if value.get('type')=='output' and value.get('text','').startswith('ready'):timer.start()
+        phase=replace(self.phase('helper',code),stop_grace=3)
+        plan=Plan('Fixture','grace',{},(phase,),str(self.root/'workspace'))
+        try:result=Executor(cancelled=cancelled,event=event).run(plan,self.root/'result')
+        finally:timer.cancel()
+        self.assertEqual(result['status'],'cancelled');self.assertEqual(marker.read_text(),'cleaned')

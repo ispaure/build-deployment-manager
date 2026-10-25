@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import hashlib
 import os
+import re
 from pathlib import Path
 
 from .locking import workspace_lock
@@ -87,6 +88,8 @@ class SettingsStore:
             raise ValueError('Unsupported account reference provider.')
         if kind not in {'protected-file','credential-helper','environment-name','firebase-cli'}:
             raise ValueError('Unsupported credential reference kind.')
+        if kind=='environment-name' and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',reference):
+            raise ValueError('Enter an environment variable name, never its token value.')
         values=self.read()
         values['accounts'][key]=dict(provider=provider,reference=reference,kind=kind,status='configured; not verified')
         self.save(values)
@@ -103,6 +106,11 @@ class SettingsStore:
             row=values['accounts'].get(key)
             if row and provider in fields:
                 field=fields[provider]
+                if isinstance(field,dict):
+                    if set(field)!={'reference','kind'} or any(not name.startswith('auth.') for name in field.values()):
+                        raise ValueError('Account mappings may supply protected reference fields only.')
+                    defaults[field['reference']]=row['reference'];defaults[field['kind']]=row['kind']
+                    continue
                 if not field.startswith('auth.'):
                     raise ValueError('Account field mappings may supply protected auth references only.')
                 if row['kind']=='protected-file':defaults[field]=row['reference']

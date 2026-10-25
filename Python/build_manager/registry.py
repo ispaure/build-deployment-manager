@@ -25,8 +25,10 @@ def inspect(root):
     path = root / 'build-project.json'
     if not path.is_file():
         raise ValueError('Project descriptor is missing; locate a checkout containing build-project.json.')
+    if path.stat().st_size > 262144:raise ValueError('Project descriptor is too large.')
     raw = path.read_bytes()
     data = json.loads(raw)
+    if not isinstance(data,dict):raise ValueError('Project descriptor must be a JSON object.')
     if data.get('schema') != 1 or data.get('adapter_api') != 1:
         raise ValueError('Unsupported project/adapter schema; API 1 is required.')
     if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name', 'bridge')):
@@ -38,10 +40,15 @@ def inspect(root):
         raise ValueError('No project interpreter is declared for this host.')
     for value in (data['bridge'], interpreter):
         candidate = Path(value)
-        if candidate.is_absolute() or '..' in candidate.parts:
+        if candidate.is_absolute() or '..' in candidate.parts or '\\' in value or ':' in value:
             raise ValueError('Descriptor paths must be checkout-relative.')
-    if not isinstance(data.get('capabilities'), dict):
-        raise ValueError('Project capabilities must be declared.')
+    capabilities=data.get('capabilities')
+    if not isinstance(capabilities,dict):raise ValueError('Project capabilities must be declared.')
+    for key in ('platforms','operations'):
+        if not isinstance(capabilities.get(key),list) or not capabilities[key] or any(not isinstance(v,str) or not v for v in capabilities[key]):
+            raise ValueError('Declare a nonempty list of project '+key+'.')
+    if not (root/data['bridge']).resolve().is_relative_to(root):
+        raise ValueError('Project bridge must remain inside its checkout.')
     return data, hashlib.sha256(raw).hexdigest()
 
 
@@ -53,6 +60,10 @@ class Registry:
     def read(self):
         data = load_profile(self.path)
         data.setdefault('projects', {})
+        if not isinstance(data['projects'],dict):raise ValueError('Invalid registry project map; preserve and repair the private registry.')
+        for row in data['projects'].values():
+            if not isinstance(row,dict) or any(not isinstance(row.get(key),str) for key in ('root','project_id','name','descriptor')):
+                raise ValueError('Invalid project registration; locate or repair the private registry.')
         return data
 
     def mutate(self, action):
@@ -129,6 +140,7 @@ class Registry:
         descriptor, digest = inspect(row['root'])
         if descriptor['project_id'] != row['project_id']:
             raise ValueError('Project identity changed; register the intended checkout.')
-        if trusted and (not row['trusted'] or digest != row['descriptor']):
+        row['trusted'] = bool(row['trusted'] and digest == row['descriptor'])
+        if trusted and not row['trusted']:
             raise ValueError('Review the descriptor and explicitly trust this adapter before running it.')
         return row, descriptor

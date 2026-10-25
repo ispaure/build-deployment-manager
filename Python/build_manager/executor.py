@@ -31,7 +31,7 @@ def signal_group(group, sig):
         os.killpg(group, sig)
 
 
-def stop_process(process):
+def stop_process(process, *, grace=1):
     if os.name == 'nt':
         process.kill_tree()
     else:
@@ -40,7 +40,7 @@ def stop_process(process):
         except ProcessLookupError:
             pass
     try:
-        process.wait(timeout=1)
+        process.wait(timeout=grace)
     except subprocess.TimeoutExpired:
         pass
     # A parent can exit before its descendants, leaving inherited output pipes
@@ -70,17 +70,20 @@ class Executor:
         plan = Plan.from_data(plan.data())
         if plan.effect in EXTERNAL and not confirmed:
             raise ValueError('This operation requires explicit confirmation after reviewing the plan.')
+        engine = runtime_identity()
+        if not engine['manager'].get('commit') or not engine['commonUtils'].get('commit'):
+            raise ValueError('Execution requires an identifiable manager Git checkout and initialized commonUtils; install it explicitly with pip install --no-deps -e PATH.')
         output = Path(output)
         if resume:
             report = json.loads((output/'result.json').read_text())
         else:
             output.mkdir(parents=True, exist_ok=False, mode=0o700)
-            report = dict(schema=1, engine=runtime_identity(), project=plan.project, operation=plan.operation,
+            report = dict(schema=1, engine=engine, project=plan.project, operation=plan.operation,
                           plan_identity=plan.identity, source=plan.source, backend=plan.backend,
                           started_at=timestamp(), status='queued', phases=[])
         if not resume:
             plan.save(output/'plan.json')
-        elif report.get('engine') is not None and report['engine'] != runtime_identity():
+        elif report.get('engine') is not None and report['engine'] != engine:
             raise ValueError('Manager/dependency identity changed; inspect a new run or explicitly invalidate old work.')
         def sanitize(value):
             if isinstance(value, str):
@@ -234,10 +237,10 @@ class Executor:
                 while not finished or process.poll() is None:
                     if self.cancelled.is_set() and not phase.always:
                         row['status'] = 'cancelled'
-                        stop_process(process)
+                        stop_process(process, grace=phase.stop_grace)
                     elif time.monotonic() - started >= phase.timeout:
                         row['status'] = 'timeout'
-                        stop_process(process)
+                        stop_process(process, grace=phase.stop_grace)
                     if finished:
                         time.sleep(.05)
                         continue
@@ -275,7 +278,7 @@ class Executor:
         finally:
             if process is not None:
                 try:
-                    stop_process(process)
+                    stop_process(process, grace=phase.stop_grace)
                 except (OSError, subprocess.SubprocessError) as error:
                     row.update(status='failed', cleanup_error=redact(str(error)))
                 # Never block closing a pipe while its reader still holds it.

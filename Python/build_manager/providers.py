@@ -34,7 +34,8 @@ def settings_rows(platforms):
         capability=CAPABILITIES[key]
         if capability.platform in platforms:
             rows['distribution.'+key]=dict(value='Not implemented — '+capability.reason,
-                origin='provider capability contract',read_only=True,section='Future distribution')
+                origin='provider capability contract',read_only=True,section='Future distribution',
+                label='App Store publication' if key=='app-store' else 'Google Play publication',description=capability.reason)
     return rows
 
 

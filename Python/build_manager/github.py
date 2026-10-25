@@ -94,3 +94,26 @@ class GitHub:
         # Preserve a known live run rather than launching a duplicate or claiming
         # that dispatch success is test success.
         raise TimeoutError(f'Hosted run {run_id} exceeded the observation budget; inspect/resume that exact run.')
+
+
+def credential_token(*, reference='GH_TOKEN', kind='auto', root=None, environment=None):
+    """Read an explicit environment-name or existing Git helper; never mutate login."""
+    import os
+    import subprocess
+    environment=dict(os.environ if environment is None else environment)
+    if kind not in {'auto','environment-name','credential-helper'}:
+        raise ValueError('Unsupported GitHub credential reference kind.')
+    if kind!='credential-helper':
+        if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',reference or ''):
+            raise ValueError('GitHub token reference must be an environment variable name.')
+        token=environment.get(reference)
+        if token:return token
+        if kind=='environment-name':
+            raise ValueError('Selected GitHub credential environment variable is missing.')
+    result=subprocess.run(['git','credential','fill'],cwd=root,input='protocol=https\nhost=github.com\n\n',
+        text=True,capture_output=True,timeout=30,env=dict(environment,GIT_TERMINAL_PROMPT='0',GCM_INTERACTIVE='Never'))
+    if result.returncode==0:
+        saved=dict(line.split('=',1) for line in result.stdout.splitlines() if '=' in line)
+        if saved.get('password'):return saved['password']
+    if kind=='credential-helper':raise ValueError('Selected GitHub credential helper has no usable login reference.')
+    return None

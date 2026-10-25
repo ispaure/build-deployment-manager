@@ -44,3 +44,14 @@ class SettingsTests(unittest.TestCase):
             store.path.write_text('{"schema":99,"values":{}}')
             with self.assertRaisesRegex(ValueError,'schema'):store.save({})
             self.assertEqual(json.loads(store.path.read_text())['schema'],99)
+
+    def test_shared_github_reference_keeps_project_destinations_distinct(self):
+        with TemporaryDirectory() as directory:
+            store=SettingsStore(directory)
+            store.account('owner',provider='github',reference='SHARED_GH_TOKEN',kind='environment-name')
+            fields={'github':{'reference':'auth.github_reference','kind':'auth.github_kind'}}
+            for project in ('logistics','bluehole'):store.select_account(project,'owner')
+            a=store.account_defaults('logistics',fields);b=store.account_defaults('bluehole',fields)
+            self.assertEqual(a,b)
+            self.assertEqual(a['auth.github_reference'],'SHARED_GH_TOKEN')
+            self.assertNotIn('github.repository',a)

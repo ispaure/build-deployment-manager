@@ -10,3 +10,4 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Bounded scheduling and resource ownership](scheduling.md)
 - [Host capabilities and Android](hosts.md)
 - [Provider extension boundaries](providers.md)
+- [Validation scope and remaining acceptance](validation.md)
