@@ -211,6 +211,9 @@ class VM:
         if (not isinstance(proof, dict) or proof.get('system') != self.kind or
                 tuple(proof.get('python_version', ())) < (3, 12) or not proof.get('git')):
             raise ValueError('Guest OS/Python/Git readiness is incomplete: ' + json.dumps(proof))
+        from .hosts import capabilities
+        proof['capabilities'] = capabilities(('android',), system=proof['system'],
+                                             architecture=proof.get('architecture', 'unknown'))
         save_json(self.root / (self.kind.lower() + '-readiness.json'), proof)
         record['state'] = 'test-tools-ready'
         save_json(self.record, record)

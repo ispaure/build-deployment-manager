@@ -27,3 +27,19 @@ Android acceptance. Missing permitted hosts keep brief 08 and dependent integrat
 acceptance open. Never create/access the held Fedora or Windows Testbed guests to
 obtain that coverage. Project-owned native suites retain their own supported-toolchain
 limits even when the generic Android transport supports another host.
+
+## Android emulator host architecture
+
+Android guest image ABI and emulator host support are separate checks. The manager
+accepts official emulator hosts on macOS ARM64/x64 and Linux/Windows x64. Linux
+ARM64 and Windows ARM64 currently report **Unavailable**, even when the project
+marks its SDK ready. The reason appears in host capability settings and dedicated
+VM readiness. Starting an emulator on either ARM host stops before executing tools
+or creating an AVD; there is no translated-binary, device or hosted fallback.
+A separately declared hosted target remains visible with its own prerequisites.
+
+This matches Google's [host requirements](https://developer.android.com/studio/install).
+The dedicated Windows ARM guest additionally lacks nested virtualization according
+to [Parallels' limitations](https://kb.parallels.com/en/129497). Compatible x64 hosts
+still need the selected SDK/image and verified KVM or WHPX acceleration. Architecture
+support alone does not mean readiness or completed native Android acceptance.

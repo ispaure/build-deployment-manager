@@ -65,3 +65,13 @@ that commit and its commonUtils pin must be available remotely before fresh host
 setup can use them. Local pinning does not push those commits. No hosted action, release, personal-device
 installation or tester upload was used to manufacture acceptance. Offscreen UI
 checks do not prove native OS interaction or accessibility-reader behavior.
+
+## Android host preflight
+
+Host capabilities distinguish the emulator executable's supported host architecture
+from its selected Android image ABI. Unsupported Linux/Windows ARM64 hosts report
+Unavailable before SDK commands or workspace creation, including when project
+configuration claims readiness. A separately declared hosted option remains visible.
+The dedicated VM readiness view uses the guest's actual architecture for this check.
+See [host requirements](hosts.md#android-emulator-host-architecture). This fail-fast
+behavior does not close the required real Android acceptance on compatible x64 hosts.

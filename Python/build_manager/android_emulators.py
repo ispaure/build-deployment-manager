@@ -36,6 +36,10 @@ class AndroidEmulator:
     def inspect(self, image, *, acceleration=None):
         if not re.fullmatch(r'system-images;android-\d+;[A-Za-z0-9_]+;(?:arm64-v8a|x86_64)',image):
             raise ValueError('Choose an explicit supported SDK system image identifier.')
+        from .hosts import android_host_issue
+        issue = android_host_issue()
+        if issue:
+            raise ValueError(issue)
         required = [self.adb, self.emulator, self.avdmanager,
                     self.sdk/'system-images'/Path(*image.split(';')[1:])/'system.img',
                     self.sdk/'system-images'/Path(*image.split(';')[1:])/'source.properties']

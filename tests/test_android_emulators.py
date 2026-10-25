@@ -25,7 +25,7 @@ class AndroidLeaseTests(unittest.TestCase):
             self.assertTrue((client.workspace/'removed-lease.json').exists())
 
     def test_incomplete_sdk_fails_without_starting_or_creating_avd(self):
-        with TemporaryDirectory() as folder, patch('build_manager.android_emulators.subprocess.check_output') as run:
+        with TemporaryDirectory() as folder, patch('build_manager.hosts.android_host_issue', return_value=None), patch('build_manager.android_emulators.subprocess.check_output') as run:
             root=Path(folder);client=AndroidEmulator(root/'missing-sdk',root/'owned')
             with self.assertRaisesRegex(ValueError,'complete system image'):
                 client.start('system-images;android-36;google_apis;arm64-v8a','pixel_9')
@@ -43,3 +43,14 @@ class AndroidLeaseTests(unittest.TestCase):
                 self.assertEqual(run.call_count,1)
                 self.assertNotIn('kill',run.call_args.args)
                 self.assertTrue(client.marker.exists())
+
+    def test_unsupported_host_fails_before_tool_execution_or_workspace_creation(self):
+        with TemporaryDirectory() as folder, patch('build_manager.android_emulators.subprocess.check_output') as run:
+            root = Path(folder)
+            client = AndroidEmulator(root/'sdk', root/'owned')
+            for system in ('Windows', 'Linux'):
+                with self.subTest(system=system), patch('build_manager.hosts.platform.system', return_value=system), patch('build_manager.hosts.platform.machine', return_value='ARM64'):
+                    with self.assertRaisesRegex(ValueError, 'host binary'):
+                        client.start('system-images;android-36;google_apis;arm64-v8a', 'pixel_9')
+            run.assert_not_called()
+            self.assertFalse(client.workspace.exists())

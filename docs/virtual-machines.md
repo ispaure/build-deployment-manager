@@ -85,7 +85,8 @@ Android SDK/JDK/images and actual acceptance checks remain separate requirements
 Install the manager and each project into isolated guest environments using their
 declared dependency pins; never use a host interpreter or discover sibling sources.
 
-Linux readiness reports KVM availability. Windows on ARM and nested virtualization
+Linux readiness reports KVM availability. Both guests report Android capability
+using their actual guest OS/architecture, independently of generic test readiness. Windows on ARM and nested virtualization
 have platform limitations; an unavailable Android emulator must remain unavailable,
 rather than falling back to a physical device, another guest or a different ABI.
 See [host capabilities](hosts.md). Keep native launcher/process/locking results
