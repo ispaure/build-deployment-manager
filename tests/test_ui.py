@@ -129,7 +129,7 @@ class ManagerUITests(unittest.TestCase):
         self.assertIn('extra enabled', panel.preview.toPlainText())
         with patch.object(QDesktopServices, 'openUrl', return_value=True) as opened:
             panel.open_results.click()
-            self.assertEqual(opened.call_args.args[0].toLocalFile(), str(panel.result.parent))
+            self.assertEqual(Path(opened.call_args.args[0].toLocalFile()), panel.result.parent)
         panel.close()
 
     def test_custom_secret_environment_redacts_review_before_execution(self):

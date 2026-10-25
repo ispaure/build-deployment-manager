@@ -1,3 +1,4 @@
+from link_fixtures import directory_link
 """Exercise asynchronous storage review against real owned fixture directories."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -23,7 +24,7 @@ class ManualStorageTests(unittest.TestCase):
             outside = root / 'private'
             outside.mkdir()
             (outside / 'key').write_text('synthetic')
-            (builds / '5').symlink_to(outside, target_is_directory=True)
+            directory_link(builds / '5', outside)
             (builds / 'counter.json').write_text('123')
             eligible = lambda p: p.name.isdigit()
             self.assertEqual(len(owned_entries(builds, eligible=eligible)), 4)
@@ -42,7 +43,7 @@ class ManualStorageTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 delete_owned(builds, ['../private'], eligible=eligible)
             linked = root / 'linked'
-            linked.symlink_to(builds, target_is_directory=True)
+            directory_link(linked, builds)
             with self.assertRaises(ValueError):
                 delete_owned(linked, ['4'], eligible=eligible)
 

@@ -1,3 +1,4 @@
+from link_fixtures import directory_link
 """Dedicated machine ownership, recovery and native-readiness boundaries."""
 import json
 from pathlib import Path
@@ -90,7 +91,7 @@ class DedicatedVMTests(unittest.TestCase):
             self.assertEqual(self.vm.receipt()['state'],'installation-required')
 
     def test_storage_and_receipt_symlinks_are_rejected(self):
-        self.vm.record.symlink_to(Path(self.folder.name)/'elsewhere')
+        directory_link(self.vm.record, Path(self.folder.name)/'elsewhere')
         with self.assertRaisesRegex(ValueError,'symlink'): self.vm.receipt()
 
     def test_windows_answer_keeps_security_and_does_not_enable_developer_mode(self):

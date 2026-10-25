@@ -30,6 +30,8 @@ class VMWorker(QThread):
                 result = vm.initialize_unattended(self.media, self.digest)
             elif self.action == 'enable-guest-commands':
                 result = vm.enable_guest_commands(approved=True)
+            elif self.action == 'open-console':
+                result = vm.open_console()
             elif self.action in ('start', 'stop'):
                 result = vm.power(self.action)
             else:
@@ -63,7 +65,7 @@ class VMDialog(QDialog):
         layout.addWidget(self.details)
         actions = QHBoxLayout(); self.buttons = [choose]
         for label, action in [('Refresh status', 'status'), ('Create or recover', 'ensure'),
-                              ('Start', 'start'), ('Check readiness', 'readiness'), ('Shut down', 'stop')]:
+                              ('Open console', 'open-console'), ('Start', 'start'), ('Check readiness', 'readiness'), ('Shut down', 'stop')]:
             button = QPushButton(label); button.clicked.connect(lambda checked=False, action=action: self.launch(action))
             actions.addWidget(button); self.buttons.append(button)
         layout.addLayout(actions)
@@ -121,7 +123,10 @@ class VMDialog(QDialog):
 
     def show_result(self, result):
         import json
-        self.details.setText(f"{result['name']} · {result['state']} · {result['setup']}\n{result['requirements']}\n{result['storage']}")
+        states={'running':'Running','stopped':'Shut down','missing':'Not created'}
+        setup={'not-created':'Create this machine to begin','installation-required':'OS installation required',
+               'first-boot-required':'Finish OS setup','test-tools-ready':'Test tools ready'}
+        self.details.setText(f"{result['name']} · {states.get(result['state'],result['state'])} · {setup.get(result['setup'],result['setup'])}\n{result['requirements']}\n{result['storage']}")
         self.output.appendPlainText(json.dumps(result, indent=2))
 
     def finish(self):

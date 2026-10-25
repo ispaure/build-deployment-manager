@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 from queue import Empty, Queue
+from threading import Event
 from uuid import uuid4
 
 from PySide6.QtCore import QElapsedTimer, QProcess, QRunnable, QThreadPool, QTimer, QUrl, Signal
@@ -35,10 +36,14 @@ class ReadHistory(QRunnable):
     def __init__(self, directory, results):
         super().__init__()
         self.directory, self.results = directory, results
+        self.cancelled, self.done = Event(), Event()
 
     def run(self):
         from .history import recent_runs
-        self.results.put(recent_runs(self.directory))
+        try:
+            self.results.put(recent_runs(self.directory, 100, self.cancelled.is_set))
+        finally:
+            self.done.set()
 
 
 class SettingsDialog(QDialog):
@@ -398,6 +403,8 @@ class ManagerPanel(QWidget):
         history_layout.addLayout(history_buttons)
         self.stages.addTab(history_page, '4 · History')
         self.history_results = Queue()
+        self.history_job = None
+        self.closing = False
         self.history_loading, self.history_refresh_pending = False, False
         self.history_timer = QTimer(self)
         self.history_timer.setInterval(50)
@@ -751,13 +758,29 @@ class ManagerPanel(QWidget):
         self.run_view.reset(safe, self.redacted_data(previous))
         self.phase_rows = self.run_view.rows
 
+    def closeEvent(self, event):
+        self.closing = True
+        self.history_timer.stop()
+        self.history_refresh_pending = False
+        if self.history_job is not None:
+            self.history_job.cancelled.set()
+            # Release report handles before the panel's project can be removed.
+            if not self.history_job.done.wait(1):
+                event.ignore()
+                QTimer.singleShot(50, self.close)
+                return
+        super().closeEvent(event)
+
     def refresh_history(self):
+        if self.closing:
+            return
         if self.history_loading:
             self.history_refresh_pending = True
             return
         self.history_loading = True
         self.history_timer.start()
-        QThreadPool.globalInstance().start(ReadHistory(self.project.results_directory, self.history_results))
+        self.history_job = ReadHistory(self.project.results_directory, self.history_results)
+        QThreadPool.globalInstance().start(self.history_job)
 
     def history_loaded(self):
         try:

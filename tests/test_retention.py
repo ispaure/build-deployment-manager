@@ -1,3 +1,4 @@
+from link_fixtures import directory_link
 """Retention safety: active work, pins and external links survive pruning."""
 import os
 from pathlib import Path
@@ -22,7 +23,7 @@ class RetentionTests(unittest.TestCase):
             outside = Path(directory).resolve() / 'outside'
             outside.mkdir()
             (outside / 'important').touch()
-            (root / '0').symlink_to(outside, target_is_directory=True)
+            directory_link(root / '0', outside)
             # lease refreshes age as well as holding a lock; force an old age
             # here to prove the lock itself prevents deletion.
             with lease(root / '3'):
@@ -43,7 +44,7 @@ class RetentionTests(unittest.TestCase):
                 (builds / name).mkdir()
             self.assertEqual(prune(builds, eligible=lambda p: True, apply=True), [])
             link = root / 'linked'
-            link.symlink_to(builds, target_is_directory=True)
+            directory_link(link, builds)
             self.assertEqual(prune(link, eligible=lambda p: True, age_days=0, apply=True), [])
             self.assertEqual(len([p for p in builds.iterdir() if p.is_dir()]), 4)
 

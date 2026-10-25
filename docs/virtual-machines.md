@@ -76,6 +76,8 @@ guest or a reused installation.
 ## Readiness and testing
 
 Start the guest and finish its OS/tool setup, then choose **Check readiness**.
+**Open console** shows only the selected owned machine in Parallels for normal
+installation and desktop interaction.
 It verifies a running owned guest, its actual operating system, Python >=3.12
 and Git, and retains an independent readiness receipt. Hardware creation alone
 does not set test readiness. GUI dependencies, a desktop session, project adapters,

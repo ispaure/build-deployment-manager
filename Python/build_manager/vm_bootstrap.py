@@ -99,7 +99,8 @@ def fedora_seed(root, uid, *, preserve_host_keys=False):
                   users=[dict(name='manager', lock_passwd=True, shell='/bin/bash', ssh_authorized_keys=[public])],
                   packages=['python3', 'python3-pip', 'git', 'gcc', 'make', 'perl', 'kernel-devel', 'kernel-headers',
                             'xorg-x11-server-Xvfb', 'xauth', 'mesa-libEGL', 'mesa-libGL', 'fontconfig',
-                            'dejavu-sans-fonts', 'libxkbcommon-x11', 'xcb-util-cursor'],
+                            'dejavu-sans-fonts', 'libxkbcommon-x11', 'xcb-util-cursor',
+                            'xcb-util-wm', 'xcb-util-keysyms'],
                   runcmd=[['sh', '-ec', 'mkdir -p /mnt/bdm-tools; found=0; for d in /dev/sr*; do mount -o ro "$d" /mnt/bdm-tools 2>/dev/null || continue; if test -f /mnt/bdm-tools/install; then /mnt/bdm-tools/install --install-unattended-with-deps; umount /mnt/bdm-tools; found=1; break; fi; umount /mnt/bdm-tools; done; test "$found" = 1; systemctl enable --now sshd; touch /var/lib/cloud/bdm-bootstrap-complete']])
     if preserve_host_keys:
         # Only maintenance of an already initialized owned guest uses this.

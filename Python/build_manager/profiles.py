@@ -1,6 +1,7 @@
 """Non-secret profile values and explicit precedence; providers own credentials."""
 import json
 import os
+import time
 from pathlib import Path
 from tempfile import mkstemp
 
@@ -49,7 +50,18 @@ def save_json(path, data):
             os.fsync(stream.fileno())
         if os.name != 'nt':
             temporary.chmod(0o600)
-        temporary.replace(path)
+        # Windows readers (including child processes) can briefly deny replacement.
+        # Keep publication atomic and bounded; permanent failures still propagate.
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                temporary.replace(path)
+                break
+            except OSError as error:
+                if (os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32, 33)
+                        or time.monotonic() >= deadline):
+                    raise
+                time.sleep(0.02)
     finally:
         temporary.unlink(missing_ok=True)
 

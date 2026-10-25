@@ -6,6 +6,12 @@ import shutil
 import time
 
 from .locking import workspace_lock
+from commonUtils.filesystem.links import is_junction
+
+
+def linked(path):
+    """Both symlinks and Windows junctions redirect ownership boundaries."""
+    return path.is_symlink() or is_junction(path)
 
 
 def durable_hold(path, owner, *, days=7, release=False):
@@ -35,7 +41,7 @@ def pinned(path):
         return True # Unreadable ownership state is protected, never swept.
     # A pin anywhere inside an owned tree also protects its enclosing snapshot.
     for folder, directories, files in os.walk(path, followlinks=False):
-        directories[:] = [name for name in directories if not (Path(folder) / name).is_symlink()]
+        directories[:] = [name for name in directories if not linked(Path(folder) / name)]
         if '.keep' in files:
             return True
     return False
@@ -48,13 +54,13 @@ def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, no
         raise ValueError('Retention requires at least one retained entry and a nonnegative age.')
     if not root.exists():
         return []
-    if any(part.is_symlink() for part in (root, *root.parents)):
+    if any(linked(part) for part in (root, *root.parents)):
         return []
     now = time.time() if now is None else now
     rows = []
     lock_path = lock_path or (lambda path: root / ('.' + path.name + '.retention.lock'))
     with workspace_lock(root / '.retention.lock'):
-        entries = sorted((p for p in root.iterdir() if not p.is_symlink() and p.is_dir() and eligible(p)),
+        entries = sorted((p for p in root.iterdir() if not linked(p) and p.is_dir() and eligible(p)),
                          key=order_key or (lambda p: (p.stat().st_mtime, p.name)), reverse=True)
         for path in entries[keep:]:
             try:
@@ -88,13 +94,13 @@ def lease(path):
 def owned_entries(root, *, eligible, lock_path=None):
     """List explicitly owned outputs; manual cleanup ignores automatic age limits."""
     root = Path(root)
-    if not root.is_dir() or any(p.is_symlink() for p in (root, *root.parents)):
+    if not root.is_dir() or any(linked(p) for p in (root, *root.parents)):
         return []
     lock_path = lock_path or (lambda path: root / ('.' + path.name + '.retention.lock'))
     rows = []
     with workspace_lock(root / '.retention.lock'):
         for path in sorted(root.iterdir()):
-            if path.is_symlink() or not path.is_dir() or not eligible(path):
+            if linked(path) or not path.is_dir() or not eligible(path):
                 continue
             reason = ''
             try:
@@ -110,7 +116,7 @@ def owned_entries(root, *, eligible, lock_path=None):
 def delete_owned(root, names, *, eligible, lock_path=None):
     """Revalidate explicit direct children while holding the retention and lease locks."""
     root = Path(root)
-    if not root.is_dir() or any(p.is_symlink() for p in (root, *root.parents)):
+    if not root.is_dir() or any(linked(p) for p in (root, *root.parents)):
         raise ValueError('Cleanup root is missing or linked; nothing was deleted.')
     lock_path = lock_path or (lambda path: root / ('.' + path.name + '.retention.lock'))
     removed, skipped = [], []
@@ -119,7 +125,7 @@ def delete_owned(root, names, *, eligible, lock_path=None):
             if name in ('', '.', '..') or Path(name).name != name or '/' in name or '\\' in name:
                 raise ValueError('Cleanup accepts owned direct child names only.')
             path = root / name
-            if path.is_symlink() or not path.is_dir() or not eligible(path):
+            if linked(path) or not path.is_dir() or not eligible(path):
                 skipped.append(name + ': no longer an owned output')
                 continue
             try:

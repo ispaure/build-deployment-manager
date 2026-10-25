@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from .retention import linked
 import platform
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ class VM:
     def __init__(self, checkout, client=None, event=lambda message: None):
         self.checkout = Path(checkout).resolve()
         self.root = self.checkout / 'VM'
-        if self.root.is_symlink():
+        if linked(self.root):
             raise ValueError('VM storage must be a real directory inside this checkout.')
         self.client = client or Parallels()
         self.event = event
@@ -43,7 +44,7 @@ class VM:
         return result.stdout
 
     def receipt(self):
-        if self.record.is_symlink():
+        if linked(self.record):
             raise ValueError('VM ownership receipt cannot be a symlink.')
         if not self.record.exists():
             return None
@@ -52,7 +53,7 @@ class VM:
             raise ValueError('Invalid VM ownership receipt.')
         UUID(data['uuid'])
         expected = self.root / (self.name + '.pvm')
-        if data.get('bundle') != str(expected) or expected.is_symlink():
+        if data.get('bundle') != str(expected) or linked(expected):
             raise ValueError('VM bundle ownership/path mismatch.')
         return data
 
@@ -195,6 +196,13 @@ class VM:
             save_json(self.record, record)
         return self.status()
 
+    def open_console(self):
+        record, row = self.selected()
+        if not row:
+            raise ValueError('Create or recover this dedicated guest before opening its console.')
+        subprocess.run(['open', '-a', 'Parallels Desktop', record['bundle']], check=True, timeout=30)
+        return self.status()
+
     def readiness(self):
         record, row = self.selected()
         if not row or row['status'] != 'running':
@@ -304,7 +312,7 @@ class WindowsVM(VM):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kind', choices=('linux', 'windows'))
-    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands'))
+    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands', 'open-console'))
     parser.add_argument('--checkout', type=Path, required=True)
     parser.add_argument('--media', type=Path)
     parser.add_argument('--sha256', default='')
@@ -322,6 +330,8 @@ def main(argv=None):
             result = method(args.media, args.sha256)
         elif args.action == 'enable-guest-commands':
             result = vm.enable_guest_commands(approved=args.approve_guest_commands)
+        elif args.action == 'open-console':
+            result = vm.open_console()
         elif args.action in ('start', 'stop'):
             result = vm.power(args.action)
         else:

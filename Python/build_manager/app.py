@@ -66,6 +66,8 @@ class ManagerWindow(QWidget):
             return
         key=self.projects.currentData()
         if self.panel:
+            if not self.panel.close():
+                return
             self.layout.removeWidget(self.panel);self.panel.hide();self.panel.deleteLater();self.panel=None
         if key:
             def change():

@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 
 from .models import Plan
+from .retention import linked
 
 MAX_RESULT_BYTES = 32 * 1024 * 1024
 STATUSES = {'queued', 'running', 'passed', 'failed', 'cancelled', 'awaiting_review', 'unknown'}
@@ -49,18 +50,20 @@ def read_report(path):
     return report
 
 
-def recent_runs(directory, limit=100):
+def recent_runs(directory, limit=100, cancelled=lambda: False):
     root = Path(directory)
-    if not root.is_dir():
+    if cancelled() or not root.is_dir() or linked(root):
         return []
     rows = []
     # One level only: no snapshot/build/cache traversal and no adapter invocation.
     try:
-        paths = sorted((path for path in root.glob('*/result.json') if not path.parent.is_symlink() and not path.is_symlink()),
+        paths = sorted((path for path in root.glob('*/result.json') if not linked(path.parent) and not linked(path)),
                        key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
     except OSError:
         return []
     for path in paths:
+        if cancelled():
+            break
         try:
             report = read_report(path)
             rows.append(dict(path=str(path), started_at=str(report.get('started_at', '')),
