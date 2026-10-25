@@ -13,8 +13,19 @@ external engine and Qt route, and an inert APK installed in an owned disposable
 Android emulator with verified cleanup. Current source/dependency identities and
 actual outcomes belong to each ignored run report, not to historical green claims.
 
-Linux/Windows native launcher, process/lock and Android acceptance requires
-permitted real hosts. The held Fedora guest and Windows Testbed are not substitutes.
+Dedicated Fedora and Windows ARM64 guests provide native launcher, process-tree,
+locking, atomic-state, Unicode-path and cleanup acceptance. Their isolated Python
+3.12.2 environments run the same pinned manager/commonUtils sources. Windows uses
+native junction fixtures without Developer Mode or symlink privilege changes;
+POSIX signal-only cases remain explicit skips, alongside Windows process-job checks.
+Report publication retries transient Windows sharing conflicts for at most two
+seconds, and closing a project panel cancels/drains its history reader before
+releasing project files. Raw attempts and corrections remain in ignored evidence.
+
+Linux/Windows Android acceptance still requires compatible official emulator host
+binaries and acceleration. These ARM64 guests do not supply that environment and
+must not be presented as Android passes. See [dedicated test machines](virtual-machines.md).
+The held Fedora guest and Windows Testbed are not substitutes.
 Blue Hole requires a supported Blender 5.2.2 isolated enable/import smoke test;
 portable tests and an inspected ZIP do not replace that gate. Missing environments
 keep their briefs and dependent integrated acceptance open. No push, live hosted
