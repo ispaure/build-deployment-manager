@@ -184,6 +184,7 @@ class SettingsDialog(QDialog):
 class ManagerPanel(QWidget):
     busy_changed = Signal(bool)
     settings_saved = Signal()
+    selection_changed = Signal(dict)
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
@@ -295,10 +296,16 @@ class ManagerPanel(QWidget):
         self.backend.clear()
         self.backend.addItems(self.project.backend_options(self.platform.currentText(), self.operation.currentText()))
 
+    def choices(self):
+        return {name: getattr(self, name).currentText() if name in ('operation', 'platform', 'backend')
+                else getattr(self, name).text()
+                for name in ('operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag')}
+
     def invalidate(self, *_):
         self.selection_revision += 1
         self.plan = None
         self.start.setEnabled(False)
+        self.selection_changed.emit(self.choices())
 
     def edit_settings(self):
         try:
