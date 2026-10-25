@@ -10,6 +10,7 @@ import signal
 import shutil
 import subprocess
 from threading import Event, Thread
+from uuid import uuid4
 import time
 
 from .locking import workspace_lock
@@ -55,52 +56,139 @@ def stop_process(process):
 
 
 class Executor:
-    def __init__(self, *, cancelled=None, event=None):
+    def __init__(self, *, cancelled=None, event=None, resource_directory=None):
         self.cancelled = cancelled if cancelled is not None else Event()
         self.event = event or (lambda value: None)
+        self.resource_directory = resource_directory
 
-    def run(self, plan, output, *, confirmed=False):
-        if plan.effect in {'deploy', 'upload', 'publish'} and not confirmed:
+    def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None):
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+        from .identity import runtime_identity
+        from .models import Plan
+        from .workflows import EXTERNAL, recover, review_identity, verify_artifacts
+        plan = Plan.from_data(plan.data())
+        if plan.effect in EXTERNAL and not confirmed:
             raise ValueError('This operation requires explicit confirmation after reviewing the plan.')
         output = Path(output)
-        output.mkdir(parents=True, exist_ok=False)
-        from .identity import runtime_identity
-        report = dict(schema=1, engine=runtime_identity(), project=plan.project, operation=plan.operation,
-                      plan_identity=plan.identity, source=plan.source, backend=plan.backend,
-                      started_at=timestamp(), status='queued', phases=[])
+        if resume:
+            report = json.loads((output/'result.json').read_text())
+        else:
+            output.mkdir(parents=True, exist_ok=False, mode=0o700)
+            report = dict(schema=1, engine=runtime_identity(), project=plan.project, operation=plan.operation,
+                          plan_identity=plan.identity, source=plan.source, backend=plan.backend,
+                          started_at=timestamp(), status='queued', phases=[])
+        if not resume:
+            plan.save(output/'plan.json')
+        elif report.get('engine') is not None and report['engine'] != runtime_identity():
+            raise ValueError('Manager/dependency identity changed; inspect a new run or explicitly invalidate old work.')
+        def sanitize(value):
+            if isinstance(value, str):
+                return Redactor(os.environ.get(name) for name in plan.secret_environment)(value)
+            if isinstance(value, dict):return {key:sanitize(item) for key,item in value.items()}
+            if isinstance(value, (tuple,list)):return [sanitize(item) for item in value]
+            return value
         def save():
-            temporary = output / 'result.tmp'
-            temporary.write_text(json.dumps(report, indent=2) + '\n')
-            temporary.replace(output / 'result.json')
-        save()
+            from .profiles import save_json
+            save_json(output/'result.json',sanitize(report))
         started = time.monotonic()
+        def execute(phase):
+            try:
+                from dataclasses import replace
+                from .workflows import ancestors
+                if phase.effect in EXTERNAL:
+                    artifacts=[artifact for name in ancestors(plan,phase.id) for artifact in rows[name].get('artifacts',[])]
+                    phase=replace(phase,environment=dict(phase.environment,
+                        BUILD_MANAGER_APPROVED_PLAN=plan.identity,BUILD_MANAGER_APPROVED_ARTIFACTS=json.dumps(artifacts),
+                        BUILD_MANAGER_OPERATION_ID=rows[phase.id]['operation_id']))
+                return self.run_phase(phase, output, plan.secret_environment)
+            except (OSError, ValueError, RuntimeError) as error:
+                return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() else 'failed',
+                            error=Redactor()(str(error)),seconds=0)
         try:
             with ExitStack() as locks:
+                from .retention import lease
+                locks.enter_context(workspace_lock(output/'supervisor.lock'))
+                locks.enter_context(lease(output))
+                locks.enter_context(lease(plan.workspace))
                 locks.enter_context(workspace_lock(Path(plan.workspace) / 'operation.lock'))
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
+                previous = recover(plan,report,reconcile=reconcile) if resume else []
+                rows = {row['id']:row for row in previous if row['status']=='passed'}
                 report['status'] = 'running'
+                report['phases'] = list(rows.values())
+                report['attempt_started_at'] = timestamp()
                 save()
-                states = {}
-                for phase in plan.phases:
-                    blocked = any(states[name] != 'passed' for name in phase.dependencies)
-                    if (self.cancelled.is_set() or blocked) and not phase.always:
-                        row = dict(id=phase.id, required=phase.required, status='skipped',
-                                   reason='cancelled' if self.cancelled.is_set() else 'dependency did not pass', seconds=0)
-                    else:
-                        row = self.run_phase(phase, output, plan.secret_environment)
-                    states[phase.id] = row['status']
-                    report['phases'].append(row)
-                    self.event(dict(type='phase', **row))
-                    save()
-                cleanup_failed = any(phase.always and phase.required and states[phase.id] != 'passed'
-                                     for phase in plan.phases)
-                report['status'] = ('failed' if cleanup_failed else 'cancelled' if self.cancelled.is_set() else
-                    'failed' if any(row['required'] and row['status'] != 'passed' for row in report['phases']) else 'passed')
-                report.update(finished_at=timestamp(), seconds=time.monotonic() - started)
+                pending = [phase for phase in plan.phases if phase.id not in rows]
+                running = {}
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    while pending or running:
+                        changed = False
+                        for phase in list(pending):
+                            if len(running)>=1:break
+                            if any(name not in rows or rows[name]['status']=='running' for name in phase.dependencies):continue
+                            if phase.always and running:continue
+                            if phase.always and 1>1 and any(not p.always for p in pending):continue
+                            blocked = any(rows[name]['status']!='passed' for name in phase.dependencies)
+                            row = None
+                            effect = phase.effect if phase.effect!='inherit' else plan.effect
+                            if (self.cancelled.is_set() or blocked) and not phase.always:
+                                row = dict(id=phase.id,required=phase.required,status='skipped',
+                                           reason='cancelled' if self.cancelled.is_set() else 'dependency did not pass',seconds=0)
+                            elif not phase.always:
+                                try:
+                                    for dependency in phase.dependencies:verify_artifacts(rows[dependency])
+                                    if phase.effect in EXTERNAL:
+                                        identity = review_identity(plan,phase.id,list(rows.values()))
+                                        if not any(a.step==phase.id and a.identity==identity for a in approvals):
+                                            row = dict(id=phase.id,required=phase.required,status='awaiting_review',
+                                                       reason='Review exact retained artifacts and destination before this effect.',seconds=0)
+                                except (OSError,ValueError) as error:
+                                    row = dict(id=phase.id,required=phase.required,status='failed',error=str(error),seconds=0)
+                            pending.remove(phase);changed=True
+                            if row is not None:
+                                rows[phase.id]=row;self.event(dict(type='phase',**row))
+                            else:
+                                rows[phase.id]=dict(id=phase.id,required=phase.required,status='running',effect=effect,operation_id=str(uuid4()))
+                                report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
+                                save() # Persist intent before any child or remote request can start.
+                                running[pool.submit(execute,phase)]=(phase,effect)
+                            report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
+                            save()
+                        if running:
+                            done,_=wait(running,timeout=.05,return_when=FIRST_COMPLETED)
+                            for future in done:
+                                phase,effect=running.pop(future);row=future.result()
+                                row['operation_id']=rows[phase.id]['operation_id']
+                                row['effect']=effect
+                                if effect in EXTERNAL and row['status']!='passed':row['status']='unknown'
+                                rows[phase.id]=row;self.event(dict(type='phase',**row));changed=True
+                        if not changed and not running and pending:
+                            raise RuntimeError('Workflow dependencies cannot make progress.')
+                        if changed:
+                            report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
+                            save()
+                statuses=[row['status'] for row in report['phases'] if row['required']]
+                cleanup_failed=any(p.always and p.required and rows[p.id]['status']!='passed' for p in plan.phases)
+                report['status']=('unknown' if 'unknown' in statuses else 'failed' if cleanup_failed else
+                    'awaiting_review' if 'awaiting_review' in statuses else 'cancelled' if self.cancelled.is_set() else
+                    'failed' if any(status!='passed' for status in statuses) else 'passed')
+                from .retention import durable_hold
+                owner = str(output.resolve())
+                if report['status'] in {'awaiting_review','unknown'}:
+                    paths = {str(Path(plan.workspace)), str(output)}
+                    paths.update(str(Path(value).parent) for phase in plan.phases for value in phase.artifacts if Path(value).exists())
+                    paths.update(str(Path(value).with_suffix('')) for value in plan.resource_locks if Path(value).with_suffix('').is_dir())
+                    report['holds'] = sorted(set(report.get('holds', ())) | paths)
+                    for path in report['holds']:durable_hold(path,owner)
+                else:
+                    for path in report.get('holds', ()):durable_hold(path,owner,release=True)
+                    report['holds'] = []
+                report.update(finished_at=timestamp(),seconds=time.monotonic()-started)
                 save()
-        except (OSError, RuntimeError) as error:
-            report.update(status='failed', error=Redactor()(str(error)), finished_at=timestamp(),
+        except (OSError, ValueError, RuntimeError) as error:
+            uncertain=any(row.get('status') in {'unknown','running'} and row.get('effect') in EXTERNAL for row in report['phases'])
+            report.update(status='unknown' if uncertain else 'failed', error=Redactor()(str(error)), finished_at=timestamp(),
                           seconds=time.monotonic() - started)
             save()
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
@@ -173,7 +261,8 @@ class Executor:
                         raise RuntimeError('Expected prepared artifact/report is missing: ' + source.name)
                     destination = directory / f'{phase.id}-{index}{source.suffix}'
                     shutil.copyfile(source, destination)
-                    row['artifacts'].append(dict(path=str(destination), sha256=hashlib.sha256(destination.read_bytes()).hexdigest()))
+                    row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=phase.artifact_types.get(value, 'file'),
+                                                   sha256=hashlib.sha256(destination.read_bytes()).hexdigest()))
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             row.update(status='failed', error=redact(str(error)))
         finally:

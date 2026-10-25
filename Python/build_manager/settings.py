@@ -1,7 +1,7 @@
 """Versioned non-secret settings layers and explicit legacy migration."""
 from dataclasses import dataclass
 import hashlib
-import json
+import os
 from pathlib import Path
 
 from .locking import workspace_lock
@@ -76,6 +76,8 @@ class SettingsStore:
 
     def save(self,values):
         reject_secrets(values)
+        self.directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if os.name!='nt':self.directory.chmod(0o700)
         with workspace_lock(self.directory/'settings.lock'):
             load_profile(self.path) # Unknown schemas cannot be overwritten.
             save_profile(self.path,values,allowed={'accounts','machines','projects','migrations'})
@@ -122,7 +124,7 @@ class SettingsStore:
             return values['projects'][project]
         imported=load_profile(legacy)
         reject_secrets(imported);validate(imported)
-        values['projects'][project]=dict(values=imported,origin='explicit legacy import')
+        values['projects'].setdefault(project,{}).update(values=imported,origin='explicit legacy import')
         migrations[project]=dict(sha256=digest,source=str(legacy),authority='legacy until explicitly selected')
         self.save(values)
         return values['projects'][project]

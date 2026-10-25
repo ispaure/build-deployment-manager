@@ -215,11 +215,17 @@ class ManagerPanel(QWidget):
         self.identity.setWordWrap(True)
         layout.addWidget(self.identity)
         form = QFormLayout()
+        self.preset = QComboBox()
+        self.preset.addItem('Custom operation')
+        self.preset.addItems(getattr(project, 'workflow_presets', {}))
+        self.preset.currentTextChanged.connect(self.select_preset)
+        form.addRow('Workflow preset', self.preset)
         self.operation = QComboBox()
         self.operation.addItems(project.operations)
         self.platform = QComboBox()
         self.platform.addItems(project.platforms)
         self.backend = QComboBox()
+        self.platform.currentTextChanged.connect(self.refresh_operations)
         self.platform.currentTextChanged.connect(self.refresh_backends)
         self.operation.currentTextChanged.connect(self.refresh_backends)
         self.revision = QLineEdit('working-tree')
@@ -269,15 +275,23 @@ class ManagerPanel(QWidget):
         self.cleanup.setEnabled(hasattr(project, 'storage_inventory'))
         self.cleanup.setToolTip('Review owned build outputs and delete selected or all unprotected entries.')
         self.cleanup.clicked.connect(self.clean_builds)
+        self.resume = QPushButton('Resume retained workflow…')
+        self.resume.clicked.connect(self.resume_workflow)
         self.verify = QPushButton('Verify connections/settings')
         self.verify.clicked.connect(self.verify_settings)
-        for button in (self.prepare, self.start, self.cancel, self.settings, self.verify, self.cleanup):
+        for button in (self.prepare, self.start, self.cancel, self.settings, self.verify, self.cleanup, self.resume):
             controls.addWidget(button)
         layout.addLayout(controls)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setMaximumBlockCount(6000)
         layout.addWidget(self.preview)
+        self.phase_status = QTreeWidget()
+        self.phase_status.setHeaderLabels(['Step', 'State / waiting reason', 'Seconds'])
+        self.phase_status.setAccessibleName('Workflow branches and resource waits')
+        self.phase_rows = {}
+        self.phase_status.setMaximumHeight(180)
+        layout.addWidget(self.phase_status)
         self.open_results = QPushButton('Open results and logs')
         self.open_results.setEnabled(False)
         self.open_results.clicked.connect(self.show_results)
@@ -290,7 +304,28 @@ class ManagerPanel(QWidget):
         self.build_override.valueChanged.connect(self.invalidate)
         for control in (self.revision, self.pattern, self.release_tag):
             control.textChanged.connect(self.invalidate)
+        self.refresh_operations()
         self.refresh_backends()
+
+    def select_preset(self, name):
+        choices=getattr(self.project,'workflow_presets',{}).get(name)
+        if choices:
+            self.platform.setCurrentText(choices['platform'])
+            self.operation.setCurrentText(choices['operation'])
+            self.backend.setCurrentText(choices['backend'])
+
+    def set_context(self, plan):
+        source=plan.source
+        revision=source.get('fingerprint') or source.get('commit') or source.get('logistics_commit') or source.get('revision','declared source')
+        destination=source.get('destination') or source.get('repository','see reviewed settings below')
+        self.identity.setText(f'{self.project.description}\n{plan.operation} · {plan.backend} · source {revision} · destination {destination}')
+
+    def refresh_operations(self, *_):
+        factory=getattr(self.project,'operations_for',None)
+        if factory:
+            previous=self.operation.currentText()
+            self.operation.clear();self.operation.addItems(factory(self.platform.currentText()))
+            if self.operation.findText(previous)>=0:self.operation.setCurrentText(previous)
 
     def refresh_backends(self, *_):
         self.backend.clear()
@@ -354,6 +389,7 @@ class ManagerPanel(QWidget):
             self.status.setText('Selection changed during preparation; inspect a fresh plan.')
             return
         self.plan = plan
+        self.set_context(plan)
         from .redaction import Redactor
         self.redact = Redactor(os.environ.get(name) for name in self.plan.secret_environment)
         self.preview.setPlainText(self.redact(json.dumps(self.plan.data(), indent=2)))
@@ -389,12 +425,48 @@ class ManagerPanel(QWidget):
         self.result = run / 'result.json'
         self.cancel_file = run.with_suffix('.cancel')
         self.buffer = ''
+        self.phase_status.clear(); self.phase_rows = {}
         arguments = ['-m', 'build_manager', str(path), '--output', str(run), '--cancel-file', str(self.cancel_file)]
         if confirmed:
             arguments.append('--confirm')
         self.set_busy(True)
         self.status.setText('Queued…')
         self.process.start(str(self.project.interpreter), arguments)
+
+    def resume_workflow(self):
+        from pathlib import Path
+        from .models import Plan
+        path, _ = QFileDialog.getOpenFileName(self, 'Select retained result.json', str(self.project.results_directory), 'JSON (*.json)')
+        if not path:
+            return
+        try:
+            result = Path(path)
+            previous = json.loads(result.read_text())
+            plan_path = result.parent/'plan.json'
+            plan = Plan.load(plan_path)
+            descriptor = getattr(self.project, 'descriptor', {})
+            if descriptor and plan.project != descriptor['name']:
+                raise ValueError('This run belongs to a different selected project.')
+            from .workflows import recover, approve
+            recover(plan, previous) # Unknown remote effects must be reconciled separately.
+            self.preview.setPlainText(self.redact(json.dumps(dict(plan=plan.data(),previous=previous),indent=2)))
+            steps = [row['id'] for row in previous['phases'] if row['status']=='awaiting_review']
+            if steps and QMessageBox.question(self, 'Approve reviewed artifacts and destinations?',
+                    'Approve the exact retained artifacts, source/settings and destinations shown above for: '+', '.join(steps)+'?',
+                    QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
+            for step in steps:approve(plan,step,previous)
+            self.plan, self.result = plan,result
+            self.set_context(plan)
+            self.cancel_file = result.parent.with_suffix('.resume-'+uuid4().hex+'.cancel')
+            arguments=['-m','build_manager',str(plan_path),'--output',str(result.parent),'--resume','--cancel-file',str(self.cancel_file)]
+            if steps or plan.effect in {'deploy','upload','publish'}:arguments.append('--confirm')
+            for step in steps:arguments+=['--approve-step',step]
+            self.set_busy(True)
+            self.process.start(str(self.project.interpreter),arguments)
+        except (OSError,ValueError,RuntimeError,KeyError) as error:
+            self.status.setText(self.redact(str(error)))
 
     def set_busy(self, busy):
         if busy:
@@ -404,8 +476,8 @@ class ManagerPanel(QWidget):
             self.clock.start()
         else:
             self.clock.stop()
-        for control in (self.prepare, self.start, self.settings, self.verify, self.cleanup, self.operation,
-                        self.platform, self.backend, self.revision, self.pattern, self.build_override, self.release_tag,
+        for control in (self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
+                        self.platform, self.backend, self.preset, self.revision, self.pattern, self.build_override, self.release_tag,
                         *self.run_controls.values()):
             control.setEnabled(not busy)
         self.cleanup.setEnabled(not busy and hasattr(self.project, 'storage_inventory'))
@@ -427,14 +499,25 @@ class ManagerPanel(QWidget):
                 self.preview.appendPlainText(self.redact(line))
                 continue
             if event.get('type') == 'output':
-                self.preview.appendPlainText(event['text'].rstrip())
+                self.preview.appendPlainText('['+event.get('phase','step')+'] '+event['text'].rstrip())
+            elif event.get('type') == 'waiting':
+                self.update_phase(dict(id=event['phase'],status=event['reason']))
             elif event.get('type') == 'phase':
+                self.update_phase(event)
                 if event['status'] == 'running':
                     self.phase_elapsed.start()
                 self.current_phase = event['id'] + ': ' + event['status']
                 self.show_elapsed()
             elif event.get('type') == 'error':
                 self.status.setText(event['error'])
+
+    def update_phase(self, event):
+        key=event['id']
+        if key not in self.phase_rows:
+            self.phase_rows[key]=QTreeWidgetItem([key,'',''])
+            self.phase_status.addTopLevelItem(self.phase_rows[key])
+        self.phase_rows[key].setText(1,event['status'])
+        if 'seconds' in event:self.phase_rows[key].setText(2,f"{event['seconds']:.2f}")
 
     def read_errors(self):
         text = bytes(self.process.readAllStandardError()).decode('utf-8', errors='replace')
@@ -470,7 +553,7 @@ class ManagerPanel(QWidget):
                 raise ValueError('The operation did not produce a result report.')
             report = json.loads(self.result.read_text())
             status = report['status']
-            if status not in {'passed', 'failed', 'cancelled'} or not isinstance(report['phases'], list):
+            if status not in {'passed', 'failed', 'cancelled', 'awaiting_review', 'unknown'} or not isinstance(report['phases'], list):
                 raise ValueError('The result report is incomplete or invalid.')
             self.preview.appendPlainText(self.redact(json.dumps(report, indent=2)))
             for phase in report['phases']:

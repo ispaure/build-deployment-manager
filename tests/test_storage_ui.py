@@ -5,11 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
 import unittest
-from unittest.mock import patch
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QSpinBox
+from PySide6.QtWidgets import QApplication, QSpinBox
 
-from build_manager.storage_ui import StorageDialog
 from build_manager.ui import SettingsDialog
 from build_manager.retention import delete_owned, lease, owned_entries
 

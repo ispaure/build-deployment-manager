@@ -29,14 +29,19 @@ def effective(defaults, profile=None, environment=None, overrides=None, *, varia
 def save_profile(path, values, *, allowed):
     if set(values) - set(allowed):
         raise ValueError('Unsupported profile fields.')
-    encoded = json.dumps(dict(schema=1, values=values), indent=2) + '\n'
+    encoded = json.dumps(dict(schema=1, values=values), indent=2)
     if '-----BEGIN ' in encoded or any(name.lower() in {'password', 'token', 'private_key'} for name in values):
         raise ValueError('Profiles store credential references, never secret contents.')
+    save_json(path, dict(schema=1, values=values))
+
+
+def save_json(path, data):
+    """Publish manager state privately; project schema and writer locks stay external."""
+    encoded = json.dumps(data, indent=2) + '\n'
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, name = mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
     temporary = Path(name)
-    # Each writer has its own private temporary; replacement stays atomic.
     try:
         with os.fdopen(descriptor, 'w') as stream:
             stream.write(encoded)

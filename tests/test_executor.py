@@ -88,8 +88,8 @@ class ExecutionTests(unittest.TestCase):
 
     def test_secrets_and_multiline_keys_do_not_reach_logs_or_failure_summary(self):
         from unittest.mock import patch
-        code = 'print("token=synthetic-secret"); print("-----BEGIN "+"PRIVATE KEY-----"); print("privatebytes"); print("-----END "+"PRIVATE KEY-----"); raise SystemExit(1)'
-        with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-secret'}):
+        code = 'import os; print("token="+os.environ["GH_TOKEN"]); print("-----BEGIN "+"PRIVATE KEY-----"); print(os.environ["SYNTHETIC_PEM_BODY"]); print("-----END "+"PRIVATE KEY-----"); raise SystemExit(1)'
+        with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-secret', 'SYNTHETIC_PEM_BODY': 'privatebytes'}):
             result = self.run_plan(self.plan(self.phase('provider', code)))
         outputs = ''.join(p.read_text() for p in (self.root / 'result').glob('*') if p.is_file())
         self.assertNotIn('synthetic-secret', outputs)

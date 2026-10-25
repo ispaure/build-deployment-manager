@@ -24,9 +24,17 @@ class ProjectBridge:
         if not self.results_directory.resolve().is_relative_to(self.root):
             raise ValueError('Result storage must remain project-owned.')
         self.run_options = self.descriptor.get('run_options', {})
+        self.workflow_presets = self.descriptor.get('presets', {})
+
+    def operations_for(self, target):
+        return tuple(self.descriptor['capabilities'].get('operations_by_target', {}).get(target, self.operations))
 
     def backend_options(self, target, operation='Test'):
-        return tuple(self.descriptor['capabilities'].get('backends', {}).get(target, ('Local',)))
+        capabilities = self.descriptor['capabilities']
+        backends = capabilities.get('host_backends', {}).get(sys.platform, capabilities.get('backends', {}))
+        options = backends.get(target, ('Local',))
+        if isinstance(options, dict):options = options.get(operation, ())
+        return tuple(options)
 
     def call(self, action, **values):
         row, descriptor = self.registry.resolve(self.key, trusted=True)
@@ -59,9 +67,12 @@ class ProjectBridge:
         return data['result']
 
     def make_plan(self, operation, target, backend, **values):
-        if operation not in self.operations or target not in self.platforms or backend not in self.backend_options(target, operation):
+        if operation not in self.operations_for(target) or target not in self.platforms or backend not in self.backend_options(target, operation):
             raise ValueError('Unsupported project operation, platform or backend.')
-        return Plan.from_data(self.call('plan', operation=operation, target=target, backend=backend, **values))
+        from dataclasses import replace
+        plan = Plan.from_data(self.call('plan', operation=operation, target=target, backend=backend, **values))
+        return replace(plan, adapter=dict(api=1,project_id=self.descriptor['project_id'],
+            descriptor_sha256=self.row['descriptor'],checkout=str(self.root)))
 
     def settings_view(self):
         return self.call('settings')

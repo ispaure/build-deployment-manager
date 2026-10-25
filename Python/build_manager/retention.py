@@ -8,7 +8,31 @@ import time
 from .locking import workspace_lock
 
 
+def durable_hold(path, owner, *, days=7, release=False):
+    """Retain paused outputs without changing source/snapshot contents."""
+    from .profiles import load_profile, save_profile
+    path = Path(path)
+    record = path.parent / ('.' + path.name + '.manager-holds.json')
+    with workspace_lock(record.with_suffix('.lock')):
+        values = load_profile(record)
+        leases = values.setdefault('leases', {})
+        if release:
+            leases.pop(owner, None)
+        else:
+            leases[owner] = time.time() + days * 86400
+        save_profile(record, values, allowed={'leases'})
+
+
 def pinned(path):
+    from .profiles import load_profile
+    path = Path(path)
+    record = path.parent / ('.' + path.name + '.manager-holds.json')
+    try:
+        leases = load_profile(record).get('leases', {})
+        if any(expires > time.time() for expires in leases.values()):
+            return True
+    except (OSError, ValueError, TypeError):
+        return True # Unreadable ownership state is protected, never swept.
     # A pin anywhere inside an owned tree also protects its enclosing snapshot.
     for folder, directories, files in os.walk(path, followlinks=False):
         directories[:] = [name for name in directories if not (Path(folder) / name).is_symlink()]

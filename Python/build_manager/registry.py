@@ -56,6 +56,8 @@ class Registry:
         return data
 
     def mutate(self, action):
+        self.directory.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if os.name!='nt':self.directory.chmod(0o700)
         with workspace_lock(self.directory / 'registry.lock'):
             data = self.read()
             result = action(data)

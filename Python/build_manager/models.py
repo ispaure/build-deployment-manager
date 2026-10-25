@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 
@@ -18,8 +19,12 @@ class Phase:
     always: bool = False
     kind: str = 'test'
     artifacts: tuple[str, ...] = ()
+    effect: str = 'inherit'
+    artifact_types: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
+        if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish'}:
+            raise ValueError('Unsupported step effect.')
         if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', self.id) or not self.argv or not all(isinstance(v, str) and v for v in self.argv)
                 or not self.cwd or not 0 < self.timeout <= 14400):
             raise ValueError('A phase needs a name, structured command, working directory and bounded timeout.')
@@ -39,6 +44,8 @@ class Plan:
     secret_environment: tuple[str, ...] = ('GH_TOKEN', 'GITHUB_TOKEN', 'FIREBASE_TOKEN')
     resource_locks: tuple[str, ...] = ()
     schema: int = 1
+    settings: dict = field(default_factory=dict)
+    adapter: dict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.schema != 1:
@@ -61,7 +68,11 @@ class Plan:
         return hashlib.sha256(json.dumps(self.data(), sort_keys=True).encode()).hexdigest()
 
     def save(self, path):
-        Path(path).write_text(json.dumps(self.data(), indent=2) + '\n')
+        encoded = json.dumps(self.data(), indent=2) + '\n'
+        if any(os.environ.get(name) and os.environ[name] in encoded for name in self.secret_environment):
+            raise ValueError('Plan data contains an inherited secret; use protected credential references.')
+        from .profiles import save_json
+        save_json(path, self.data())
 
     @classmethod
     def load(cls, path):

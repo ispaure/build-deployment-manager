@@ -1,7 +1,6 @@
 """Standalone project selector; trusted adapters remain in separate processes."""
 import argparse
 from pathlib import Path
-import sys
 
 
 def main(argv=None):
