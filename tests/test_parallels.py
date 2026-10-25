@@ -1,8 +1,12 @@
 """Transport contracts use literal arguments and only explicitly selected guests."""
 import base64
 import io
+import json
+import os
 from pathlib import Path
 import shlex
+import subprocess
+import sys
 import tarfile
 from tempfile import TemporaryDirectory
 import unittest
@@ -102,3 +106,26 @@ class ParallelsTransportTests(unittest.TestCase):
         with patch.object(client, 'execute', side_effect=RuntimeError('Guest command failed (1): ownership mismatch')) as execute:
             with self.assertRaisesRegex(RuntimeError, 'ownership'): client.execute_idempotent(VM, ['owned-plan-write'])
             self.assertEqual(execute.call_count, 1)
+
+    def test_owned_file_payload_never_consumes_guest_command_line(self):
+        client = Parallels('/fixture/prlctl')
+        payload = ('large plan 😀 ' * 3000).encode()
+        with patch.object(client, 'execute_idempotent') as execute:
+            client.write_owned(VM, '/var/tmp/owned', 'owned', 'plan.json', payload, 1000, 1000)
+        self.assertLess(len(' '.join(execute.call_args.args[1])), 2000)
+        self.assertEqual(base64.b64decode(execute.call_args.kwargs['data']), payload)
+        with self.assertRaises(ValueError):
+            client.write_owned(VM, '/var/tmp/owned', 'owned', '../escape', payload, 1000, 1000)
+
+    @unittest.skipUnless(os.name == 'posix', 'Linux transport file ownership contract')
+    def test_owned_write_does_not_follow_a_destination_symlink(self):
+        from build_manager.parallels import WRITE
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); owned = root/'owned'; owned.mkdir()
+            (owned/'.manager-owned.json').write_text(json.dumps(dict(token='owned')))
+            target = root/'target'; target.write_bytes(b'retained')
+            (owned/'plan.json').symlink_to(target)
+            result = subprocess.run([sys.executable, '-c', WRITE, str(owned), 'owned',
+                'plan.json', str(os.getuid()), str(os.getgid())], input=base64.b64encode(b'new'), capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(target.read_bytes(), b'retained')

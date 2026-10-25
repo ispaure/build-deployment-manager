@@ -37,6 +37,17 @@ if path.is_symlink() or path.resolve()!=path or path.name!=token or json.loads((
  raise ValueError('Guest workspace ownership mismatch')
 '''
 
+WRITE = OWNED + '''
+import base64,os
+name=sys.argv[3]
+if pathlib.Path(name).name!=name or name in ('','.','..'): raise ValueError('Invalid owned filename')
+data=base64.b64decode(sys.stdin.buffer.read(),validate=True)
+fd=os.open(path/name,os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW,0o600)
+with os.fdopen(fd,'wb') as output:
+ output.write(data)
+ os.fchown(output.fileno(),int(sys.argv[4]),int(sys.argv[5]))
+'''
+
 COLLECT = OWNED + '''
 import base64,io,tarfile
 stream=io.BytesIO()
@@ -155,6 +166,13 @@ class Parallels:
                 if attempt == 2 or not transient:
                     raise
                 time.sleep(.5)
+
+    def write_owned(self, selector, workspace, token, filename, data, uid, gid):
+        """Write bounded command arguments plus an ASCII stdin payload."""
+        if not filename or Path(filename).name != filename or filename in ('.', '..'):
+            raise ValueError('Invalid owned filename.')
+        self.execute_idempotent(selector, ['python3', '-c', WRITE, workspace, token,
+            filename, str(uid), str(gid)], data=base64.b64encode(data))
 
     def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout):
         payload = base64.b64encode(json.dumps(dict(argv=argv, environment=environment)).encode()).decode()
