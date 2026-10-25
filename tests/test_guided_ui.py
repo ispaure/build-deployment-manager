@@ -22,6 +22,23 @@ class GuidedUITests(unittest.TestCase):
         self.addCleanup(panel.close)
         return panel
 
+    def test_project_switch_hides_retired_panel_before_deferred_deletion(self):
+        from build_manager.app import ManagerWindow
+        class Registry:
+            def read(self):
+                return dict(projects={key:dict(name=key,root='/fixture/'+key) for key in ('one','two')},selected='one')
+            def select(self,key):pass
+            def selections(self,*args):pass
+        project=fixtures.OtherProject(self.root)
+        project.row=dict(trusted=True,selections={})
+        with patch('build_manager.app.ProjectBridge',return_value=project):
+            window=ManagerWindow(Registry());self.addCleanup(window.close);window.show();self.app.processEvents()
+            retired=window.panel
+            self.assertTrue(retired.isVisible())
+            window.projects.setCurrentIndex(1)
+            self.assertFalse(retired.isVisible())
+            self.assertIsNot(window.panel,retired)
+
     def wait_history(self, panel):
         deadline = time.monotonic() + 5
         while panel.history_loading or panel.history_refresh_pending:
