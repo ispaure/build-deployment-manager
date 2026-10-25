@@ -1,8 +1,10 @@
 # Host capabilities and Android
 
 Local policy is explicit: macOS supports native macOS, Android and iOS with verified
-prerequisites; Linux supports native Linux/Android; Windows supports native Windows/
-Android. Hosted targets are separate. Capability states distinguish unsupported,
+prerequisites; Linux supports native Linux; Windows supports native Windows.
+Local Android testing on Linux and Windows is currently **Unavailable**, including
+x64. Finishing implementation and native acceptance is deferred to separate
+Windows and Linux follow-up briefs. Use macOS for local Android testing. Hosted targets are separate. Capability states distinguish unsupported,
 unconfigured, unavailable and ready. No remote, architecture or device fallback is
 selected implicitly. VM adapters are macOS-only and retain all owner holds.
 New [dedicated Fedora and Windows machines](virtual-machines.md) can be created
@@ -22,24 +24,23 @@ test actions. Cleanup verifies a unique AVD name and process creation identity,
 preserves logs/receipts and deletes only owned AVD/user state. Personal devices,
 existing AVDs and installed app data are preserved.
 
-Portable tests do not establish native Linux or Windows launcher, lock, process or
-Android acceptance. Missing permitted hosts keep brief 08 and dependent integrated
-acceptance open. Never create/access the held Fedora or Windows Testbed guests to
-obtain that coverage. Project-owned native suites retain their own supported-toolchain
-limits even when the generic Android transport supports another host.
+Native Fedora/Windows manager launcher, locking and process checks are separate
+from Android acceptance. The current release records Linux/Windows Android as a
+known limitation. Never create/access held guests to obtain coverage. Project-owned
+native suites retain their own supported-toolchain limits.
 
 ## Android emulator host architecture
 
-Android guest image ABI and emulator host support are separate checks. The manager
-accepts official emulator hosts on macOS ARM64/x64 and Linux/Windows x64. Linux
-ARM64 and Windows ARM64 currently report **Unavailable**, even when the project
-marks its SDK ready. The reason appears in host capability settings and dedicated
-VM readiness. Starting an emulator on either ARM host stops before executing tools
-or creating an AVD; there is no translated-binary, device or hosted fallback.
-A separately declared hosted target remains visible with its own prerequisites.
+Android guest image ABI, vendor host support and manager availability are separate
+checks. macOS ARM64/x64 can proceed to SDK/image/acceleration verification. Linux
+and Windows x64 report **Unavailable** because implementation and native validation
+are deferred. This release limitation applies even when a project marks its SDK
+ready. Starting a session stops before tools run or an AVD is created. Native Linux/
+Windows testing remains available; separately declared hosted choices stay visible.
 
-This matches Google's [host requirements](https://developer.android.com/studio/install).
-The dedicated Windows ARM guest additionally lacks nested virtualization according
-to [Parallels' limitations](https://kb.parallels.com/en/129497). Compatible x64 hosts
-still need the selected SDK/image and verified KVM or WHPX acceleration. Architecture
-support alone does not mean readiness or completed native Android acceptance.
+Linux ARM64 and Windows ARM64 also lack supported official emulator host binaries.
+Google's [host requirements](https://developer.android.com/studio/install) and
+[Parallels' Windows ARM limitations](https://kb.parallels.com/en/129497) describe
+those vendor constraints. The x64 follow-ups must verify compatible images and
+KVM/WHPX acceleration on real x64 machines before enabling those manager paths.
+No translated-binary, physical-device or hosted fallback is selected automatically.

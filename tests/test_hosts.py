@@ -25,7 +25,20 @@ class HostCapabilityTests(unittest.TestCase):
                     rows = capabilities(('android',), system=system, architecture=architecture, ready=('android',), hosted=('android',))
                     self.assertEqual(rows[0]['status'], 'unavailable')
                     self.assertEqual(rows[1]['status'], 'unconfigured')
-        for system, architecture in (('Darwin','arm64'), ('Darwin','x86_64'), ('Linux','x86_64'), ('Windows','AMD64')):
+        for system, architecture in (('Darwin','arm64'), ('Darwin','x86_64')):
             self.assertIsNone(android_host_issue(system, architecture))
             self.assertEqual(capabilities(('android',),system=system,architecture=architecture)[0]['status'], 'unconfigured')
         self.assertEqual(android_abi('arm64'), 'arm64-v8a')
+
+    def test_linux_windows_x64_android_is_explicitly_deferred(self):
+        from build_manager.hosts import android_host_issue
+        for system, native in (('Linux', 'linux'), ('Windows', 'windows')):
+            for architecture in ('x86_64', 'AMD64'):
+                with self.subTest(system=system, architecture=architecture):
+                    self.assertIn('Known limitation', android_host_issue(system, architecture))
+                    rows = capabilities((native, 'android'), system=system, architecture=architecture,
+                                        ready=(native, 'android'), hosted=('android',))
+                    self.assertEqual(rows[0]['status'], 'ready')
+                    self.assertEqual(rows[1]['status'], 'unavailable')
+                    self.assertEqual(rows[2]['status'], 'unconfigured')
+        self.assertEqual(capabilities(('android',),system='Darwin',architecture='arm64',ready=('android',))[0]['status'], 'ready')

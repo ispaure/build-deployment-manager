@@ -24,7 +24,7 @@ def android_abi(architecture=None):
 
 
 def android_host_issue(system=None, architecture=None):
-    """Known emulator host compatibility, separate from SDK/AVD prerequisites.
+    """Current manager availability, separate from vendor support and SDK prerequisites.
 
     This describes the official emulator host binaries, not an Android guest ABI.
     Checking before launching tools avoids accidentally invoking x64 emulation.
@@ -39,6 +39,11 @@ def android_host_issue(system=None, architecture=None):
         return ('Google does not publish a supported Android emulator host binary for '
                 + system + ' ' + architecture + '. Select a supported native host; '
                 'no architecture, physical-device or remote fallback was selected.')
+    if system in {'Linux', 'Windows'}:
+        return ('Known limitation: Android emulator testing on ' + system + ' x64 is '
+                'unavailable in this manager release. Implementation and native validation '
+                'are deferred to the platform follow-up brief. Use macOS for local Android '
+                'testing; no fallback was selected automatically.')
     return None
 
 

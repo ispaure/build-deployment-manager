@@ -49,8 +49,10 @@ class AndroidLeaseTests(unittest.TestCase):
             root = Path(folder)
             client = AndroidEmulator(root/'sdk', root/'owned')
             for system in ('Windows', 'Linux'):
-                with self.subTest(system=system), patch('build_manager.hosts.platform.system', return_value=system), patch('build_manager.hosts.platform.machine', return_value='ARM64'):
-                    with self.assertRaisesRegex(ValueError, 'host binary'):
-                        client.start('system-images;android-36;google_apis;arm64-v8a', 'pixel_9')
+                for architecture, abi, message in (('ARM64', 'arm64-v8a', 'host binary'),
+                                                    ('AMD64', 'x86_64', 'Known limitation')):
+                    with self.subTest(system=system, architecture=architecture), patch('build_manager.hosts.platform.system', return_value=system), patch('build_manager.hosts.platform.machine', return_value=architecture):
+                        with self.assertRaisesRegex(ValueError, message):
+                            client.start('system-images;android-36;google_apis;'+abi, 'pixel_9')
             run.assert_not_called()
             self.assertFalse(client.workspace.exists())
