@@ -80,3 +80,38 @@ configuration claims readiness. A separately declared hosted option remains visi
 The dedicated VM readiness view uses the guest's actual architecture for this check.
 See [host requirements](hosts.md#android-emulator-host-architecture). Current implementation briefs close with this explicitly deferred scope; the
 platform follow-ups require real Android acceptance before enabling x64 support.
+
+## Logistics native desktop acceptance — 2026-10-25
+
+The dedicated Fedora 44 ARM64 and Windows 11 ARM64 guests completed the declared
+Logistics platform checks. Windows uses x64 CPython 3.12.2 under emulation; Fedora
+uses native ARM64 CPython 3.12.2. Both use Qt 6.12. This establishes the selected
+guest coverage, independently of physical x64 hardware or fresh Ubuntu acceptance.
+
+Failed full attempts remain preserved. Their unchanged shared, compression and
+packaging results were reused after checking dependency, suite and package inputs.
+At Logistics `14e9c13c` / commonUtils `b105857d`, all 117 cases in the 12 corrected
+or affected application modules passed on each guest. The current manager
+`798587b` passed 154 native contracts on Fedora and Windows; Windows reports three
+explicit POSIX-only skips. Actual guest probes also verified recovery of exits 0
+and 7 after transport loss, no duplicate execution, and cancellation before child
+admission. The final ordinary Logistics backend runs passed setup, focused tests,
+report retrieval and owned cleanup (Windows `12cc9598`, Fedora `14e9c13c`).
+
+| Verified check | Windows seconds | Fedora seconds |
+| --- | ---: | ---: |
+| Shared suite, unchanged pinned inputs | 599.92 | 128.40 |
+| Compression parity | 31.06 | 4.67 |
+| Release/package checks | 23.50 | 1.48 |
+| Current manager contracts, 154 cases | 65.32 | 14.55 |
+| Final focused backend flow, including setup/transfer/collection | 68.02 | 39.41 |
+
+Windows packaging includes actual extracted batch-launcher execution and CRLF
+checks. Fixes cover large-plan stdin transfer, explicit Qt widget ownership,
+read-only Git scratch cleanup, original ZIP entry validation, portable fixtures,
+asynchronous reader teardown and durable Windows invocation receipts. Evidence
+transfer archives are removed after verified host collection. Raw attempts,
+per-case timings and cleanup proofs stay under ignored `test-results/logistics-native/`.
+Later source changes retain their own acceptance requirements. Android x64 and
+post-GitHub integration remain separate follow-ups; no push or hosted dispatch
+was used for this local acceptance.
