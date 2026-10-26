@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication
 from build_manager.app import ManagerWindow
 from build_manager.registry import Registry
 import test_recipient_ui
@@ -53,13 +53,11 @@ class RunPresetTests(unittest.TestCase):
                     self.assertEqual(expected['run_overrides'], {'phones': '["phone-1"]'})
                     panel.run_fields.results.put(({}, None))
                     panel.run_fields.loaded()
-                    save = next(button for button in panel.findChildren(QPushButton) if button.text() == 'Save preset…')
                     with patch('build_manager.app.QInputDialog.getText', return_value=('Phones', True)):
-                        save.click()
+                        window.preset_actions['Save preset…'].trigger()
                     self.assertIn('Phones', registry.read()['projects'][key]['presets'])
                     picker.items.item(0).setCheckState(Qt.CheckState.Unchecked)
-                    load = next(button for button in panel.findChildren(QPushButton) if button.text() == 'Load preset')
-                    load.click()
+                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
                     self.assertEqual(panel.choices(), expected)
                     self.assertIsNone(panel.plan)
                     self.assertFalse(panel.start.isEnabled())
@@ -79,9 +77,8 @@ class RunPresetTests(unittest.TestCase):
                     self.assertEqual(window.panel.run_fields.controls['phones'].text(), '[]')
                     window.projects.setCurrentIndex(0)
                     self.assertEqual(window.panel.run_fields.controls['phones'].text(), '["phone-1"]')
-                    delete = next(button for button in window.panel.findChildren(QPushButton) if button.text() == 'Delete preset')
                     window.saved_presets.setCurrentIndex(1)
-                    delete.click()
+                    window.preset_actions['Delete preset'].trigger()
                     self.assertEqual(registry.read()['projects'][key]['presets'], {})
                     self.assertFalse((root / 'one' / 'registry.json').exists())
                     if os.name != 'nt':

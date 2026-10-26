@@ -4,6 +4,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFormLayout,
     QLabel, QPushButton, QSpinBox, QVBoxLayout)
 from .profiles import load_profile, save_profile
+from .ui_components import style_dialog_buttons
 from .registry import config_directory
 
 
@@ -70,13 +71,14 @@ class ApplicationSettingsDialog(QDialog):
                        '<br>2. Review the plan, then press Start to run tests.'
                        '<br>3. See Results and Timing. If delivery was selected, review the prepared files before approving it.'
                        '<br><br>Past runs opens saved results. Project settings configures the selected checkout. '
-                       'The Setup menu manages accounts and test machines.')
+                       'The More menu manages accounts and test machines.')
         guide.setWordWrap(True)
         layout.addWidget(guide)
         layout.addWidget(self.status)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
+        style_dialog_buttons(buttons)
         layout.addWidget(buttons)
 
     def save(self):

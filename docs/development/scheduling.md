@@ -11,8 +11,10 @@ counts. Capacity changes require explicit reconciliation while idle.
 Plan workspace locks still exclude competing writers to the same workspace.
 Parallel branches use separate logs/artifact names; the GUI shows branch states,
 waiting reasons and timings. Failed branches block consumers while independent
-diagnostics continue. Required failures fail the workflow. Cleanup executes once
-after owned running work retires; legacy sequential plans preserve phase order.
+diagnostics continue. Required failures fail the workflow. Scoped cleanup runs
+once its declared prerequisites finish, even while unrelated branches remain active.
+Unscoped whole-workflow cleanup still waits for owned running work to retire;
+legacy sequential plans preserve phase order.
 
 Cancellation stops only owned process groups or Windows jobs. The manager never
 uses a stale PID to terminate an unrelated process, cancels unrelated hosted jobs,
@@ -22,10 +24,24 @@ to overlap expensive simulator builds or project-required sequential iOS devices
 Portable overlapping-process tests are generic scheduling evidence, not proof of
 concurrent Android/iOS acceptance on unavailable hardware.
 
-Plan-level resource amounts may reserve capacity for an entire owned device
-session, while step resources cover build/cache/signing work. Logistics declares a
-conservative host mobile-session budget and explicit cleanup dependencies between
-iOS devices. Increasing workers alone cannot bypass that sequencing.
+Plan-level resource amounts can reserve capacity when an entire session truly
+owns a shared resource. Logistics no longer reserves one generic mobile session
+or orders the complete Android branch after iOS. Its independent platform branches
+can overlap within the worker limit; per-step build/cache/workspace/signing locks
+serialize actual contention. Explicit cleanup dependencies between successive iOS
+devices remain project policy. Increasing workers cannot bypass those dependencies.
+
+Resource contention emits a waiting event with the exact resource ID, amount and
+capacity. The GUI records a distinct waiting-for-resource state and names the
+resource on the platform card and in the subtask details. Details also list other
+steps declaring that resource. Waiting does not start a measured execution clock;
+the reason clears when the subprocess actually starts. Whole-workflow resource
+waits stay at workflow level rather than creating a fictitious execution step.
+
+Harmless subprocess fixtures prove independent mobile branches overlap, shared
+build slots remain exclusive, and scoped cleanup does not stall on an unrelated
+branch. These portable contracts do not establish native simultaneous iOS/Android
+acceptance or authorize starting a VM, simulator or personal device.
 
 POSIX phases may declare a bounded `stop_grace` (default one second, at most thirty)
 before group escalation. Logistics mobile helpers use five seconds so their nested

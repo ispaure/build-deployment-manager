@@ -2,6 +2,7 @@
 from PySide6.QtWidgets import (QComboBox,QDialog,QDialogButtonBox,QFileDialog,
     QFormLayout,QLabel,QLineEdit,QPushButton,QVBoxLayout,QMessageBox)
 from .settings import SettingsStore,reference_status
+from .ui_components import style_dialog_buttons
 
 
 class AccountsDialog(QDialog):
@@ -33,6 +34,7 @@ class AccountsDialog(QDialog):
         layout.addWidget(self.status)
         self.accounts.currentIndexChanged.connect(self.selected)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel)
+        style_dialog_buttons(buttons)
         buttons.accepted.connect(self.save);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
 
     def reference_kind_changed(self, *_):

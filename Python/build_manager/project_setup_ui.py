@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayo
     QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from .registry import inspect
+from .ui_components import style_dialog_buttons
 
 
 def interpreter_path(root, descriptor):
@@ -56,6 +57,7 @@ class AddProjectDialog(QDialog):
         self.add_button.setEnabled(False)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        style_dialog_buttons(self.buttons)
         layout.addWidget(self.buttons)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)

@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout,
                               QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QMessageBox)
+from .ui_components import style_button
 
 
 class VMWorker(QThread):
@@ -70,6 +71,7 @@ class VMDialog(QDialog):
         for label, action in [('Refresh status', 'status'), ('Create or recover', 'ensure'),
                               ('Open console', 'open-console'), ('Start', 'start'), ('Check readiness', 'readiness'), ('Shut down', 'stop')]:
             button = QPushButton(label); button.clicked.connect(lambda checked=False, action=action: self.launch(action))
+            style_button(button, 'primary' if action == 'status' else 'secondary')
             actions.addWidget(button); self.buttons.append(button)
         layout.addLayout(actions)
         control = QPushButton('Allow guest test commands…'); control.clicked.connect(self.approve_commands)

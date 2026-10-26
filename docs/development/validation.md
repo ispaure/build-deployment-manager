@@ -1,5 +1,97 @@
 # Validation scope and remaining acceptance
 
+## October 26 toolbar, presets and visible choices
+
+The header now keeps project selection, Project settings, More and Help. Checkout
+paths remain in tooltips and disambiguate duplicate names. Presets live in Choose
+work, load on deliberate selection and offer Save/Delete through a compact menu.
+Visible exclusive goals and clickable source/platform/destination summaries share
+the original request and invalidation paths. Tab counts and proposal warning icons
+reflect active selections; dormant delivery choices remain preserved.
+
+The focused UI suite passes 90 tests. Six new contracts cover header access and
+duplicate names, keyboard goal selection, selection counts and conflicts, preset
+save/load behavior, busy-state locking, project isolation and long labels at
+1024×700 with 14-point text. These six and the seven earlier footer/attention
+contracts also pass under native macOS Cocoa (13 checks). Synthetic native
+previews verify configuration, delivery, modified presets, advanced operation and
+the More menu. Existing persisted-device preset tests now exercise menu actions
+and direct selection. No project planning, provider operation, device or VM is
+used by the new fixtures.
+
+The 277-test full portable run encountered one resource-wait event-order assertion
+in the existing scheduler changes: the first contended resource was workspace
+rather than the fixture's expected device. Its isolated recheck passes. Scheduler
+code and that assertion were left unchanged by this UI pass. Raw attempts and
+captures remain under ignored test-results.
+
+## October 26 action hierarchy and attention
+
+The first action-hierarchy pass adds a stage-specific footer docked below the
+full window's workspace scrollbar, shared primary/secondary button presentation,
+and direct failure/approval actions above the execution board. Seven added
+contracts cover full-window footer bounds at 1280×800 and 1024×700 with 14-point
+text, project-switch footer retirement, failure navigation with and without case
+reports, mixed failure/approval states, unknown outcomes, reset and the unchanged
+Cancel default and explicit selections in approval. The full portable suite passes
+269 tests against the pinned commonUtils source. The focused UI suite passes 83
+tests. All seven added contracts also pass using the native macOS Cocoa plugin.
+
+Synthetic fixtures exercise layout and harmless presentation only. They do not
+establish real-project delivery, provider, personal-device, VM or screen-reader
+acceptance. Raw captures and logs remain in ignored test-results.
+
+## October 26 mobile branch concurrency
+
+The Logistics adapter removes its cross-platform admission barrier and generic
+whole-run mobile-session reservation. Real harmless subprocess fixtures exercise
+the resulting generated journey: independent Android/iOS contract steps overlap,
+while their declared shared build resources remain exclusive. Manager fixtures
+verify scoped cleanup progresses while another platform is active. Resource waits
+include the named resource and capacity, appear distinctly in cards and subtask
+details, and clear on process start without leaving a stale running clock.
+
+The manager regression run passes 271 contracts; focused UI checks pass after
+the final wording adjustment. Logistics passes 18 journey and 11 adapter contracts
+using its isolated mobile interpreter against this checkout’s manager sources.
+Adapter fixtures redirect generated settings into temporary directories. A native
+macOS display-only fixture verifies the resource-wait presentation. No native
+iOS/Android workloads, held VMs, physical devices or providers were exercised;
+concurrent native acceptance remains a separate authorized check. Saved plans
+retain their original dependencies and require fresh inspection to adopt the policy.
+
+## October 26 desktop plan review
+
+The [second-stage review brief](second-stage-ui-brief.md) now has a native Qt
+summary implementation with familiar workflow cards and in-place subtask
+inspection. All 262 portable contracts pass using the pinned commonUtils source
+root and cover
+captured values,
+destination scoping, reviewed dispatch and dependent work, keyboard inspection,
+stale Start rejection, independent blocked/approval branches, unknown-outcome
+guidance, retained hydration and selection-independent case counts. Additional grouping
+checks verify identical captured overview cards and arrows, shared task references,
+headless imports, live updates while drilling into a card and reset after inspection.
+Cross-platform order-only waits and platform cleanup remain nested without
+expanding the overview into execution-level columns. Existing
+review, cancellation, execution and history contracts remain green.
+
+Synthetic macOS Cocoa windows were rendered and resized at 1280×800 and 1024×700,
+including enlarged application text, exact-step inspection and a failed-run
+summary. Back/Start stayed visible outside the summary scrollbar and the summary
+had no horizontal scrollbar. Offscreen keyboard checks verify inspection without
+starting commands. These fixtures establish desktop layout and portable behavior;
+they do not establish native screen-reader, real-adapter release or provider
+acceptance. No held VM, personal device, upload, publication or hosted dispatch
+was used. Raw captures and all test attempts stay in ignored test-results.
+
+The retained 52-step Logistics plan was also loaded read-only into an isolated
+native macOS preview. Choose work and Review retain the same 19 cards, node
+positions and arrows; all 52 tasks remain mapped, with 16 inside iOS. The plan
+identity is unchanged. This checks the real large-plan shape that the earlier
+small fixtures did not cover. It does not execute validation, access a VM/device,
+or establish that the project's scheduling policy is optimal.
+
 ## October 25 refactoring follow-up
 
 Manager runtime commit `bb34d5f` passes all 158 contracts on macOS and on the

@@ -2,10 +2,11 @@
 import time
 from collections import deque
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QSplitter, QVBoxLayout, QWidget)
+    QSplitter, QVBoxLayout, QWidget, QFrame)
+from .ui_components import style_button
 
 
 def duration(seconds):
@@ -52,6 +53,9 @@ def plan_overview(plan):
 
 
 class RunView(QWidget):
+    review_requested = Signal()
+    attention_changed = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rows, self.facts, self.started, self.phases = {}, {}, {}, {}
@@ -60,6 +64,7 @@ class RunView(QWidget):
         self.selected = ''
         self.output_lines = deque(maxlen=6000)
         self.phase_log_reader = None
+        self.review_available = False
         layout = QVBoxLayout(self)
         self.context = QLabel('Run source and destination will appear here.')
         self.context.setWordWrap(True)
@@ -68,6 +73,32 @@ class RunView(QWidget):
         self.summary = QLabel('No run yet. Configure your goal and inspect the plan.')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
+        self.workflow_action = QLabel('Tests and delivery progress will appear here.')
+        self.workflow_action.setWordWrap(True)
+        self.workflow_action.setTextFormat(Qt.TextFormat.PlainText)
+        self.workflow_action.setAccessibleName('Run outcome and next action')
+        layout.addWidget(self.workflow_action)
+        self.attention = QFrame()
+        self.attention.setObjectName('runAttention')
+        self.attention.setAccessibleName('Run needs attention')
+        attention_layout = QVBoxLayout(self.attention)
+        attention_layout.setContentsMargins(10, 8, 10, 8)
+        self.attention_title = QLabel()
+        self.attention_title.setWordWrap(True)
+        self.attention_title.setTextFormat(Qt.TextFormat.PlainText)
+        self.attention_title.setStyleSheet('font-weight: 600;')
+        attention_layout.addWidget(self.attention_title)
+        attention_actions = QHBoxLayout()
+        self.attention_problems = style_button(QPushButton('View problems'))
+        self.attention_problems.clicked.connect(self.show_problems)
+        self.attention_review = style_button(QPushButton('Review delivery…'))
+        self.attention_review.clicked.connect(self.review_requested.emit)
+        attention_actions.addWidget(self.attention_problems)
+        attention_actions.addWidget(self.attention_review)
+        attention_actions.addStretch()
+        attention_layout.addLayout(attention_actions)
+        layout.addWidget(self.attention)
+        self.attention.hide()
         self.destinations = QLabel()
         self.destinations.setWordWrap(True)
         self.destinations.setAccessibleName('Platform and destination outcomes')
@@ -78,6 +109,9 @@ class RunView(QWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         layout.addWidget(self.progress)
+        self.overall_tests = QLabel('No individual case reports available yet.')
+        self.overall_tests.setWordWrap(True)
+        layout.addWidget(self.overall_tests)
         from .workflow_ui import WorkflowFlow
         self.flow = WorkflowFlow()
         self.flow.phase_selected.connect(self.select_phase)
@@ -100,14 +134,19 @@ class RunView(QWidget):
         self.splitter.addWidget(inspector)
         self.splitter.setSizes([490, 590])
         self.splitter.setChildrenCollapsible(False)
-        layout.addWidget(self.splitter, 1)
+        from .plan_summary_ui import PlanSummaryView
+        self.run_choices = PlanSummaryView()
+        self.run_choices.phase_selected.connect(self.inspect_summary_phase)
+        self.pages = QTabWidget()
+        self.pages.setAccessibleName('Run summary and detailed results')
+        self.pages.addTab(self.run_choices, 'Run summary')
+        self.pages.addTab(self.splitter, 'Results and exact steps')
+        layout.addWidget(self.pages, 1)
         results = QWidget()
         results_layout = QVBoxLayout(results)
         self.result_counts = QLabel('No test reports yet. Counts appear as tests finish.')
         self.result_counts.setWordWrap(True)
         self.result_counts.setAccessibleName('Reported test totals')
-        self.next_action = QLabel('Tests and delivery progress will appear here.')
-        self.next_action.setWordWrap(True)
         totals = QHBoxLayout()
         self.count_cards = {}
         for state, label in (('passed', 'Passed'), ('failed', 'Failed'), ('error', 'Errors'), ('skipped', 'Skipped')):
@@ -119,6 +158,9 @@ class RunView(QWidget):
             totals.addWidget(card)
         results_layout.addLayout(totals)
         results_layout.addWidget(self.result_counts)
+        self.next_action = QLabel()
+        self.next_action.setWordWrap(True)
+        self.next_action.setTextFormat(Qt.TextFormat.PlainText)
         results_layout.addWidget(self.next_action)
         result_actions = QHBoxLayout()
         problems = self.problems_button = QPushButton('Show failed tests')
@@ -209,6 +251,11 @@ class RunView(QWidget):
         log_layout.addWidget(self.log)
         self.tabs.addTab(log_page, 'Output')
 
+    def inspect_summary_phase(self, key):
+        self.pages.setCurrentIndex(1)
+        self.flow.select(key)
+        self.flow.browser.setFocus()
+
     def scoped_facts(self):
         return {key: fact for key, fact in self.facts.items() if not self.selected or key == self.selected}
 
@@ -254,13 +301,16 @@ class RunView(QWidget):
         if getattr(phase, 'waits_for', ()):
             text += '\nWaits for completion (success not required): ' + ', '.join(phase.waits_for)
         if phase.resources:
-            text += '\nShared resources: ' + ', '.join(phase.resources)
+            from .resources import resource_details
+            text += '\n' + '\n'.join(resource_details(self.plan, self.selected))
         for row in getattr(self.plan, 'journey', {}).get('destinations', {}).values():
             if self.selected in row['steps']:
                 text += '\nDestination: ' + row['identity']
         self.selection_info.setText(text)
         if state in {'blocked', 'skipped'}:
             self.next_action.setText('This step will not run. ' + reason + '\nSelect its prerequisite cards to inspect the cause.')
+        elif state == 'waiting_resource':
+            self.next_action.setText(reason + '\nOther independent platform steps can continue.')
         elif state == 'running':
             self.next_action.setText('This step is running. Reports appear after capture; Output shows its current messages.')
         elif state == 'passed':
@@ -299,24 +349,96 @@ class RunView(QWidget):
         self.log.setPlainText('\n'.join(lines) if any(lines) else 'No captured output for this selection yet. Retained log paths appear in Step details.')
 
     def show_problem_tests(self):
+        self.pages.setCurrentIndex(1)
         self.filter.setCurrentText('Problems')
         self.tabs.setCurrentWidget(self.tests.parentWidget())
 
+    def has_problems(self):
+        return self.outcome in {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown'} or any(
+            row.get('status') in {'failed', 'error', 'timeout', 'interrupted', 'unknown', 'cancelled'} or any(
+                case['status'] in {'failed', 'error'} for case in row.get('tests', ()))
+            for row in self.facts.values())
+
+    def show_problems(self):
+        """Leave any selected successful card and reveal the actual problem."""
+        self.pages.setCurrentIndex(1)
+        self.search.clear()
+        self.flow.select('')
+        unknown = next((key for key, row in self.facts.items() if row['status'] == 'unknown'), None)
+        cases = any(case['status'] in {'failed', 'error'}
+                    for row in self.facts.values() for case in row.get('tests', ()))
+        if cases and not unknown:
+            self.show_problem_tests()
+            self.tests.setFocus()
+            return
+        key = unknown or next((key for key, row in self.facts.items()
+            if row['status'] in {'failed', 'error', 'timeout', 'cancelled', 'interrupted'}), None)
+        if key:
+            self.flow.select(key)
+        else:
+            self.detail.setPlainText(self.summary.text())
+        self.tabs.setCurrentWidget(self.steps.parentWidget())
+        self.steps.setFocus()
+
+    def set_review_available(self, available):
+        self.review_available = available
+        self.attention_review.setEnabled(available)
+        self.attention_review.setToolTip('Inspect retained evidence before approving any action.' if available
+            else 'Review becomes available when the active operation has stopped and retained evidence can be verified.')
+
+    def refresh_attention(self):
+        failed_keys = [key for key, row in self.facts.items() if row['status'] in {'failed', 'error', 'timeout'}]
+        failures = len(failed_keys)
+        unknown = self.outcome == 'unknown' or any(row['status'] == 'unknown' for row in self.facts.values())
+        approvals = sum(row['status'] == 'awaiting_review' for row in self.facts.values())
+        problems = self.has_problems()
+        needs_review = bool(approvals or self.outcome == 'awaiting_review')
+        labels = []
+        if unknown:
+            labels.append('Unknown outcome · check provider status before retrying')
+        elif failures:
+            from .workflow_ui import title
+            names = ', '.join(title(self.phases[key]) if key in self.phases else key for key in failed_keys[:2])
+            labels.append(f'{failures} failed step' + ('s' if failures != 1 else '') + ' · ' + names)
+        elif problems:
+            labels.append('Run interrupted or unsuccessful · inspect the retained result')
+        if needs_review:
+            labels.append(f'{approvals} action' + ('s' if approvals != 1 else '') + ' waiting for approval'
+                          if approvals else 'Actions waiting for approval')
+        self.attention_title.setText('Attention: ' + ' · '.join(labels))
+        self.attention_problems.setVisible(problems)
+        self.attention_problems.setText('Inspect unknown outcome' if unknown else 'View problems')
+        self.attention_review.setVisible(needs_review)
+        dispatch = any(row['status'] == 'awaiting_review' and key in self.phases and
+            (row.get('effect') or (self.phases[key].effect if self.phases[key].effect != 'inherit' else self.plan.effect)) == 'dispatch'
+            for key, row in self.facts.items())
+        self.attention_review.setText('Review GitHub checks…' if dispatch else 'Review delivery…')
+        color = '#c54040' if problems else '#b37c12'
+        self.attention.setStyleSheet('QFrame#runAttention { border: 1px solid palette(mid); '
+            'border-left: 4px solid ' + color + '; border-radius: 6px; background: palette(alternate-base); }')
+        self.attention.setVisible(problems or needs_review)
+        self.workflow_action.setVisible(not (problems or needs_review))
+        self.attention_changed.emit()
+
     def show_timings(self):
+        self.pages.setCurrentIndex(1)
         self.tabs.setCurrentWidget(self.timings.parentWidget())
 
-    def reset(self, plan, previous=()):
+    def reset(self, plan, previous=(), *, fields=(), capability=None, proposal=None):
         self.plan = plan
         self.selected = ''
+        self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal)
+        self.pages.setCurrentIndex(0)
         self.output_lines.clear()
         self.flow.reset(plan)
         self.rows, self.facts, self.started = {}, {}, {}
         self.phases = {phase.id: phase for phase in plan.phases}
-        source = plan.source.get('fingerprint') or plan.source.get('commit') or plan.source.get('revision', 'see original plan')
-        destination = plan.source.get('destination') or plan.settings.get('destination', 'see original plan')
-        self.context.setText(f'{plan.project} · {plan.operation} · {plan.backend}\nSource: {source} · Destination: {destination}')
+        from .plan_summary import captured_choices
+        self.context.setText(f'{plan.project} · {plan.operation}\n' + captured_choices(plan)[0][1])
+        self.context.setTextFormat(Qt.TextFormat.PlainText)
         self.run_timing = ''
         self.outcome = ''
+        self.set_review_available(False)
         self.steps.clear()
         self.tests.clear()
         self.detail.clear()
@@ -342,6 +464,8 @@ class RunView(QWidget):
         if key not in self.rows:
             self.rows[key] = QTreeWidgetItem([key, '', '', '', ''])
             self.steps.addTopLevelItem(self.rows[key])
+        if event['status'] != 'waiting_resource':
+            event = dict(event, resource='', reason=event.get('reason', ''))
         self.facts.setdefault(key, {}).update(event)
         self.rows[key].setText(1, event['status'].replace('_', ' '))
         self.rows[key].setToolTip(1, event.get('reason') or event.get('error', ''))
@@ -365,6 +489,8 @@ class RunView(QWidget):
             self.rows[key].setText(2, elapsed)
             if key in self.flow.canvas.cards:
                 self.flow.canvas.cards[key][1].setText('Running · ' + elapsed)
+        self.run_choices.set_facts({key: dict(fact, seconds=time.monotonic() - self.started[key])
+            if key in self.started else fact for key, fact in self.facts.items()})
         self.refresh_inspector()
 
     def refresh_summary(self):
@@ -384,18 +510,26 @@ class RunView(QWidget):
         text = ' · '.join(f'{value} {key.replace("_", " ")}' for key, value in visible_counts.items()) or 'No steps'
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
         self.summary.setText(prefix + text + self.run_timing)
-        if self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
-            action = ('GitHub checks are waiting for approval to start. Review the workflow and exact source before continuing.'
-                if any(fact.get('effect')=='dispatch' and fact['status']=='awaiting_review' for fact in self.facts.values())
-                else 'Tests and preparation have paused for approval. Use “Review and continue this run…” to inspect the files and destinations.')
-        elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
-            action = 'This run did not finish successfully. Open Tests and choose Problems, or inspect Step details for the reason.'
-        elif self.outcome == 'unknown':
+        self.run_choices.set_facts(self.facts)
+        cases = [case for fact in self.facts.values() for case in fact.get('tests', ())]
+        problems = sum(case['status'] in {'failed', 'error'} for case in cases)
+        self.overall_tests.setText(f'{len(cases)} reported test cases · {problems} problems' if cases
+            else 'No individual case reports available yet. Step outcomes remain available.')
+        if self.outcome == 'unknown' or counts.get('unknown'):
             action = 'An external action has an unknown outcome. Check its provider status before retrying; the manager will not repeat it automatically.'
+        elif self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
+            action = ('GitHub checks are waiting for approval to start. Review the workflow and exact source before continuing.'
+                if any(fact['status']=='awaiting_review' and (fact.get('effect') or
+                    (self.phases[key].effect if self.phases[key].effect != 'inherit' else self.plan.effect)) == 'dispatch'
+                    for key, fact in self.facts.items() if key in self.phases)
+                else 'Eligible actions need approval. Use the review action below to inspect prepared files, exact source and destinations. Independent blocked branches remain separate.')
+        elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
+            action = 'This run did not finish successfully. Open Results and exact steps, then Tests → Problems or Step details for the reason.'
         elif self.outcome:
             action = 'Run finished. Check Tests for individual outcomes and Timing for the slowest tests. Start another run from New run.'
         else:
             action = 'Work is in progress. Test totals update as reports arrive. Delivery requires a separate approval.'
+        self.workflow_action.setText(action)
         self.next_action.setText(action)
         if self.plan and getattr(self.plan, 'journey', {}):
             from .journeys import outcomes
@@ -403,6 +537,7 @@ class RunView(QWidget):
                 for label, state in outcomes(self.plan, self.facts.values())))
         else:
             self.destinations.clear()
+        self.refresh_attention()
 
     def complete(self, report):
         self.started.clear()

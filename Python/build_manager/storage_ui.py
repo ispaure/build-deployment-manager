@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
+from .ui_components import style_button, style_dialog_buttons
+
 
 class StorageTask(QRunnable):
     def __init__(self, action, results):
@@ -53,13 +55,14 @@ class StorageDialog(QDialog):
         self.selected.clicked.connect(lambda: self.remove(False))
         self.all.clicked.connect(lambda: self.remove(True))
         for button in (self.refresh, self.selected, self.all):
-            buttons.addWidget(button)
+            buttons.addWidget(style_button(button))
         layout.addLayout(buttons)
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self.close_buttons.rejected.connect(self.reject)
+        style_dialog_buttons(self.close_buttons)
         layout.addWidget(self.close_buttons)
         self.timer = QTimer(self)
         self.timer.setInterval(30)

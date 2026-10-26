@@ -15,7 +15,7 @@ class Resources:
 
     @contextmanager
     def acquire(self,requirements,capacities,*,cancelled,timeout,event=lambda value:None,cleanup=False):
-        started=time.monotonic();waiting=False
+        started=time.monotonic();last_wait=None
         while True:
             held=ExitStack()
             try:
@@ -39,7 +39,10 @@ class Resources:
                 break
             except RuntimeError as error:
                 held.close()
-                if not waiting:event(dict(type='waiting',reason=str(error)));waiting=True
+                reason=str(error)
+                if reason != last_wait:
+                    event(dict(type='waiting',reason=reason,resource=name,amount=amount,capacity=capacity))
+                    last_wait=reason
                 if (cancelled.is_set() and not cleanup) or time.monotonic()-started>=timeout:
                     raise RuntimeError('Resource wait cancelled or timed out.') from None
                 time.sleep(.05)
@@ -47,3 +50,26 @@ class Resources:
                 held.close();raise
         with held:
             yield
+
+
+def resource_label(name):
+    """Make declared resource IDs readable without interpreting project commands."""
+    kind, separator, scope = str(name).partition(':')
+    label = kind.replace('.', ' ').replace('-', ' ').replace('_', ' ').capitalize()
+    return label + (' · ' + scope if separator else '')
+
+
+def resource_details(plan, key):
+    """Declared sharing explains possible waits before a run starts."""
+    from .plan_summary import phase_title
+    phases = {phase.id: phase for phase in plan.phases}
+    lines = []
+    for name, amount in phases[key].resources.items():
+        lines.append('Shared resource: ' + resource_label(name) +
+                     f' ({amount} of {plan.capacities.get(name, 1)} slots)')
+        peers = [phase_title(phase) for phase in plan.phases if phase.id != key and name in phase.resources]
+        if peers:
+            lines.append('Also requested by: ' + ', '.join(peers))
+    if lines:
+        lines.append('Only steps competing for these resources wait; independent platform work can overlap.')
+    return lines

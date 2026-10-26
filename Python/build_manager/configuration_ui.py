@@ -1,7 +1,9 @@
 """Editable workflow intent beside a non-executable, live dependency sketch."""
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView)
+    QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
+from .ui_components import SelectionSummary, ActionStrip
 
 
 class ConfigurationSection(QWidget):
@@ -80,13 +82,51 @@ class ConfigurationView(QWidget):
         guidance = QLabel('Choose your settings, then review the plan before starting.')
         guidance.setWordWrap(True)
         guidance.hide()
-        self.goal = QComboBox()
+        self.goal = QComboBox(self)
         self.goal.setAccessibleName('What would you like to do?')
         self.goal.addItem('Validate — run checks only', 'validate')
         self.goal.addItem('Validate and deliver', 'deliver')
         self.goal.addItem('Advanced operation — project workflow or single operation', 'advanced')
-        configuration_layout.addWidget(QLabel('What would you like to do?'))
-        configuration_layout.addWidget(self.goal)
+        # The combo remains the selection model for persisted/legacy requests.
+        # Visible, exclusive choices use the same signals and invalidation path.
+        self.goal.hide()
+        self.intent_header = QWidget()
+        header = QVBoxLayout(self.intent_header)
+        header.setContentsMargins(0, 0, 0, 0)
+        self.goal_row = QHBoxLayout()
+        self.goal_group = QButtonGroup(self)
+        self.goal_buttons = {}
+        for value, text in (('validate', 'Run checks'), ('deliver', 'Prepare and deliver'), ('advanced', 'Advanced…')):
+            button = QToolButton() if value == 'advanced' else QPushButton()
+            button.setText(text)
+            button.setAccessibleName('Advanced operation' if value == 'advanced' else text)
+            button.setCheckable(True)
+            button.setStyleSheet('''QPushButton, QToolButton { min-height: 20px; padding: 6px 12px;
+                border: 1px solid palette(mid); border-radius: 6px; background: palette(button); font-weight: 600; }
+                QPushButton:checked, QToolButton:checked { border: 2px solid #245db5;
+                    padding: 5px 11px; background: palette(alternate-base); }
+                QPushButton:focus, QToolButton:focus { border: 2px solid palette(highlight); padding: 5px 11px; }
+                QPushButton:disabled, QToolButton:disabled { color: palette(mid); }''')
+            self.goal_group.addButton(button)
+            self.goal_buttons[value] = button
+            button.clicked.connect(lambda checked=False, value=value: self.choose_goal(value))
+            self.goal_row.addWidget(button)
+        self.goal_row.addStretch()
+        header.addLayout(self.goal_row)
+        summary_row = QHBoxLayout()
+        self.choice_summaries = {}
+        for key in ('source', 'platforms', 'delivery'):
+            button = SelectionSummary()
+            button.clicked.connect(lambda checked=False, key=key: self.open_section(key))
+            self.choice_summaries[key] = button
+            summary_row.addWidget(button, 1)
+        header.addLayout(summary_row)
+        self.blocker_strip = ActionStrip()
+        self.blocker_strip.setAccessibleName('Resolve workflow requirements')
+        self.blocker_strip.hide()
+        self.blocker_actions, self.current_blockers = {}, ()
+        header.addWidget(self.blocker_strip)
+        self.body_layout.insertWidget(0, self.intent_header)
         self.config_tabs = QTabWidget()
         self.config_tabs.setAccessibleName('Workflow configuration')
         self.config_pages, self.page_layouts = {}, {}
@@ -290,6 +330,11 @@ class ConfigurationView(QWidget):
         self.run_fields.defaults_loaded.connect(self.refresh_proposal)
         self.update_mode()
 
+    def choose_goal(self, value):
+        self.goal.setCurrentIndex(self.goal.findData(value))
+        if value == 'advanced':
+            self.open_section('platforms')
+
     def choose_source(self, *_):
         if self._syncing_source:
             return
@@ -334,6 +379,7 @@ class ConfigurationView(QWidget):
         self.update_summary()
 
     def update_mode(self, *_):
+        self.goal_buttons[self.goal.currentData()].setChecked(True)
         integrated = bool(self.platform_checks) and self.goal.currentData() != 'advanced'
         self.guided.setVisible(self.goal.currentData() != 'advanced')
         self.legacy.setVisible(not integrated)
@@ -392,7 +438,9 @@ class ConfigurationView(QWidget):
             backends={name: item.currentText() for name, item in self.platform_backends.items()},
             operation=self.operation.currentText(), platform=self.platform.currentText(), backend=self.backend.currentText(), recipients=recipients, values=self.run_fields.values())
         self.readiness.setText('\n'.join(proposal.messages))
-        self.readiness.setVisible(bool(proposal.messages))
+        self.refresh_blockers(proposal.blockers)
+        self.readiness.setVisible(bool(proposal.messages) and not proposal.blockers)
+        self.refresh_choice_summaries(proposal)
         if proposal == self.current_proposal:
             return
         selected = self.proposed_flow.selected
@@ -405,6 +453,59 @@ class ConfigurationView(QWidget):
             self.proposal_detail.setText(node.label + ': ' + node.description + '. Settings are open on the left.')
         else:
             self.proposal_detail.setText('')
+
+    def refresh_choice_summaries(self, proposal):
+        guided = bool(self.platform_checks) and self.goal.currentData() != 'advanced'
+        platforms = [control.text() for control in self.platform_checks.values() if control.isChecked()] if guided else [self.platform.currentText()]
+        destinations = [control.text() for control in self.destination_checks.values() if control.isChecked()] if self.goal.currentData() == 'deliver' else []
+        revision = self.revision.text()
+        source = {'working-tree': 'Current files', 'HEAD': 'Latest commit'}.get(revision, revision or 'Not selected')
+        values = {'source': 'Source · ' + source,
+                  'platforms': 'Platforms · ' + (', '.join(platforms) or 'None selected'),
+                  'delivery': 'Delivery · ' + (', '.join(destinations) or ('None selected' if self.goal.currentData() == 'deliver'
+                      else 'Project workflow' if self.goal.currentData() == 'advanced' else 'Off'))}
+        issues = {node.section for node in proposal.phases if node.issue} | {row.section for row in proposal.blockers}
+        warning = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
+        for key, control in self.choice_summaries.items():
+            control.setIcon(warning if key in issues else QIcon())
+            control.set_summary(values[key])
+        self.choice_summaries['delivery'].setEnabled(self.goal.currentData() == 'deliver')
+        for key, label in (('source', 'Source'), ('platforms', 'Testing' if guided else 'Operation'), ('delivery', 'Delivery')):
+            index = self.config_tabs.indexOf(self.config_pages[key])
+            count = len(platforms) if key == 'platforms' else len(destinations)
+            self.config_tabs.setTabText(index, label + (f' ({count})' if key != 'source' else ''))
+            self.config_tabs.setTabIcon(index, warning if key in issues else QIcon())
+            self.config_tabs.setTabToolTip(index, values[key])
+        for category, (page, _) in self.delivery_categories.items():
+            count = sum(control.isChecked() for name, control in self.destination_checks.items()
+                if self.destination_categories[name] == category) if self.goal.currentData() == 'deliver' else 0
+            index = self.delivery_tabs.indexOf(page)
+            self.delivery_tabs.setTabText(index, category.removeprefix('Mobile ').capitalize() + (f' ({count})' if count else ''))
+
+    def refresh_blockers(self, blockers):
+        if blockers == self.current_blockers:
+            return
+        self.current_blockers = blockers
+        self.blocker_actions = {}
+        for blocker in blockers:
+            button = SelectionSummary()
+            button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning))
+            button.set_summary(blocker.label)
+            button.setStyleSheet(button.styleSheet() + 'QPushButton { border-left: 4px solid #b37c12; }')
+            button.clicked.connect(lambda checked=False, blocker=blocker: self.open_blocker(blocker))
+            self.blocker_actions[blocker.id] = button
+        self.blocker_strip.set_buttons(list(self.blocker_actions.values()))
+
+    def open_blocker(self, blocker):
+        self.open_section(blocker.section, blocker.target)
+        if blocker.field in self.run_fields.controls:
+            control = self.run_fields.controls[blocker.field]
+            self.ensureWidgetVisible(control)
+            control.setFocus(Qt.FocusReason.TabFocusReason)
+        else:
+            control = self.source_mode if blocker.section == 'source' else self.platform_checks.get(blocker.target)
+            if control:
+                control.setFocus(Qt.FocusReason.TabFocusReason)
 
     def open_proposed_card(self, key):
         if not key:
@@ -429,6 +530,12 @@ class ConfigurationView(QWidget):
                 self.destination_checks[target])
         elif section == 'platforms' and target in self.platform_checks:
             control = self.platform_checks[target]
+        elif section == 'platforms':
+            control = self.platform if self.goal.currentData() == 'advanced' or not self.platform_checks else next(iter(self.platform_checks.values()))
+        elif section == 'delivery':
+            control = self.delivery_tabs
+        elif section == 'advanced':
+            control = self.pattern
         else:
             control = item.toggle
         self.ensureWidgetVisible(control)

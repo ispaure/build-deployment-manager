@@ -3,7 +3,8 @@ from math import atan2, cos, sin
 from PySide6.QtCore import Qt, QPointF, Signal, QTimer
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (QGridLayout, QLabel, QPushButton,
-    QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
+    QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget,
+    QHeaderView, QStackedWidget, QTreeWidget, QTreeWidgetItem)
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
 
 FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', 'skipped'}
@@ -25,6 +26,94 @@ def effect_label(phase, plan):
     return {'test': 'Run checks', 'inspect': 'Inspect files', 'build': 'Build / package',
             'upload': 'Upload · approval required', 'deploy': 'Deliver · approval required',
             'publish': 'Publish · approval required', 'dispatch': 'Launch checks · approval required'}[effect]
+
+
+def stage_label(phase, plan):
+    """Presentation groups only: execution order still comes from dependencies."""
+    effect = phase.effect if phase.effect != 'inherit' else plan.effect
+    if phase.always or phase.kind == 'cleanup':
+        return 'Cleanup'
+    if getattr(phase, 'section', '') == 'source':
+        return 'Source'
+    return {'inspect': 'Inspection', 'test': 'Checks', 'build': 'Build / package',
+            'upload': 'Delivery / publication', 'deploy': 'Delivery / publication',
+            'publish': 'Delivery / publication', 'dispatch': 'Checks'}.get(effect, 'Checks')
+
+
+class StageBrowser(QTreeWidget):
+    """A readable hierarchy over exact steps, without changing the executable plan."""
+    selected = Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.setHeaderLabels(['Stage / step', 'Status', 'Purpose'])
+        self.setAccessibleName('Workflow stages. Expand a stage to explore its steps. Select a step for details.')
+        self.setRootIsDecorated(True)
+        self.setUniformRowHeights(False)
+        self.setWordWrap(True)
+        self.setIndentation(22)
+        self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.setStyleSheet('QTreeWidget::item { padding: 9px 6px; }')
+        self.currentItemChanged.connect(self.choose)
+
+    def choose(self, item, previous):
+        if item is not None:
+            self.selected.emit(item.data(0, Qt.ItemDataRole.UserRole) or '')
+
+    def load_plan(self, plan):
+        self.blockSignals(True)
+        self.clear()
+        self.steps, self.groups = {}, {}
+        for phase in plan.phases:
+            group = stage_label(phase, plan)
+            if group not in self.groups:
+                parent = QTreeWidgetItem([group])
+                self.addTopLevelItem(parent)
+                self.groups[group] = parent
+                for column in range(3):
+                    font = parent.font(column); font.setBold(True); parent.setFont(column, font)
+                    parent.setBackground(column, self.palette().alternateBase())
+                parent.setToolTip(0, 'Double-click or use Right arrow to expand. Grouping does not imply execution order.')
+            row = QTreeWidgetItem([title(phase), '', effect_label(phase, plan)])
+            row.setData(0, Qt.ItemDataRole.UserRole, phase.id)
+            row.setToolTip(0, title(phase) + '\nStep identity: ' + phase.id)
+            self.groups[group].addChild(row)
+            self.steps[phase.id] = row
+        for group, parent in self.groups.items():
+            count = parent.childCount()
+            parent.setText(0, f'{group} · {count} ' + ('step' if count == 1 else 'steps'))
+            parent.setExpanded(len(plan.phases) <= 12)
+        self.blockSignals(False)
+
+    def update_facts(self, plan, facts, selected, preview):
+        states = display_states(plan, facts, preview)
+        for key, row in self.steps.items():
+            status, reason = states[key]
+            row.setText(1, status.replace('_', ' ').capitalize())
+            row.setToolTip(1, reason)
+        for parent in self.groups.values():
+            counts = {}
+            for index in range(parent.childCount()):
+                state = parent.child(index).text(1)
+                counts[state] = counts.get(state, 0) + 1
+            parent.setText(1, ' · '.join(f'{count} {state.lower()}' for state, count in counts.items()))
+            approvals = sum((phase.effect if phase.effect != 'inherit' else plan.effect) in
+                {'upload', 'deploy', 'publish', 'dispatch'} for phase in plan.phases
+                if self.steps[phase.id].parent() is parent)
+            parent.setText(2, (f'{approvals} action' + (' requires' if approvals == 1 else 's require') + ' separate approval')
+                if approvals else 'Expand to explore steps')
+        self.blockSignals(True)
+        if selected:
+            row = self.steps[selected]
+            row.parent().setExpanded(True)
+            if self.currentItem() is not row:
+                self.setCurrentItem(row)
+                self.scrollToItem(row)
+        elif self.currentItem() and self.currentItem().data(0, Qt.ItemDataRole.UserRole):
+            self.setCurrentItem(None)
+        self.blockSignals(False)
 
 
 def layout_positions(phases):
@@ -63,7 +152,9 @@ def display_states(plan, facts, preview=False):
         if not preview and not phase.always and blockers and (status in PENDING or status.startswith('waiting')):
             status, reason = 'blocked', 'Will not run because a prerequisite did not pass: ' + ', '.join(blockers)
         elif not reason and status in PENDING:
-            reason = ('This step waits for prerequisites and running work to finish; it still runs after failure.' if phase.always
+            reason = (('This step waits for its declared prerequisites to finish; it still runs after failure.'
+                       if phase.dependencies or getattr(phase, 'waits_for', ()) else
+                       'Whole-workflow cleanup waits for owned running work to finish; it still runs after failure.') if phase.always
                       else 'Waits for: ' + ', '.join(phase.dependencies) if phase.dependencies
                       else 'No prerequisites. Scheduling and resources determine when it starts.')
         states[phase.id] = (status, reason)
@@ -120,7 +211,8 @@ class FlowCanvas(QWidget):
         self.order_edges = {(key, phase.id) for phase in plan.phases for key in getattr(phase, 'waits_for', ())}
         self.edges = [(key, phase.id) for phase in plan.phases
                       for key in (*phase.dependencies, *getattr(phase, 'waits_for', ()))]
-        width = 176 if getattr(plan, 'proposed', False) else 184
+        compact = getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False)
+        width = 176 if compact else 184
         column_sections = {}
         for phase in plan.phases:
             section = getattr(phase, 'section', '')
@@ -147,7 +239,7 @@ class FlowCanvas(QWidget):
             card.setObjectName('workflowCard')
             card.setCheckable(True)
             card.setFixedWidth(width)
-            card.setMinimumHeight(64 if getattr(plan, 'proposed', False) else 100)
+            card.setMinimumHeight(64 if compact else 100)
             card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
             body = QVBoxLayout(card)
             body.setContentsMargins(9, 7, 7, 7)
@@ -188,7 +280,7 @@ class FlowCanvas(QWidget):
             card, status_label, counts_label = self.cards[phase.id]
             status, reason = self.states[phase.id]
             label = {'proposed': 'Proposed', 'needs_selection': 'Needs selection', 'blocked': 'Won’t run · prerequisite failed', 'planned': 'Planned',
-                     'queued': 'Waiting to start', 'awaiting_review': 'Waiting for approval',
+                     'queued': 'Waiting to start', 'waiting_resource': 'Waiting for shared resource', 'awaiting_review': 'Waiting for approval',
                      'skipped': 'Skipped · did not run'}.get(status, status.replace('_', ' ').capitalize())
             fact = facts.get(phase.id, {})
             seconds = fact.get('seconds')
@@ -211,7 +303,7 @@ class FlowCanvas(QWidget):
             for child in card.findChildren(QLabel):
                 child.setStyleSheet(('font-weight: 600;' if child.property('workflowHeading') else '') +
                     ('color: ' + text_color + ';' if muted else ''))
-            card.setMinimumHeight(max(64 if getattr(plan, 'proposed', False) else 100,
+            card.setMinimumHeight(max(64 if getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False) else 100,
                 card.layout().totalHeightForWidth(card.width())))
             context = card.property('workflowContext')
             card.setToolTip('\n'.join(filter(None, (title(phase), context, effect_label(phase, plan), reason, phase.id))))
@@ -223,6 +315,15 @@ class FlowCanvas(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Section headings belong to visible bands, including a vertical boundary.
+        for index, header in enumerate(self.headers):
+            rect = header.geometry().adjusted(-16, -4, 16, 0)
+            rect.setBottom(self.height() - 2)
+            color = self.palette().alternateBase().color()
+            color.setAlpha(110 if index % 2 == 0 else 40)
+            painter.fillRect(rect, color)
+            painter.setPen(QPen(self.palette().mid().color(), 1))
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
         pen = QPen(self.palette().mid().color(), 1.7)
         for source, target in self.edges:
             start_rect, end_rect = self.cards[source][0].geometry(), self.cards[target][0].geometry()
@@ -293,7 +394,15 @@ class WorkflowFlow(QWidget):
         self.whole.setCheckable(True)
         self.whole.clicked.connect(lambda: self.select(''))
         tools = QHBoxLayout(); tools.setContentsMargins(0, 0, 0, 0)
-        tools.addWidget(self.whole); tools.addStretch()
+        tools.addWidget(self.whole)
+        self.stages_button = QPushButton('Stages')
+        self.map_button = QPushButton('Dependency map')
+        for button in (self.stages_button, self.map_button):
+            button.setCheckable(True)
+            tools.addWidget(button)
+        self.stages_button.clicked.connect(lambda: self.show_map(False))
+        self.map_button.clicked.connect(lambda: self.show_map(True))
+        tools.addStretch()
         self.fit_button, self.zoom_in, self.zoom_out = QPushButton('Fit'), QPushButton('+'), QPushButton('−')
         for control, name in ((self.fit_button, 'Fit whole workflow'), (self.zoom_in, 'Zoom in'), (self.zoom_out, 'Zoom out')):
             control.setAccessibleName(name); control.setToolTip(name); control.setMaximumWidth(52); tools.addWidget(control)
@@ -307,7 +416,12 @@ class WorkflowFlow(QWidget):
         self.fit_button.clicked.connect(self.fit_map)
         self.zoom_in.clicked.connect(lambda: self.scroll.zoom(1.2))
         self.zoom_out.clicked.connect(lambda: self.scroll.zoom(1 / 1.2))
-        layout.addWidget(self.scroll, 1)
+        self.browser = StageBrowser()
+        self.browser.selected.connect(self.select)
+        self.views = QStackedWidget()
+        self.views.addWidget(self.browser)
+        self.views.addWidget(self.scroll)
+        layout.addWidget(self.views, 1)
         self.legend = legend = QLabel('Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
         legend.setWordWrap(True)
         layout.addWidget(legend)
@@ -319,6 +433,12 @@ class WorkflowFlow(QWidget):
     def reset(self, plan, preview=False):
         self.plan, self.facts, self.selected, self.preview = plan, {}, '', preview
         self.canvas.reset(plan)
+        proposed = getattr(plan, 'proposed', False)
+        if not proposed:
+            self.browser.load_plan(plan)
+        self.stages_button.setVisible(not proposed)
+        self.map_button.setVisible(not proposed)
+        self.show_map(proposed)
         self.whole.setVisible(not getattr(plan, 'proposed', False))
         if getattr(plan, 'proposed', False):
             self.whole.setText('Overview')
@@ -326,14 +446,39 @@ class WorkflowFlow(QWidget):
             self.legend.setText('Review resolves the exact steps. Nothing starts here.')
         else:
             self.whole.setText('Reviewed plan' if preview else 'Whole workflow')
-            self.guidance.setText(f'Read left to right. Arrows show prerequisites. Up to {plan.max_workers} steps can run together, subject to shared resources. Select a card for details.')
-            self.legend.setText('Prepared plan · not started. Select a card for its exact prerequisites.' if preview else
-                'Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
-        if self.canvas.order_edges:
-            self.legend.setText(self.legend.text() + '\nDotted arrows: wait for completion, not success.')
+        self.update_guidance()
         self.set_facts({})
         self.scroll.verticalScrollBar().setValue(0)
         self.center_timer.start(0)
+
+    def show_map(self, visible):
+        self.views.setCurrentIndex(1 if visible else 0)
+        self.stages_button.setChecked(not visible)
+        self.map_button.setChecked(visible)
+        for control in (self.fit_button, self.zoom_in, self.zoom_out):
+            control.setVisible(visible)
+        self.update_guidance()
+        if visible:
+            self.center_timer.start(0)
+
+    def update_guidance(self):
+        if self.plan is None or getattr(self.plan, 'proposed', False):
+            return
+        if self.preview:
+            self.legend.setText('Prepared plan · not started. Select a step for its exact prerequisites.')
+        elif self.views.currentIndex() == 0:
+            self.legend.setText('Statuses reflect execution. Select a step to inspect results, approval requirements or blockers.')
+        else:
+            self.legend.setText('Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
+        if self.views.currentIndex() == 1 and self.canvas.order_edges:
+            self.legend.setText(self.legend.text() + '\nDotted arrows: wait for completion, not success.')
+        if self.views.currentIndex() == 0:
+            self.guidance.setText(f'{len(self.plan.phases)} execution steps grouped by purpose. '
+                'Expand a stage with its arrow or double-click; select a step for details. '
+                'Groups can overlap: prerequisites determine order. Use Dependency map to trace them.')
+        else:
+            self.guidance.setText(f'Read left to right. Arrows show prerequisites. Up to {self.plan.max_workers} steps can run together. '
+                'Drag to pan; use + to zoom. Stages returns to the readable step list.')
 
     def center_map(self):
         self.scroll.fit_map()
@@ -347,6 +492,8 @@ class WorkflowFlow(QWidget):
         if self.plan:
             self.whole.setChecked(not self.selected)
             self.canvas.update_facts(self.plan, facts, self.selected, self.preview)
+            if not getattr(self.plan, 'proposed', False):
+                self.browser.update_facts(self.plan, facts, self.selected, self.preview)
             self.center_timer.start(0)
 
     def select(self, key):

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .redaction import Redactor
+from .ui_components import style_button, style_dialog_buttons
 
 
 class SettingsTask(QRunnable):
@@ -83,12 +84,13 @@ class SettingsDialog(QDialog):
         self.status = QLabel('Loading project settings…')
         self.status.setWordWrap(True)
         layout.insertWidget(1, self.status)
-        self.retry = QPushButton('Retry loading settings')
+        self.retry = style_button(QPushButton('Retry loading settings'), 'primary')
         self.retry.clicked.connect(self.load)
         retry_actions = QHBoxLayout()
         retry_actions.addWidget(self.retry)
         retry_actions.addStretch()
         layout.addLayout(retry_actions)
+        style_dialog_buttons(buttons)
         layout.addWidget(buttons)
 
         self.redact = Redactor(os.environ.get(name) for name in

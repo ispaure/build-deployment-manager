@@ -4,15 +4,34 @@ Select the registered project checkout at the top of the manager. Add its
 checkout if necessary; adding a project also authorizes its adapter. Each checkout retains its own settings and
 history, even when two checkouts belong to the same project.
 
-Use the visible Add project button to choose a folder. The preview identifies the
+Use Add your first project, or More → Add project, to choose a folder. The preview identifies the
 project, its platforms and whether its own Python environment exists before you
 add it. The newly added project becomes selected. A setup notice appears only when the project environment needs attention.
 Project settings has one toolbar entry; setup does not repeat it.
+The toolbar shows project names; hover to see the checkout path. Duplicate names
+include their paths. More contains project registration, setup, cleanup and app
+settings; Help remains directly available.
 
 Use New run to begin. The workflow uses three guided pages, with Back/Next
 actions and an explicit Start button. Past runs is separate history navigation.
+The action footer stays below the scrolling workspace on every page. Filled blue
+buttons identify the main next action; Back, Cancel and utilities use neutral
+buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 ## Choose work
+
+Run checks and Prepare and deliver are visible, exclusive goal buttons.
+Advanced opens the project operation controls. The source, platform and delivery
+summaries stay above the configuration tabs; click one to open its choices.
+Tabs show selection counts and warning icons for unresolved requirements.
+Switching to Run checks excludes delivery without discarding saved destination
+choices; switching back restores their visibility.
+
+Presets appears only in Choose work. Selecting a preset loads its saved choices
+and invalidates any previous review; it never starts work. The adjacent menu
+contains Save preset and Delete preset. Edits mark the selected preset Modified.
+Saving a preset keeps the current choices and review; deleting one leaves the
+current draft intact. Presets remain private to the selected checkout.
 
 Configuration uses two resizable columns. Source, Testing, Delivery and Advanced
 tabs keep settings compact on the left. Testing presents a platform checkbox and
@@ -58,7 +77,7 @@ test pattern, build number override or optional custom release identifier. Open 
 only to this inspection. Next: review plan prepares source and checks
 prerequisites asynchronously, then opens Review. It does not start the plan's
 commands. Trusted project preparation code remains responsible for its own source
-snapshot behavior. Setup contains accounts, test machines, connection checks and
+snapshot behavior. More contains accounts, test machines, connection checks and
 storage cleanup. Connection checks first prepare a reviewable plan.
 
 If Review plan cannot proceed, its explanation appears beside that button. Select
@@ -101,22 +120,36 @@ GitHub checks need no release identifier: launching checks is a separately revie
 external action, distinct from publishing. Native tester delivery can still require
 local native receipts; unsupported combinations explain that prerequisite.
 
-Configuration settings and the proposed map scroll independently; the window
-can also scroll on shorter displays. Advanced options contains an optional custom release identifier.
+Configuration settings and the proposed map scroll independently; the workspace
+can also scroll on shorter displays while the action footer stays visible.
+Advanced options contains an optional custom release identifier.
 Leave it blank for the owning project's automatic naming policy. The suggested
 identifier is based on project version and local tags; publication rechecks remote
 availability. Preparing a suggestion does not create or reserve a remote tag.
 
 ## Review and results
 
-Review shows the captured source, selected platform, execution host and planned
-work before Start. The exact dependency map stays visible; commands and complete plan data
-are optional technical details. Uploads and delivery actions are marked as needing
+Review opens on Run summary. Captured source, platforms and execution hosts
+appear across the top. The workflow preserves the same Source, platform, preparation
+and destination cards and arrows captured from Choose work. Execution substeps
+do not add columns or split these overview cards. Click a card to open its exact
+subtasks inside Run summary. Destination details include captured notes, recipients
+and approval requirements.
+Back to choices and Start remain below the scrolling summary. Exact steps and
+dependencies opens the resizable stage browser and inspector; Technical details
+contains commands and the complete redacted plan. Uploads and delivery actions are marked as needing
 separate approval. A working tree with uncommitted changes is identified explicitly.
 
 Results displays reported test counts, individual cases and measured timing.
 Unreported counts are shown as unavailable rather than successful zeroes. Cancel
 is available during work, and delivery/retry actions appear only when applicable.
+An attention area above the workflow names failed steps and pending approvals.
+View problems opens failed tests across the whole run, clearing unrelated search
+and card filters, or selects the failed step when no individual report exists.
+Unknown outcomes take priority and open their step evidence for reconciliation.
+Review delivery uses the same retained-evidence verification and explicit approval
+dialog as the footer; it stays disabled while active work or verification prevents
+continuation. Independent failures and ready approvals can appear together.
 Past runs explains its empty state and enables viewing only after a run is selected.
 Viewing a saved run never enables Start for that historical plan.
 
@@ -133,11 +166,32 @@ responsible for obeying this rule in their own storage and artifact outputs.
 ## Review
 
 Read the source identity, selected platforms and exact destination identities.
-The dependency map shows cards on the left and an inspector on the right. Arrows
+Run summary opens first, separating work eligible to start from external actions
+and dependent work that wait for approval. Hosted test launches are identified as
+reviewed external actions too. Legacy external operations retain confirmation
+before Start. Clicking an overview card opens its subtask list and a resizable
+details pane inside Run summary. Selecting a subtask shows its prerequisites,
+state and declared outputs. All workflow cards returns to the overview; inspection
+never starts commands. Inspect selected step in full workflow opens Exact steps
+and dependencies with that step selected. Its readable hierarchy is on the left and its resizable inspector
+on the right. Returning to Run summary preserves the selected step. Full source
+identity is available in the source tooltip and Technical details. Large plans start with their purpose groups collapsed, with step counts, statuses
+and approval counts visible. Expand a group with its arrow, double-click, or the
+Right arrow key, then select a step to inspect it. These are the individual
+execution steps supplied by the project adapter; a check step can contain many
+test cases. Grouping is for navigation and does not change scheduling.
+
+Dependency map switches to the exact graph. Section bands delimit its headings.
+Fit shows the full graph; zoom and drag to explore larger maps. Stages returns to
+the readable hierarchy and retains the selected step. Arrows
 show prerequisites; branches can overlap when worker and shared-resource limits
 allow. Select a card to inspect prerequisites, outputs and approval requirements.
+In this technical view, solid arrows require successful prerequisites and dotted
+arrows wait for completion without requiring success. These exact execution
+links can cross between branches; the Run summary preserves the chosen overview
+instead of laying out every such link.
 Whole workflow restores the overall review. Selecting cards executes no code.
-Show technical details and complete plan reveals the dependency table and commands. Each step shows
+Technical details opens the dependency table and commands. Each step shows
 its kind, effect, required/optional status, timeout and dependencies. Complete plan
 contains the redacted command configuration for detailed inspection. Changing any
 selection requires a fresh inspection. Start validation or Start validation and
@@ -146,7 +200,29 @@ legacy whole-plan external operations still ask for explicit confirmation.
 
 ## Run and results
 
-The same dependency map stays visible during execution. Click a card to scope
+Android and iOS validation can proceed independently within the worker limit.
+When a step needs a resource already in use, its card shows Waiting and names
+the shared resource. Open the card and select the subtask to see the resource
+capacity and other steps that request it. A resource wait differs from a failed
+prerequisite; unrelated platform work can continue. Platform-specific sequences,
+such as cleaning up one iOS simulator before starting the next, still apply.
+Previously saved plans retain their original order; prepare a new plan after
+updating the manager and project adapter to use the new scheduling policy.
+
+Run summary retains the same captured choices and work groups during execution
+and while viewing retained runs. Group statuses and waiting reasons update in
+place, including failed prerequisites and eligible approvals on independent branches.
+The same card drilldown works for running and saved results. Shared preparation stays in the chosen package cards, with shared task references
+where needed. Other resolved subtasks exposes any work the project did not map
+to a chosen card. Scheduling waits are explained inside the applicable card;
+the technical Dependency map retains their exact edges. When source capture
+already happened during planning, Source shows that identity without inventing
+executable subtasks.
+The overall outcome, next action and reported case count stay visible when a step
+is selected. An unknown external outcome takes priority over approval guidance.
+
+Results and exact steps opens the same stages, dependency map and resizable
+inspector used for detailed investigation. Select a step or card to scope
 Results, Tests, Timing and Output to that step. Whole workflow restores combined
 totals. Switching cards preserves the open inspector tab. The splitter can be
 resized; larger maps scroll in both directions. Cards support Tab and Space.

@@ -149,7 +149,7 @@ class Executor:
                         for phase in list(pending):
                             if len(running)>=plan.max_workers:break
                             if any(name not in rows or rows[name]['status']=='running' for name in (*phase.dependencies, *phase.waits_for)):continue
-                            if phase.always and running:continue
+                            if phase.always and running and not phase.dependencies and not phase.waits_for:continue
                             if phase.always and not phase.dependencies and not phase.waits_for and plan.max_workers>1 and any(not p.always for p in pending):continue
                             blocked = any(rows[name]['status']!='passed' for name in phase.dependencies)
                             row = None

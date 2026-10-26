@@ -28,6 +28,53 @@ class DependencyFlowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_large_plan_stages_retain_exact_steps_and_sync_with_map(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from build_manager.workflow_ui import WorkflowFlow
+        with TemporaryDirectory() as directory:
+            phases = [Phase('source', (sys.executable, '-V'), directory, section='source', effect='inspect')]
+            for index in range(39):
+                phases.append(Phase(f'check-{index}', (sys.executable, '-V'), directory,
+                    dependencies=(phases[-1].id,), label=f'Check suite {index + 1}'))
+            phases.extend((Phase('package', (sys.executable, '-V'), directory,
+                dependencies=('check-38',), effect='build'),
+                Phase('deliver', (sys.executable, '-V'), directory,
+                    dependencies=('package',), effect='upload')))
+            plan = Plan('Fixture', 'Review', {}, tuple(phases), directory)
+            original = plan.data()
+            flow = WorkflowFlow(); flow.resize(850, 600); flow.reset(plan, preview=True); flow.show()
+            self.addCleanup(flow.close)
+            self.app.processEvents()
+            self.assertIs(flow.views.currentWidget(), flow.browser)
+            self.assertEqual(set(flow.browser.steps), {phase.id for phase in phases})
+            self.assertFalse(flow.browser.groups['Checks'].isExpanded())
+            self.assertIn('39 steps', flow.browser.groups['Checks'].text(0))
+            self.assertIn('separate approval', flow.browser.groups['Delivery / publication'].text(2))
+            group = flow.browser.groups['Checks']
+            flow.browser.setCurrentItem(group)
+            QTest.keyClick(flow.browser, Qt.Key.Key_Right)
+            self.assertTrue(group.isExpanded())
+            flow.browser.setCurrentItem(flow.browser.steps['check-38'])
+            self.assertEqual(flow.selected, 'check-38')
+            flow.map_button.click()
+            self.assertIs(flow.views.currentWidget(), flow.scroll)
+            self.assertTrue(flow.canvas.cards['check-38'][0].isChecked())
+            flow.canvas.cards['deliver'][0].click()
+            flow.stages_button.click()
+            self.assertEqual(flow.browser.currentItem(), flow.browser.steps['deliver'])
+            self.assertTrue(flow.browser.groups['Delivery / publication'].isExpanded())
+            flow.whole.click()
+            self.assertEqual(flow.selected, '')
+            flow.set_facts({'check-0': dict(status='failed')})
+            # Preview never predicts execution; run mode does explain blocked work.
+            self.assertEqual(flow.browser.steps['check-1'].text(1), 'Planned')
+            flow.reset(plan)
+            flow.set_facts({'check-0': dict(status='failed')})
+            self.assertEqual(flow.browser.steps['check-1'].text(1), 'Blocked')
+            self.assertIn('blocked', flow.browser.groups['Checks'].text(1))
+            self.assertEqual(plan.data(), original)
+
     def test_destination_options_follow_their_checkbox_and_submit_only_active_inputs(self):
         with TemporaryDirectory() as directory:
             project = OtherProject(Path(directory))

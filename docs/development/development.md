@@ -124,3 +124,4 @@ from its parent. Raw logs, screenshots and timing reports stay under ignored
 - [Guided testing and delivery implementation plan](ui-improvement-plan.md)
 - [UX redesign: implementation audit and second pass](ux-redesign-audit.md)
 - [UX redesign brief: validation and coordinated delivery](ux-redesign-brief.md)
+- [Clearer plan review and run progress brief](second-stage-ui-brief.md)

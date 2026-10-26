@@ -17,28 +17,40 @@ class ProposedStep:
 
 
 @dataclass(frozen=True)
+class ChoiceBlocker:
+    id: str
+    label: str
+    section: str
+    target: str = ''
+    field: str = ''
+
+
+@dataclass(frozen=True)
 class ProposedWorkflow:
     phases: tuple[ProposedStep, ...]
     messages: tuple[str, ...] = ()
     proposed: bool = True
+    blockers: tuple[ChoiceBlocker, ...] = ()
 
 
 def propose(*, capability, goal, revision, platforms, destinations, backends,
             operation='', platform='', backend='', recipients=None, values=None):
     """Summarize intent, never manufacture executable phases or verified readiness."""
     messages = []
+    blockers = []
     source = ('Current files · includes edits' if revision == 'working-tree' else
               'Latest commit · excludes edits' if revision == 'HEAD' else
               'Specific revision: ' + revision if revision.strip() else 'Choose a source revision')
     nodes = [ProposedStep('source', 'Source', source, section='source', issue=not revision.strip())]
     if not revision.strip():
         messages.append('Choose a commit, branch or tag in Source.')
+        blockers.append(ChoiceBlocker('source', 'Choose source…', 'source'))
     if goal == 'advanced' or not capability:
         nodes.append(ProposedStep('operation', operation or 'Choose an operation',
             ' · '.join(filter(None, (platform, backend))), ('source',), 'platforms',
             platforms=(platform,), backend=backend))
         messages.append('This project defines the operation’s internal steps and effects during Review.')
-        return ProposedWorkflow(tuple(nodes), tuple(messages))
+        return ProposedWorkflow(tuple(nodes), tuple(messages), blockers=tuple(blockers))
     checks = []
     source_requirements = {}
     for target in platforms:
@@ -52,6 +64,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         nodes.append(ProposedStep('choose-platforms', 'Choose platforms', 'Select at least one platform to test.',
                                   ('source',), 'platforms', issue=True))
         messages.append('Select at least one platform to see its branches.')
+        blockers.append(ChoiceBlocker('platforms', 'Choose platforms…', 'platforms'))
     def platform_requirements(targets):
         required = []
         for target in targets:
@@ -60,6 +73,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                 label = capability['platforms'][target].get('label', target).split(' (')[0]
                 nodes.append(ProposedStep(key, 'Select ' + label, 'Required by the selected delivery.',
                                           ('source',), 'platforms', target, True, platforms=(target,)))
+                blockers.append(ChoiceBlocker(key, 'Select ' + label + '…', 'platforms', target))
             required.append(key)
         return tuple(required)
 
@@ -99,6 +113,9 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                 nodes.append(ProposedStep(prepare, 'Prepare package', label + ' package · project resolves build steps during Review',
                     required or ('choose-platforms',), 'delivery', name, bool(missing), platforms=tuple(row['platforms'])))
             people = (recipients or {}).get(row.get('recipient_field'), [])
+            if row.get('recipient_field') and not people:
+                blockers.append(ChoiceBlocker('recipients.' + name, 'Choose ' + label + ' recipients…',
+                    'delivery', name, row['recipient_field']))
             if row.get('recipient_field') and people:
                 for index, person in enumerate(people):
                     nodes.append(ProposedStep('deliver.' + name + '.' + str(index), person,
@@ -112,6 +129,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             nodes.append(ProposedStep('choose-delivery', 'Choose destinations', 'Select where successful builds should go.',
                                       tuple(checks) or ('choose-platforms',), 'delivery', issue=True))
             messages.append('Select a delivery destination, or choose Validate for checks only.')
+            blockers.append(ChoiceBlocker('delivery', 'Choose destinations…', 'delivery'))
         for policy in ('committed', 'clean-checkout'):
             names = [name for name, required in source_requirements.items() if required == policy]
             if names:
@@ -121,4 +139,6 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             messages.append('Delivery policy may require committed source. Latest commit excludes your uncommitted edits.')
     if revision == 'working-tree' and any(backends.get(target) == 'GitHub' for target in platforms):
         messages.append('GitHub checks use committed source. Choose Latest commit or a specific revision to exclude local edits.')
-    return ProposedWorkflow(tuple(nodes), tuple(messages))
+    if revision == 'working-tree' and (source_requirements or any(backends.get(target) == 'GitHub' for target in platforms)):
+        blockers.insert(0, ChoiceBlocker('source', 'Choose committed source…', 'source'))
+    return ProposedWorkflow(tuple(nodes), tuple(messages), blockers=tuple(blockers))

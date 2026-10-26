@@ -19,9 +19,9 @@ class SchedulerTests(unittest.TestCase):
         body=code or f'import time,json;from pathlib import Path;a=time.time();time.sleep(.3);Path({str(target)!r}).write_text(json.dumps([a,time.time()]))'
         return Phase(name,(sys.executable,'-c',body),str(self.root),dependencies=dependencies,resources=resources or {},always=always)
 
-    def run_plan(self,phases,workers=2):
+    def run_plan(self,phases,workers=2,event=lambda value:None):
         plan=Plan('Fixture','parallel',{},tuple(phases),str(self.root/'workspace'),max_workers=workers)
-        return Executor(resource_directory=self.root/'resources').run(plan,self.root/'result')
+        return Executor(resource_directory=self.root/'resources',event=event).run(plan,self.root/'result')
 
     def times(self,name):return json.loads((self.root/(name+'.json')).read_text())
 
@@ -32,11 +32,16 @@ class SchedulerTests(unittest.TestCase):
         self.assertLess(max(a[0],b[0]),min(a[1],b[1]));self.assertGreaterEqual(c[0],max(a[1],b[1]))
 
     def test_exclusive_resources_prevent_overlap_without_deadlock(self):
+        events=[]
         result=self.run_plan([self.phase('a',resources={'device:fixture':1,'workspace:fixture':1}),
-                              self.phase('b',resources={'workspace:fixture':1,'device:fixture':1})])
+                              self.phase('b',resources={'workspace:fixture':1,'device:fixture':1})],event=events.append)
         self.assertEqual(result['status'],'passed')
         a,b=self.times('a'),self.times('b')
         self.assertTrue(a[1]<=b[0] or b[1]<=a[0])
+        waiting=[event for event in events if event['type']=='waiting']
+        self.assertTrue(waiting)
+        self.assertEqual(waiting[0]['resource'],'device:fixture')
+        self.assertEqual(waiting[0]['capacity'],1)
 
     def test_failure_blocks_consumer_and_cleanup_runs_once(self):
         result=self.run_plan([self.phase('fail',code='raise SystemExit(3)'),self.phase('independent'),
@@ -79,6 +84,18 @@ class SchedulerTests(unittest.TestCase):
         for process in processes:
             stdout,stderr=process.communicate(timeout=15);self.assertEqual(process.returncode,0,stderr.decode());values.append(int(stdout))
         self.assertEqual(sorted(values),[1,2,3,4])
+
+    def test_scoped_cleanup_does_not_wait_for_an_unrelated_platform(self):
+        marker=self.root/'cleanup-finished'
+        unrelated=('from pathlib import Path;import time;deadline=time.monotonic()+4\n'
+                   f'while not Path({str(marker)!r}).exists():\n'
+                   '    assert time.monotonic()<deadline, "Scoped cleanup waited for unrelated work"\n'
+                   '    time.sleep(.01)')
+        cleanup=f'from pathlib import Path;Path({str(marker)!r}).write_text("done")'
+        result=self.run_plan([self.phase('owned',code='pass'),self.phase('other-platform',code=unrelated),
+            self.phase('owned-cleanup',dependencies=('owned',),always=True,code=cleanup)])
+        self.assertEqual(result['status'],'passed')
+        self.assertTrue(marker.exists())
 
     def test_branch_cleanup_can_unblock_next_sequential_device(self):
         phases=(self.phase('first'),self.phase('first-cleanup',dependencies=('first',),always=True,code='print("retired first device")'),

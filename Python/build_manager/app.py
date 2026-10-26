@@ -28,8 +28,10 @@ def main(argv=None):
 # Qt imports are isolated in this GUI-only module.
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QVBoxLayout, QWidget, QMenu, QToolButton, QGroupBox, QScrollArea, QFrame, QInputDialog)
+from PySide6.QtCore import Qt
 from .bridge import ProjectBridge
 from .ui import ManagerPanel
+from .ui_components import style_button
 
 
 class ManagerWindow(QWidget):
@@ -45,38 +47,37 @@ class ManagerWindow(QWidget):
         self.layout.setSpacing(6)
         self.controls = QHBoxLayout()
         self.projects = QComboBox()
+        self.projects.setMinimumContentsLength(18)
+        self.projects.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.projects.setAccessibleName('Selected project checkout')
         self.controls.addWidget(self.projects,1)
         self.buttons = []
-        self.add_project = QPushButton('Add project…')
-        self.add_project.clicked.connect(self.add)
-        self.controls.addWidget(self.add_project)
-        self.buttons.append(self.add_project)
         self.project_settings = QPushButton('Project settings…')
         self.project_settings.clicked.connect(self.open_project_settings)
         self.controls.addWidget(self.project_settings)
         self.buttons.append(self.project_settings)
+        self.more = QToolButton()
+        self.more.setText('More')
+        self.more.setAccessibleName('Project, setup and application menu')
+        menu = QMenu(self.more)
         self.menu_actions = {}
-        for title, actions in (
-                ('Project', [('Locate moved checkout…', self.locate),
-                             ('Remove registration', self.remove)]),
-                ('Setup', [('Accounts…', self.accounts), ('Test machines…', self.test_machines),
-                           ('Check connections and settings…', lambda: self.panel.verify_settings() if self.panel else None),
-                           ('Clean up builds…', lambda: self.panel.clean_builds() if self.panel and hasattr(self.panel.project, 'storage_inventory') else None)])):
-            button = QToolButton()
-            button.setText(title)
-            button.setAccessibleName(title + ' menu')
-            menu = QMenu(button)
-            for label, action in actions:
+        for group in (
+                [('Add project…', self.add), ('Locate moved checkout…', self.locate),
+                 ('Remove registration', self.remove)],
+                [('Accounts…', self.accounts), ('Test machines…', self.test_machines),
+                 ('Check connections and settings…', lambda: self.panel.verify_settings() if self.panel else None),
+                 ('Clean up builds…', lambda: self.panel.clean_builds() if self.panel and hasattr(self.panel.project, 'storage_inventory') else None)],
+                [('App settings…', self.open_app_settings)]):
+            if self.menu_actions:
+                menu.addSeparator()
+            for label, action in group:
                 self.menu_actions[label] = menu.addAction(label, action)
-            button.setMenu(menu)
-            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-            self.controls.addWidget(button)
-            self.buttons.append(button)
-        self.app_settings = QPushButton('App settings…')
-        self.app_settings.clicked.connect(self.open_app_settings)
-        self.controls.addWidget(self.app_settings)
-        self.buttons.append(self.app_settings)
+        self.add_project = self.menu_actions['Add project…']
+        self.app_settings = self.menu_actions['App settings…']
+        self.more.setMenu(menu)
+        self.more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.controls.addWidget(self.more)
+        self.buttons.append(self.more)
         self.documentation_window = None
         self.help_button = QToolButton()
         self.help_button.setText('?')
@@ -102,7 +103,7 @@ class ManagerWindow(QWidget):
         self.setup_summary = QLabel()
         self.setup_summary.setWordWrap(True)
         setup_layout.addWidget(self.setup_summary, 1)
-        self.setup_action = QPushButton('Add your first project…')
+        self.setup_action = style_button(QPushButton('Add your first project…'), 'primary')
         self.setup_action.clicked.connect(self.next_setup_step)
         setup_layout.addWidget(self.setup_action)
         self.layout.addWidget(self.setup_card)
@@ -142,12 +143,19 @@ class ManagerWindow(QWidget):
         try:
             action()
         except (OSError,ValueError,RuntimeError,KeyError) as error:
-            self.status.setText(str(error))
+            self.show_status(str(error))
+
+    def show_status(self, text):
+        self.status.setText(text)
+        self.status.show()
 
     def refresh(self):
         data=self.registry.read();self.projects.blockSignals(True);self.projects.clear()
+        names = [entry['name'] for entry in data['projects'].values()]
         for key,row in data['projects'].items():
-            self.projects.addItem(row['name']+' · '+row['root'],key)
+            label = row['name'] + (' · ' + row['root'] if names.count(row['name']) > 1 else '')
+            self.projects.addItem(label, key)
+            self.projects.setItemData(self.projects.count() - 1, row['root'], Qt.ItemDataRole.ToolTipRole)
         self.projects.setCurrentIndex(self.projects.findData(data.get('selected')))
         self.projects.blockSignals(False);self.select()
 
@@ -155,10 +163,13 @@ class ManagerWindow(QWidget):
         if self.active:
             return
         key=self.projects.currentData()
+        self.status.hide()
+        self.projects.setToolTip(self.projects.itemData(self.projects.currentIndex(), Qt.ItemDataRole.ToolTipRole) or '')
         self.empty.setVisible(not bool(key))
         self.project_settings.setEnabled(bool(key))
         self.setup_card.hide()
         if not key:
+            self.setup_card.show()
             self.setup_summary.setText('Start by adding a project. Its source files and existing settings stay in their project folder.')
             self.setup_action.setText('Add your first project…')
         for label in ('Locate moved checkout…', 'Remove registration',
@@ -167,6 +178,8 @@ class ManagerWindow(QWidget):
         if self.panel:
             if not self.panel.close():
                 return
+            self.root_layout.removeWidget(self.panel.action_footer)
+            self.panel.action_footer.setParent(self.panel)
             self.layout.removeWidget(self.panel);self.panel.hide();self.panel.deleteLater();self.panel=None
         if key:
             def change():
@@ -186,31 +199,61 @@ class ManagerWindow(QWidget):
                     lambda: self.registry.selections(key, choices)))
                 self.install_presets(key)
                 self.panel.busy_changed.connect(self.set_active)
-                self.panel.settings_saved.connect(lambda: self.status.setText('Project settings saved. Review a fresh plan before running.'))
+                self.panel.settings_saved.connect(lambda: self.show_status('Project settings saved. Review a fresh plan before running.'))
                 self.layout.addWidget(self.panel)
+                self.panel.layout().removeWidget(self.panel.action_footer)
+                self.root_layout.addWidget(self.panel.action_footer)
                 self.update_setup()
             self.guarded(change)
 
     def install_presets(self, key):
         panel = self.panel
-        row = QHBoxLayout()
-        self.saved_presets = QComboBox()
-        self.saved_presets.setAccessibleName('Saved project run presets')
-        self.saved_presets.setToolTip('Private presets for this project checkout. Loading only changes choices; review before running.')
-        self.saved_presets.addItem('Saved run presets…', None)
-        for name in self.registry.read()['projects'][key].get('presets', {}):
-            self.saved_presets.addItem(name, name)
-        row.addWidget(self.saved_presets, 1)
-        load = QPushButton('Load preset')
-        save = QPushButton('Save preset…')
-        delete = QPushButton('Delete preset')
-        for button in (load, save, delete):
-            row.addWidget(button)
-            panel.busy_changed.connect(lambda busy, control=button: control.setEnabled(not busy))
-        panel.busy_changed.connect(lambda busy: self.saved_presets.setEnabled(not busy))
-        panel.layout().insertLayout(1, row)
+        row = panel.configuration.goal_row
+        picker = self.saved_presets = QComboBox()
+        picker.setAccessibleName('Saved project run presets')
+        picker.setMinimumContentsLength(12)
+        picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        picker.setToolTip('Load saved choices')
+        picker.addItem('Presets…', None)
+        presets = dict(self.registry.read()['projects'][key].get('presets', {}))
+        for name in presets:
+            picker.addItem(name, name)
+        row.addWidget(picker)
+        self.preset_menu = QToolButton()
+        self.preset_menu.setText('⋯')
+        self.preset_menu.setAccessibleName('Save or delete run presets')
+        menu = QMenu(self.preset_menu)
+        self.preset_actions = {name: menu.addAction(name) for name in ('Save preset…', 'Delete preset')}
+        self.preset_menu.setMenu(menu)
+        self.preset_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        row.addWidget(self.preset_menu)
+        actions, menu_button = self.preset_actions, self.preset_menu
+        def snapshot():
+            from PySide6.QtWidgets import QPlainTextEdit
+            choices = panel.choices()
+            choices['run_overrides'] = {name: field.toPlainText() if isinstance(field, QPlainTextEdit) else field.text()
+                                       for name, field in panel.run_fields.controls.items()}
+            return choices
+        def refresh_preset_state(*_):
+            name = picker.currentData()
+            modified = bool(name in presets and snapshot() != presets[name])
+            for index in range(1, picker.count()):
+                label = picker.itemData(index)
+                picker.setItemText(index, label + (' · Modified' if label == name and modified else ''))
+                picker.setItemData(index, picker.itemText(index), Qt.ItemDataRole.ToolTipRole)
+            picker.setToolTip(picker.currentText() if name is not None else 'Load saved choices')
+            picker.setAccessibleDescription(picker.toolTip())
+            actions['Delete preset'].setEnabled(name is not None and picker.isEnabled())
+        def set_presets_busy(busy):
+            picker.setEnabled(not busy)
+            menu_button.setEnabled(not busy)
+            actions['Save preset…'].setEnabled(not busy)
+            actions['Delete preset'].setEnabled(not busy and picker.currentData() is not None)
+        panel.busy_changed.connect(set_presets_busy)
+        panel.selection_changed.connect(refresh_preset_state)
+        picker.currentIndexChanged.connect(refresh_preset_state)
         def load_selected():
-            name = self.saved_presets.currentData()
+            name = picker.currentData()
             if name is None:
                 return
             choices = self.registry.read()['projects'][key]['presets'][name]
@@ -221,33 +264,35 @@ class ManagerWindow(QWidget):
                 panel.applying_preset = False
             panel.invalidate()
             panel.stages.setCurrentIndex(0)
+            refresh_preset_state()
             panel.status.setText('Loaded preset: ' + name + '. Review the plan before running.')
         def save_selected():
             if panel.run_fields.timer.isActive():
                 raise ValueError('Project defaults are still loading. Save the preset once they have loaded.')
             name, accepted = QInputDialog.getText(self, 'Save run preset',
-                'Preset name (an existing name replaces that preset):', text=self.saved_presets.currentData() or '')
+                'Preset name (an existing name replaces that preset):', text=picker.currentData() or '')
             if not accepted:
                 return
-            choices = panel.choices()
-            # Capture current field values, including project defaults, in a named preset.
-            from PySide6.QtWidgets import QPlainTextEdit
-            choices['run_overrides'] = {name: field.toPlainText() if isinstance(field, QPlainTextEdit) else field.text()
-                                       for name, field in panel.run_fields.controls.items()}
+            choices = snapshot()
             self.registry.save_preset(key, name, choices)
             name = name.strip()
-            if self.saved_presets.findData(name) < 0:
-                self.saved_presets.addItem(name, name)
-            self.saved_presets.setCurrentIndex(self.saved_presets.findData(name))
+            presets[name] = choices
+            if picker.findData(name) < 0:
+                picker.addItem(name, name)
+            picker.setCurrentIndex(picker.findData(name))
+            refresh_preset_state()
             panel.status.setText('Saved private run preset: ' + name)
         def delete_selected():
-            name = self.saved_presets.currentData()
+            name = picker.currentData()
             if name is not None:
                 self.registry.delete_preset(key, name)
-                self.saved_presets.removeItem(self.saved_presets.currentIndex())
-        load.clicked.connect(lambda: self.guarded(load_selected))
-        save.clicked.connect(lambda: self.guarded(save_selected))
-        delete.clicked.connect(lambda: self.guarded(delete_selected))
+                presets.pop(name, None)
+                picker.removeItem(picker.currentIndex())
+                picker.setCurrentIndex(0)
+        picker.activated.connect(lambda *_: self.guarded(load_selected))
+        actions['Save preset…'].triggered.connect(lambda: self.guarded(save_selected))
+        actions['Delete preset'].triggered.connect(lambda: self.guarded(delete_selected))
+        refresh_preset_state()
 
     def update_setup(self):
         if self.panel is None:
@@ -284,6 +329,7 @@ class ManagerWindow(QWidget):
         self.active=value;self.projects.setEnabled(not value)
         for button in self.buttons:button.setEnabled(not value)
         self.setup_action.setEnabled(not value)
+        self.project_settings.setEnabled(not value and self.panel is not None)
 
     def add(self):
         from .project_setup_ui import AddProjectDialog
