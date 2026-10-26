@@ -3,7 +3,7 @@ import time
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QProgressBar, QTabWidget, QTreeWidget, QTreeWidgetItem,
+    QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget)
 
 
@@ -18,6 +18,14 @@ def plan_overview(plan):
              f'Workflow effect: {plan.effect}', '', 'Source:']
     if plan.adapter.get('test_suite'):
         lines.insert(3, 'Selected suite: ' + plan.adapter['test_suite'])
+    journey = getattr(plan, 'journey', {})
+    if journey:
+        lines += ['', 'Selected platforms: ' + ', '.join(journey['platforms']),
+                  'Required validation on every selected platform blocks every delivery.',
+                  'Delivery pauses for artifact-specific review. Independent approved branches may overlap.',
+                  f'At most {plan.max_workers} steps run at once, subject to shared resources.']
+        for name, row in journey['destinations'].items():
+            lines.append('Destination ' + name + ': ' + row['identity'] + ' · ' + ', '.join(row['steps']))
     def describe(value, indent='  '):
         rows = []
         for key, item in value.items():
@@ -30,7 +38,7 @@ def plan_overview(plan):
         return rows or [indent + 'None declared']
     lines += describe(plan.source)
     lines += ['', 'Settings and declared destinations:', *describe(plan.settings),
-              '', 'Steps in execution order:']
+              '', 'Steps in execution order (dependencies determine overlap):']
     for number, phase in enumerate(plan.phases, 1):
         effect = phase.effect if phase.effect != 'inherit' else plan.effect
         lines += [f'{number}. {phase.id} · {phase.kind} · {effect}',
@@ -55,6 +63,11 @@ class RunView(QWidget):
         self.summary = QLabel('No run yet. Configure your goal and inspect the plan.')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
+        self.destinations = QLabel()
+        self.destinations.setWordWrap(True)
+        self.destinations.setAccessibleName('Platform and destination outcomes')
+        layout.addWidget(self.destinations)
+        self.plan = None
         self.progress = QProgressBar()
         self.progress.setAccessibleName('Completed workflow steps')
         self.progress.setRange(0, 1)
@@ -62,6 +75,37 @@ class RunView(QWidget):
         layout.addWidget(self.progress)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs)
+        results = QWidget()
+        results_layout = QVBoxLayout(results)
+        self.result_counts = QLabel('No test reports yet. Counts appear as tests finish.')
+        self.result_counts.setWordWrap(True)
+        self.result_counts.setAccessibleName('Reported test totals')
+        self.next_action = QLabel('Tests and delivery progress will appear here.')
+        self.next_action.setWordWrap(True)
+        totals = QHBoxLayout()
+        self.count_cards = {}
+        for state, label in (('passed', 'Passed'), ('failed', 'Failed'), ('error', 'Errors'), ('skipped', 'Skipped')):
+            card = QLabel(f'<span style="font-size:24pt">0</span><br>{label}')
+            card.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            card.setMargin(18)
+            card.setFrameStyle(QLabel.Shape.StyledPanel)
+            self.count_cards[state] = (card, label)
+            totals.addWidget(card)
+        results_layout.addLayout(totals)
+        results_layout.addWidget(self.result_counts)
+        results_layout.addWidget(self.next_action)
+        result_actions = QHBoxLayout()
+        problems = self.problems_button = QPushButton('Show failed tests')
+        problems.setEnabled(False)
+        problems.clicked.connect(self.show_problem_tests)
+        timing_button = QPushButton('See slowest tests')
+        timing_button.clicked.connect(self.show_timings)
+        result_actions.addWidget(problems)
+        result_actions.addWidget(timing_button)
+        result_actions.addStretch()
+        results_layout.addLayout(result_actions)
+        results_layout.addStretch()
+        self.tabs.addTab(results, 'Results')
         steps = QWidget()
         step_layout = QVBoxLayout(steps)
         self.steps = QTreeWidget()
@@ -76,7 +120,7 @@ class RunView(QWidget):
         self.detail.setReadOnly(True)
         self.detail.setAccessibleName('Selected step details and evidence')
         step_layout.addWidget(self.detail, 1)
-        self.tabs.addTab(steps, 'Steps')
+        self.tabs.addTab(steps, 'Step details')
         tests = QWidget()
         test_layout = QVBoxLayout(tests)
         filters = QHBoxLayout()
@@ -106,13 +150,35 @@ class RunView(QWidget):
         self.test_detail.setAccessibleName('Selected test failure or skip details')
         test_layout.addWidget(self.test_detail, 1)
         self.tabs.addTab(tests, 'Tests')
+        timing = QWidget()
+        timing_layout = QVBoxLayout(timing)
+        self.timing_summary = QLabel('Timing appears when individual test reports include durations.')
+        self.timing_summary.setWordWrap(True)
+        timing_layout.addWidget(self.timing_summary)
+        self.timings = QTreeWidget()
+        self.timings.setHeaderLabels(['Test (slowest first)', 'Duration', 'Suite / class', 'Step', 'Relative duration'])
+        self.timings.setAccessibleName('Individual test timing profile')
+        self.timings.setColumnWidth(0, 320)
+        timing_layout.addWidget(self.timings)
+        note = QLabel('Reported test time is the sum of case durations. Parallel tests can overlap; this differs from active run time. Missing durations are excluded from averages.')
+        note.setWordWrap(True)
+        timing_layout.addWidget(note)
+        self.tabs.addTab(timing, 'Timing')
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(6000)
         self.log.setAccessibleName('Live redacted execution output')
         self.tabs.addTab(self.log, 'Live output')
 
+    def show_problem_tests(self):
+        self.filter.setCurrentText('Problems')
+        self.tabs.setCurrentWidget(self.tests.parentWidget())
+
+    def show_timings(self):
+        self.tabs.setCurrentWidget(self.timings.parentWidget())
+
     def reset(self, plan, previous=()):
+        self.plan = plan
         self.rows, self.facts, self.started = {}, {}, {}
         self.phases = {phase.id: phase for phase in plan.phases}
         source = plan.source.get('fingerprint') or plan.source.get('commit') or plan.source.get('revision', 'see original plan')
@@ -135,6 +201,8 @@ class RunView(QWidget):
         for event in previous:
             self.update_phase(event)
         self.refresh_summary()
+        self.refresh_tests()
+        self.tabs.setCurrentIndex(0)
 
     def update_phase(self, event):
         key = event['id']
@@ -172,6 +240,23 @@ class RunView(QWidget):
         text = ' · '.join(f'{value} {key.replace("_", " ")}' for key, value in counts.items()) or 'No steps'
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
         self.summary.setText(prefix + text + self.run_timing)
+        if self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
+            action = 'Tests and preparation have paused for approval. Use “Review and continue this run…” to inspect the files and destinations.'
+        elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
+            action = 'This run did not finish successfully. Open Tests and choose Problems, or inspect Step details for the reason.'
+        elif self.outcome == 'unknown':
+            action = 'An external action has an unknown outcome. Check its provider status before retrying; the manager will not repeat it automatically.'
+        elif self.outcome:
+            action = 'Run finished. Check Tests for individual outcomes and Timing for the slowest tests. Start another run from New run.'
+        else:
+            action = 'Work is in progress. Test totals update as reports arrive. Delivery requires a separate approval.'
+        self.next_action.setText(action)
+        if self.plan and getattr(self.plan, 'journey', {}):
+            from .journeys import outcomes
+            self.destinations.setText('\n'.join(label + ': ' + state.replace('_', ' ')
+                for label, state in outcomes(self.plan, self.facts.values())))
+        else:
+            self.destinations.clear()
 
     def complete(self, report):
         self.started.clear()
@@ -220,8 +305,14 @@ class RunView(QWidget):
     def refresh_tests(self):
         self.tests.clear()
         counts = {}
+        measured = []
+        missing = 0
         for key, fact in self.facts.items():
             for case in fact.get('tests', []):
+                if case.get('seconds') is None:
+                    missing += 1
+                else:
+                    measured.append((case['seconds'], case, key))
                 status = case['status']
                 counts[status] = counts.get(status, 0) + 1
                 item = QTreeWidgetItem([case['name'], status, duration(case['seconds']),
@@ -230,6 +321,32 @@ class RunView(QWidget):
                 self.tests.addTopLevelItem(item)
         self.test_summary.setText(' · '.join(f'{value} {key}' for key, value in counts.items())
                                  if counts else 'No individual case report supplied. Step results remain available.')
+        self.result_counts.setText(f'{sum(counts.values())} reported tests\n' + self.test_summary.text())
+        for state, (card, label) in self.count_cards.items():
+            value = counts.get(state, 0) if counts else '—'
+            card.setText(f'<span style="font-size:24pt">{value}</span><br>{label}')
+            card.setAccessibleName(f'{value} {label.lower()} tests' if counts else label + ' count not reported yet')
+        self.problems_button.setEnabled(bool(counts.get('failed') or counts.get('error')))
+        self.timings.clear()
+        longest = max((row[0] for row in measured), default=0)
+        for seconds, case, key in sorted(measured, key=lambda row: row[0], reverse=True):
+            item = QTreeWidgetItem([case['name'], duration(seconds),
+                ' / '.join(filter(None, [case['suite'], case['classname']])), key, ''])
+            self.timings.addTopLevelItem(item)
+            bar = QProgressBar()
+            bar.setRange(0, 1000)
+            bar.setValue(round(1000 * seconds / longest) if longest else 0)
+            bar.setTextVisible(False)
+            bar.setAccessibleName(case['name'] + ': ' + duration(seconds))
+            bar.setToolTip('Relative to the slowest reported test: ' + duration(longest))
+            self.timings.setItemWidget(item, 4, bar)
+        if measured:
+            from statistics import median
+            values = [row[0] for row in measured]
+            self.timing_summary.setText(f'{len(values)} timed tests · {missing} without duration\n'
+                f'Total reported test time: {duration(sum(values))} · Average: {duration(sum(values)/len(values))} · Median: {duration(median(values))}')
+        else:
+            self.timing_summary.setText(f'No individual test durations reported. {missing} tests without duration. Step durations are available in Step details.')
         self.filter_tests()
 
     def filter_tests(self, *_):

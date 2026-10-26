@@ -41,6 +41,12 @@ class ProviderCapabilityTests(unittest.TestCase):
         class Project:
             def settings_view(self):return settings_rows(('ios','android'))
         dialog=SettingsDialog(Project())
+        import time
+        deadline = time.monotonic() + 5
+        while dialog.busy:
+            app.processEvents()
+            time.sleep(.005)
+            self.assertLess(time.monotonic(), deadline)
         for key in ('distribution.app-store','distribution.google-play'):
             self.assertIn(key,dialog.read_only)
             self.assertTrue(dialog.controls[key].text().startswith('Not implemented'))

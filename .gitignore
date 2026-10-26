@@ -7,3 +7,31 @@ test-results/
 dist/
 build/
 /VM/
+
+# Regenerable developer caches and host/editor metadata.
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+._*
+__MACOSX/
+Thumbs.db
+Desktop.ini
+.idea/
+
+# Private local configuration and signing material (VM/ is protected above).
+.env
+.env.*
+*.p8
+*.p12
+*.pem
+*.key
+*.pfx
+*.keychain-db
+*.mobileprovision
+secrets.json
+secrets.local.*
+service-account*.json

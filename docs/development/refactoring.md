@@ -57,7 +57,7 @@ values. Do not change tree-digest semantics to a plain file hash.
 
 Acceptance: equivalent digests on large/changing/missing files; bounded reads;
 cancellation; a responsive review panel; changed selections discard late results;
-changed artifacts still block continuation. Start with `tests/test_workflows.py`,
+changed artifacts still block continuation. Start with `Python/tests/test_workflows.py`,
 `test_executor.py`, `test_guided_ui.py` and `test_workflow_ui.py`.
 
 ## 2. Separate panel construction from run-session orchestration

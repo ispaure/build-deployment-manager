@@ -49,6 +49,8 @@ def inspect(root):
             raise ValueError('Declare a nonempty list of project '+key+'.')
     from .test_results import validate_suites
     validate_suites(data.get('test_suites', []), capabilities)
+    from .journeys import validate_capability
+    validate_capability(data.get('journey'), capabilities)
     if not (root/data['bridge']).resolve().is_relative_to(root):
         raise ValueError('Project bridge must remain inside its checkout.')
     return data, hashlib.sha256(raw).hexdigest()
@@ -83,10 +85,13 @@ class Registry:
         def update(data):
             for key, row in data['projects'].items():
                 if row['root'] == root:
+                    if descriptor['project_id'] != row['project_id']:
+                        raise ValueError('Project identity changed; remove and register this checkout again.')
+                    row.update(name=descriptor['name'], descriptor=digest, trusted=True)
                     return key
             key = str(uuid4())
             data['projects'][key] = dict(root=root, project_id=descriptor['project_id'],
-                name=descriptor['name'], descriptor=digest, trusted=False, selections={})
+                name=descriptor['name'], descriptor=digest, trusted=True, selections={})
             data.setdefault('selected', key)
             return key
         return self.mutate(update)
@@ -100,15 +105,17 @@ class Registry:
             resolved = str(Path(root).expanduser().resolve())
             if any(k != key and r['root'] == resolved for k,r in data['projects'].items()):
                 raise ValueError('That checkout is already registered.')
-            row.update(root=resolved, descriptor=digest, trusted=False)
+            row.update(root=resolved, descriptor=digest, trusted=True)
         self.mutate(update)
 
-    def trust(self, key):
+    def trust(self, key, *, expected_digest=None):
         def update(data):
             row = data['projects'][key]
             descriptor, digest = inspect(row['root'])
             if descriptor['project_id'] != row['project_id']:
                 raise ValueError('Project identity changed; remove and register this checkout again.')
+            if expected_digest is not None and digest != expected_digest:
+                raise ValueError('The descriptor changed during review. Review it again.')
             row.update(trusted=True, descriptor=digest)
         self.mutate(update)
 
@@ -122,8 +129,12 @@ class Registry:
         self.mutate(update)
 
     def selections(self, key, choices):
-        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite'}
-        if set(choices) - allowed or any(not isinstance(value, str) for value in choices.values()):
+        lists = {'selected_platforms', 'selected_destinations'}
+        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite', 'goal'} | lists
+        def valid(name, value):
+            return (isinstance(value, list) and all(isinstance(item, str) for item in value)
+                    if name in lists else isinstance(value, str))
+        if set(choices) - allowed or not all(valid(name, value) for name, value in choices.items()):
             raise ValueError('Invalid project selections.')
         def update(data):
             data['projects'][key]['selections'] = dict(choices)
@@ -142,7 +153,7 @@ class Registry:
         descriptor, digest = inspect(row['root'])
         if descriptor['project_id'] != row['project_id']:
             raise ValueError('Project identity changed; register the intended checkout.')
-        row['trusted'] = bool(row['trusted'] and digest == row['descriptor'])
-        if trusted and not row['trusted']:
-            raise ValueError('Review the descriptor and explicitly trust this adapter before running it.')
+        # Registration authorizes this checkout, including older registrations
+        # and descriptor updates. Inspection and identity checks still apply.
+        row['trusted'] = True
         return row, descriptor

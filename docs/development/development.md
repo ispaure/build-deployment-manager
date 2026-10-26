@@ -80,8 +80,8 @@ From this checkout, with its locked environment:
 
 ```sh
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m build_manager.contracts
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -p test_guided_ui.py -v
-.venv/bin/python -m unittest discover -s tests -p test_workflows.py -v
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s Python/tests -p test_guided_ui.py -v
+.venv/bin/python -m unittest discover -s Python/tests -p test_workflows.py -v
 ```
 
 On Windows use `.venv\Scripts\python.exe`; set `QT_QPA_PLATFORM` through the

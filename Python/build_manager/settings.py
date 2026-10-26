@@ -8,6 +8,7 @@ from pathlib import Path
 from .locking import workspace_lock
 from .profiles import load_profile, save_profile
 from .registry import config_directory
+from .credentials import reject_secrets, protected_reference
 
 
 @dataclass(frozen=True)
@@ -51,18 +52,6 @@ def reference_status(path):
     return 'configured (not verified)' if Path(path).expanduser().is_file() else 'missing reference'
 
 
-def reject_secrets(values):
-    if isinstance(values,dict):
-        for key,value in values.items():
-            if key.lower() in {'password','token','private_key','secret','access_token','refresh_token'}:
-                raise ValueError('Store protected credential references, never secret values.')
-            reject_secrets(value)
-    elif isinstance(values,(list,tuple)):
-        for value in values:reject_secrets(value)
-    elif isinstance(values,str) and '-----BEGIN ' in values:
-        raise ValueError('Private-key contents cannot be saved in profiles.')
-
-
 class SettingsStore:
     def __init__(self,directory=None):
         self.directory=Path(directory) if directory else config_directory()
@@ -90,6 +79,9 @@ class SettingsStore:
             raise ValueError('Unsupported credential reference kind.')
         if kind=='environment-name' and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',reference):
             raise ValueError('Enter an environment variable name, never its token value.')
+        reject_secrets(reference)
+        if kind=='protected-file':
+            protected_reference(reference)
         values=self.read()
         values['accounts'][key]=dict(provider=provider,reference=reference,kind=kind,status='configured; not verified')
         self.save(values)

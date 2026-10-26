@@ -56,9 +56,10 @@ class Plan:
     resources: dict[str, int] = field(default_factory=dict)
     settings: dict = field(default_factory=dict)
     adapter: dict = field(default_factory=dict)
+    journey: dict = field(default_factory=dict)
 
     def __post_init__(self):
-        if not all(isinstance(value,dict) for value in (self.source,self.settings,self.adapter,self.resources,self.capacities)):
+        if not all(isinstance(value,dict) for value in (self.source,self.settings,self.adapter,self.resources,self.capacities,self.journey)):
             raise ValueError('Source, settings, adapter and resource data must be objects.')
         if type(self.max_workers) is not int or not 1<=self.max_workers<=16:
             raise ValueError('Choose 1–16 bounded workers.')
@@ -73,15 +74,24 @@ class Plan:
             if any(phase.environment.get(name) for name in self.secret_environment):
                 raise ValueError('Secret environment values must be inherited, not serialized in a plan.')
             seen.add(phase.id)
+        if self.journey:
+            from .journeys import validate_plan
+            validate_plan(self)
 
     def data(self):
-        return asdict(self)
+        data = asdict(self)
+        # Preserve pre-journey plan hashes so retained legacy runs still resume.
+        if not self.journey:
+            data.pop('journey')
+        return data
 
     @property
     def identity(self):
         return hashlib.sha256(json.dumps(self.data(), sort_keys=True).encode()).hexdigest()
 
     def save(self, path):
+        from .credentials import reject_secrets
+        reject_secrets(self.data())
         encoded = json.dumps(self.data(), indent=2) + '\n'
         if any(os.environ.get(name) and os.environ[name] in encoded for name in self.secret_environment):
             raise ValueError('Plan data contains an inherited secret; use protected credential references.')

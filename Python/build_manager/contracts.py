@@ -6,7 +6,7 @@ import unittest
 
 def main():
     root = Path(__file__).resolve().parents[2]
-    tests = root / 'tests'
+    tests = root / 'Python/tests'
     if not tests.is_dir():
         raise SystemExit('Manager contracts require its Git checkout installation.')
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(str(tests)))

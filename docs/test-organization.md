@@ -6,6 +6,10 @@ installs project dependencies or decides release eligibility.
 
 ## Layout and suite identity
 
+Manager contracts live in `Python/tests/` and run from the repository root with
+`.venv/bin/python -m build_manager.contracts`. Logistics application tests also
+live in `Python/tests/`; its build-tooling tests remain with their owning tooling.
+
 Use a project-owned test root with `unit`, `contracts`, `integration`, `ui`,
 `native` and `acceptance` groups (existing roots may map into these groups).
 Fixtures belong alongside the narrowest owning group. Keep raw reports, logs,
@@ -39,7 +43,7 @@ Platforms/operations must be declared capabilities. Allowed tiers are `unit`,
 IDs and combine any focused pattern within that suite, never broaden it silently.
 No suite selected preserves the adapter's full declared-suite behavior. Old
 descriptors remain supported. Presets may declare a `suite` ID as well as platform,
-operation and backend. A descriptor change requires renewed trust.
+operation and backend. Descriptor updates retain registration-based authorization; validation and identity checks still apply.
 
 ## Plans and evidence
 

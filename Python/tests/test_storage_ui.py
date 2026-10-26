@@ -80,6 +80,7 @@ class SettingsAndStorageUITests(unittest.TestCase):
                 self.saved = values
         project = Project()
         dialog = SettingsDialog(project)
+        self.wait(dialog)
         seconds = dialog.controls['timing.seconds']
         self.assertIsInstance(seconds, QSpinBox)
         seconds.setValue(100)
@@ -91,6 +92,7 @@ class SettingsAndStorageUITests(unittest.TestCase):
         dialog.sidebar.setCurrentItem(dialog.sidebar.topLevelItem(0))
         self.assertEqual(seconds.value(), 60)
         dialog.save()
+        self.wait(dialog)
         self.assertEqual(project.saved, {'timing.seconds': 60, 'target.name': 'Synthetic group'})
         dialog.close()
 
@@ -106,8 +108,10 @@ class SettingsAndStorageUITests(unittest.TestCase):
                 self.saved = values
         project = Project()
         dialog = SettingsDialog(project)
+        self.wait(dialog)
         dialog.controls['notes.body'].setPlainText('First line\nSecond line')
         dialog.controls['vm.scope'].setCurrentText('ubuntu')
         self.assertTrue(dialog.controls['identity.app'].isReadOnly())
         dialog.save()
+        self.wait(dialog)
         self.assertEqual(project.saved, {'notes.body': 'First line\nSecond line', 'vm.scope': 'ubuntu'})

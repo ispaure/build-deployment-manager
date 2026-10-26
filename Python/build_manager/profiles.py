@@ -30,9 +30,8 @@ def effective(defaults, profile=None, environment=None, overrides=None, *, varia
 def save_profile(path, values, *, allowed):
     if set(values) - set(allowed):
         raise ValueError('Unsupported profile fields.')
-    encoded = json.dumps(dict(schema=1, values=values), indent=2)
-    if '-----BEGIN ' in encoded or any(name.lower() in {'password', 'token', 'private_key'} for name in values):
-        raise ValueError('Profiles store credential references, never secret contents.')
+    from .credentials import reject_secrets
+    reject_secrets(values)
     save_json(path, dict(schema=1, values=values))
 
 

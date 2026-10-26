@@ -17,8 +17,8 @@ unavailable host, held VM, personal device or live provider is a test fixture.
 
 Replace the single dense presentation with named stages: Configure, Review,
 Run and results, History. Keep the primary action near the stage it advances.
-Explain the next action in ordinary language. Retain project selection and trust
-at window level; never run an untrusted adapter to populate presentation.
+Explain the next action in ordinary language. Retain project selection at window level. Adding a project authorizes its adapter
+without a separate trust prompt.
 Acceptance: a new user can identify where to choose work, inspect it and run it;
 the window remains usable at laptop sizes and with keyboard navigation.
 

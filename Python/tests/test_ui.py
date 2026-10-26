@@ -21,7 +21,7 @@ class OtherProject:
     operations = ('Test',)
     description = 'Synthetic second-project adapter; no cloud dependencies'
     interpreter = sys.executable
-    runner_directory = Path(__file__).resolve().parents[1]
+    runner_directory = Path(__file__).resolve().parents[2]
 
     def __init__(self, root, *, effect='test', code='print("real UI subprocess")'):
         self.results_directory = root / 'results'
@@ -61,7 +61,7 @@ with TemporaryDirectory() as folder:
  app.processEvents()
  app.shutdown()
 '''
-        result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[1],
+        result = subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[2],
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -97,6 +97,7 @@ with TemporaryDirectory() as folder:
 
     def test_declined_confirmation_launches_nothing(self):
         panel = ManagerPanel(OtherProject(self.root, effect='upload'))
+        panel.goal.setCurrentIndex(panel.goal.findData('advanced'))
         self.inspect(panel)
         with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.No):
             panel.run_plan()

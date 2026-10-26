@@ -29,6 +29,8 @@ class GuidedUITests(unittest.TestCase):
                 return dict(projects={key:dict(name=key,root='/fixture/'+key) for key in ('one','two')},selected='one')
             def select(self,key):pass
             def selections(self,*args):pass
+            def resolve(self, key):
+                return dict(root='/fixture/'+key), dict(name=key, interpreter=project.interpreter)
         project=fixtures.OtherProject(self.root)
         project.row=dict(trusted=True,selections={})
         with patch('build_manager.app.ProjectBridge',return_value=project):
@@ -213,6 +215,7 @@ class GuidedUITests(unittest.TestCase):
 
     def test_unknown_effect_cannot_open_approval_or_launch_a_retry(self):
         panel = self.panel(fixtures.OtherProject(self.root, effect='upload'))
+        panel.goal.setCurrentIndex(panel.goal.findData('advanced'))
         self.inspect(panel)
         folder = self.root / 'unknown'
         folder.mkdir()

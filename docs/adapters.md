@@ -22,17 +22,20 @@ name, interpreter (a checkout-relative path or mapping by `sys.platform`), bridg
 script and capabilities. Inspection parses JSON only. Registration IDs distinguish
 two checkouts of the same project; remove registration never deletes project data.
 The registry lives in the operating system's private application-config directory.
-Moved paths require Locate and renewed trust. A changed descriptor invalidates trust.
+Moved paths require Locate. Registration authorizes the checkout, including
+existing registrations and descriptor updates; Locate retains that authorization.
+Descriptor validation and project identity checks still apply.
 
-Explicit Trust authorizes running reviewed checkout code. This is a trust boundary,
-not a sandbox: trusted adapters can execute arbitrary project code. They run under
+Adding a project authorizes its adapter code without an additional approval dialog.
+Registration is not a sandbox: adapters can execute arbitrary project code. They run under
 the declared project interpreter, with manager PYTHONPATH/PYTHONHOME removed, and
 exchange schema-1 JSON over stdin/stdout. The manager never imports project modules
 or replaces a project's commonUtils pin. The bridge exposes plan/settings/save/
 verification actions explicitly. Missing interpreter and API errors are repairable.
 
-Use `build-manager add PATH`, `list`, `inspect REGISTRATION`, `trust REGISTRATION`,
+Use `build-manager add PATH`, `list`, `inspect REGISTRATION`,
 `select REGISTRATION`, `locate REGISTRATION PATH` and `remove REGISTRATION`.
+`trust REGISTRATION` remains a compatibility command; it is no longer required.
 `build-manager plan --project REGISTRATION --operation OP --target TARGET
 --backend BACKEND --output PLAN` provides headless parity. Run saved plans through
 `python -m build_manager`. GUI checkout switching is disabled while work is active;
@@ -44,3 +47,8 @@ adapter identity. The headless planner accepts the same selection with `--suite 
 Projects must honor the selection and emit declared `junit`
 artifacts for individual case visibility. See the [test organization contract](test-organization.md)
 for schema, suite layout, reporting and release-gate adoption requirements.
+
+Optional [journey schema 1](journey-contract.md) adds a single multi-platform
+planning request and explicit platform/destination evidence. The GUI and
+`build-manager journey` share this contract. Older adapters retain their original
+single-platform path; independently prepared plans are never silently merged.

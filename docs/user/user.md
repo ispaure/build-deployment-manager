@@ -7,9 +7,14 @@ not automatically upload, install or publish anything.
 ## First run: choose the checkout before the operation
 
 Complete [setup](../setup.md) and open the platform launcher. Add the project
-checkout, inspect its descriptor and explicitly trust the adapter you reviewed.
-Trust permits that checkout's code to execute; it is not a sandbox. If you have
+checkout. Adding it authorizes its adapter to load settings and prepare work
+without a separate trust prompt. Project code runs in its declared interpreter. If you have
 two checkouts, register them separately so history and settings remain distinct.
+
+Use Add project at the top of the window. Choose or paste the project folder,
+check its preview, then add it. The manager selects that project and explains the
+next setup step. Project settings contains categories and search; App settings
+controls the manager's appearance. Missing project environments have setup guidance.
 
 For command-line registration, use the manager environment:
 
@@ -17,26 +22,28 @@ For command-line registration, use the manager environment:
 build-manager add /path/to/project
 build-manager list
 build-manager inspect REGISTRATION_ID
-build-manager trust REGISTRATION_ID
 build-manager select REGISTRATION_ID
 ```
 
 Replace `REGISTRATION_ID` with the ID printed by add/list. Use Locate after moving
-a checkout and review trust again. Removing a registration does not delete the
-project or its results. Descriptor changes invalidate old trust.
+a checkout. Removing a registration does not delete the
+project or its results. Descriptor updates retain access; invalid descriptors and changed project identities are rejected.
 
 ## Run a focused check, then broaden it
 
-In Configure, choose a workflow preset or a custom platform, operation and backend.
+In Choose work, select Validate and choose supported platforms. Projects with
+combined workflow support offer several platform checkboxes; older projects show
+one platform per run. Use Advanced operation for a project's suggested workflow
+or specialist platform, operation and backend selection.
 For an everyday code change, select a relevant project-declared suite if one is
 available. The default uses the project's complete declared suite. Advanced
 options include the source revision and focused pattern. A focused pass does
 not replace the full gates required by a release workflow.
 
-Inspect plan, then read Review: source identity, settings, destination, ordered
+Choose Next: review plan, then read Review plan: source identity, settings, destination, ordered
 steps and required dependencies. Inspection does not run the plan's commands,
 although trusted project preparation may create its source snapshot. A change
-to your selection invalidates the old plan. Run reviewed plan only after the
+to your selection invalidates the old plan. Start only after the
 displayed checkout, source and host match your intention.
 
 If a backend is unavailable, fix the stated prerequisite or explicitly choose
@@ -79,7 +86,7 @@ and why old approvals are not silently restored after restart.
 
 ## Return to an earlier run
 
-Refresh History, select the original run and choose View selected run for read-only
+Open Past runs, select the original run and choose View selected run for read-only
 inspection. Compare its source and destination with today's selection. Resume
 retained workflow continues that run separately; viewing history does not execute it.
 Active time accumulates execution attempts and excludes time waiting between
@@ -90,7 +97,7 @@ attempts for human review. Individual phase durations remain attached to the run
 | Message or symptom | Useful next step |
 | --- | --- |
 | Interpreter unavailable | Repair the selected project's environment; do not install project dependencies into the manager environment |
-| Trust required or descriptor changed | Inspect the current checkout descriptor, then trust it if intended |
+| Invalid descriptor or project identity changed | Correct the descriptor, or remove and add the intended checkout |
 | Selection changed during preparation | Inspect a fresh plan; the old result cannot authorize the new selection |
 | Another operation owns the workspace | Let its owner finish or cancel it through its manager; deleting a lock file is not ownership recovery |
 | Artifact missing/changed | Restore the exact reviewed output if available, or prepare again; do not approve a replacement under the old identity |

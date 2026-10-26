@@ -141,3 +141,47 @@ skips. The additional case cancels while hashing a prepared artifact and require
 a serialized cancelled result plus successful owned cleanup. The real guest
 plans also pass their focused Logistics result-lifecycle checks, retrieve evidence
 and remove their owned workspaces. No upload or personal-device action occurs.
+
+## Settings and goal-based workflows — 2026-10-26
+
+The manager's portable suite passes 178 tests on macOS using its existing
+`.venv`, `QT_QPA_PLATFORM=offscreen`, and the pinned real commonUtils submodule.
+Coverage includes Settings load/save responsiveness, cancellation/timeouts,
+malformed/empty/error states, retained failed edits, explicit discard, credential
+rejection and the distinction between interpreter and protected credential paths.
+Legacy plan hashes are unchanged when journey evidence is absent.
+
+Journey schema 1 coverage uses harmless temporary adapters and commands through
+both the real isolated bridge/CLI and GUI-to-CLI pause/resume. It verifies exact
+platform/destination intent, all-platform gates, overlapping independent approved
+branches, per-action approval selection, shared retained preparation, partial
+success, unknown-outcome reconciliation and no duplicate effects. The fixture
+includes GitHub, Firebase, TestFlight and device-install effect types; these names
+represent harmless commands, not actual provider or device acceptance.
+
+Offscreen 1280×800 configuration/review and Settings images were inspected. Raw
+screenshots and logs remain under ignored test-results/ux-audit. Native window
+activation, assistive technology, high-DPI behavior and non-technical user sessions
+remain acceptance work. The original Settings symptom was not reproduced in the
+real project window; its synchronous pre-display loading path has been removed.
+
+At completion of the initial manager work, Logistics had not yet adopted journey
+schema 1. The subsequent explicitly requested integration adds its project-owned
+`journey_plan` adapter, immutable shared source/settings capture, scoped cleanup,
+all-platform gates and the existing GitHub/Firebase/TestFlight delivery policy.
+The actual registered descriptor renders five platforms and three destinations
+in the offscreen UI. The subsequent registration-based authorization change allows descriptor updates
+without a separate trust prompt, while retaining validation and identity checks. No VM, device, provider or
+credential file was changed. No publish, push, hosted dispatch or native
+deployment was performed. A tracked manager-source
+scan found no known token or private-key material, excluding synthetic test
+fixtures and the pinned submodule; credential rejection tests provide additional
+coverage and are not a claim that arbitrary trusted project output is sandboxed.
+
+The follow-up adapter integration passes 180 manager portable tests and 46 focused
+Logistics snapshot/adapter/suite/settings tests in their respective existing
+environments. Explicit per-host journey mappings retain unavailable selections
+without hosted fallback. Direct Settings editors and isolated bridge writers
+share the credential/reference guard. The published Logistics manager pin remains
+unchanged; older manager installations retain single-platform API-1 operations
+and require an explicit reviewed local upgrade to use combined journeys.

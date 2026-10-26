@@ -23,6 +23,14 @@ def main(argv=None):
     plan.add_argument('--revision', default='working-tree'); plan.add_argument('--pattern', default='')
     plan.add_argument('--suite', help='Project-declared test suite ID')
     plan.add_argument('--release-tag', default=''); plan.add_argument('--output',type=Path,required=True)
+    journey = sub.add_parser('journey', help='Prepare one project-owned multi-platform validation/delivery plan')
+    journey.add_argument('--project')
+    journey.add_argument('--goal', choices=('validate', 'deliver'), default='validate')
+    journey.add_argument('--platform', action='append', required=True, dest='platforms')
+    journey.add_argument('--destination', action='append', default=[], dest='destinations')
+    journey.add_argument('--revision', default='working-tree')
+    journey.add_argument('--release-tag', default='')
+    journey.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(argv)
     registry = Registry(args.registry)
     try:
@@ -31,9 +39,15 @@ def main(argv=None):
         elif args.command == 'add':
             result = dict(registration=registry.add(args.path))
         elif args.command == 'locate':
-            registry.locate(args.project,args.path); result = dict(status='located; trust required')
+            registry.locate(args.project,args.path); result = dict(status='located')
         elif args.command == 'inspect':
             row, descriptor = registry.resolve(args.project); result = dict(registration=row, descriptor=descriptor)
+        elif args.command == 'journey':
+            from .bridge import ProjectBridge
+            prepared = ProjectBridge(registry, args.project).make_journey(args.goal, args.platforms,
+                args.destinations, revision=args.revision, release_tag=args.release_tag)
+            prepared.save(args.output)
+            result = dict(plan=str(args.output), identity=prepared.identity)
         elif args.command == 'plan':
             from .bridge import ProjectBridge
             options = dict(suite=args.suite) if args.suite else {}
