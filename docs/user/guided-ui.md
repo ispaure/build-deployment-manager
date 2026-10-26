@@ -279,8 +279,12 @@ the project-owned evidence folder.
 
 An integrated project plan can test, build and prepare delivery in one run. When
 it reaches an external upload/deploy/publish phase, it pauses for review. Select
-Review and continue delivery to see the original source/settings, destination and
-verified retained artifact paths/checksums together in the approval dialog.
+Review and continue delivery to see selectable cards with exact destinations,
+captured recipients and prepared file identities. The cards use the workflow's
+approval badges and selected outlines. Package/version/build fields appear when
+present in retained JSON evidence; file names and checksum fingerprints remain
+visible. Expand Technical evidence for original settings, full paths, checksums
+and JSON. Missing declarations are shown explicitly rather than inferred.
 Cancel is the default. Approval continues the same result directory and reuses
 passed preparation after checksum checks; it does not rebuild and relabel artifacts.
 Further external phases may require another review when their prerequisites finish.

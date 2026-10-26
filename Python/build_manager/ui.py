@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QTabWidget, QStackedWidget, QSplitter, QSizePolicy, QFrame,
 )
 from .settings_ui import SettingsDialog
+from .approval_ui import EffectReviewDialog
 from .ui_components import style_button, style_dialog_buttons, ViewportStack
 
 
@@ -45,41 +46,6 @@ class ReadHistory(QRunnable):
             self.results.put(recent_runs(self.directory, 100, self.cancelled.is_set))
         finally:
             self.done.set()
-
-
-class EffectReviewDialog(QDialog):
-    """Keep the precise retained evidence visible while authorizing continuation."""
-    def __init__(self, text, parent=None, steps=()):
-        super().__init__(parent)
-        self.setWindowTitle('Review external actions')
-        self.resize(850, 650)
-        layout = QVBoxLayout(self)
-        heading = QLabel('Approve only after checking the original source, settings, destinations and '
-                         'verified artifacts below. Approval applies to this retained preparation.')
-        heading.setWordWrap(True)
-        layout.addWidget(heading)
-        evidence = QPlainTextEdit(text)
-        evidence.setReadOnly(True)
-        evidence.setAccessibleName('Retained delivery evidence for approval')
-        layout.addWidget(evidence, 1)
-        self.approvals = {}
-        for step in steps:
-            control = QCheckBox('Authorize ' + step)
-            self.approvals[step] = control
-            layout.addWidget(control)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        approve = buttons.addButton('Approve and continue', QDialogButtonBox.ButtonRole.AcceptRole)
-        approve.setAutoDefault(False)
-        if steps:
-            approve.setText('Approve selected actions')
-            approve.setEnabled(False)
-            for control in self.approvals.values():
-                control.toggled.connect(lambda: approve.setEnabled(any(c.isChecked() for c in self.approvals.values())))
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setDefault(True)
-        style_dialog_buttons(buttons)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
 
 
 class ManagerPanel(QWidget):
@@ -740,6 +706,7 @@ class ManagerPanel(QWidget):
 
     def confirm_continuation(self, plan, previous, steps):
         from .run_ui import plan_overview
+        previews = {}
         lines = [plan_overview(self.safe_plan(plan)), '', 'Steps awaiting approval: ' + ', '.join(steps),
                  '', 'Retained prerequisite results and evidence:']
         for row in self.redacted_data(previous['phases']):
@@ -751,7 +718,17 @@ class ManagerPanel(QWidget):
                 preview = self.artifact_preview(artifact['path'])
                 if preview:
                     lines += ['  Prepared identity / evidence:', preview]
-        dialog = EffectReviewDialog('\n'.join(lines), self, steps=steps)
+                    try:
+                        previews[artifact['path']] = json.loads(preview)
+                    except ValueError:
+                        pass
+        from .approval_summary import approval_cards
+        from .plan_summary import captured_choices
+        safe = self.safe_plan(plan)
+        cards = approval_cards(safe, self.redacted_data(previous), steps,
+            self.redacted_data(getattr(self.project, 'run_fields', ())), previews)
+        source = captured_choices(safe)[0][1]
+        dialog = EffectReviewDialog('\n'.join(lines), self, steps=steps, cards=cards, source=source)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         return tuple(step for step, control in dialog.approvals.items() if control.isChecked()) if steps else True

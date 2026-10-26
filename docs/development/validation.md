@@ -1,5 +1,27 @@
 # Validation scope and remaining acceptance
 
+## October 26 delivery approval cards
+
+Delivery approval now presents only the exact eligible actions as unchecked cards,
+with retained destination identities, captured scoped recipients and package
+choices. Each card lists only its transitive prerequisite artifacts, with file
+names and SHA-256 fingerprints; recognized scalar package/version/build fields
+from retained JSON are display hints, never approval authority. Full paths,
+checksums, source/settings and redacted JSON remain under collapsed Technical
+evidence. Missing declarations stay explicit. Selected outlines, approval badges
+and a persistent counted action footer match the workflow's visual hierarchy.
+Cancel remains the default and existing artifact-bound verification is unchanged.
+
+Six new contracts cover eligible scope, recipient isolation, prerequisite artifact
+ownership, retained/redacted identities, explicit selection, disclosure and
+small-window layout. The full portable suite passes 309 tests; 33 focused approval,
+guided UI, action hierarchy and asynchronous continuation checks also pass with
+native macOS Cocoa. Synthetic native captures at 850×650 and 640×540 with 14-point
+text show unselected/selected cards, recipients and expanded evidence. These
+validate presentation and existing continuation behavior, not real delivery,
+screen-reader, held-VM or personal-device acceptance. Raw test logs and previews
+remain under ignored test-results/approval-cards.
+
 ## October 26 actionable blockers and readable cards
 
 Configuration requirements now supply compact repair actions for missing
