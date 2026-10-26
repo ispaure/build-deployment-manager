@@ -140,6 +140,10 @@ Select a result and choose Inspect selected result for its step evidence. A
 successful run opens this view unless a step is already being inspected; partial
 delivery and unknown outcomes remain separate.
 
+During execution, Running, Queued, Waiting for capacity and Needs approval counts
+open their relevant step. Cancelling shows Stopping until the retained result
+arrives; it does not imply that cleanup has already finished.
+
 Review opens on Run summary. Captured source, platforms and execution hosts
 appear across the top. The workflow preserves the same Source, platform, preparation
 and destination cards and arrows captured from Choose work. Execution substeps

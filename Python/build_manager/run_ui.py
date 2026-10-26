@@ -61,6 +61,7 @@ class RunView(QWidget):
         self.rows, self.facts, self.started, self.phases = {}, {}, {}, {}
         self.run_timing = ''
         self.outcome = ''
+        self.cancelling = False
         self.selected = ''
         self.output_lines = deque(maxlen=6000)
         self.phase_log_reader = None
@@ -108,6 +109,19 @@ class RunView(QWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         layout.addWidget(self.progress)
+        self.activity = QWidget()
+        activity_layout = QHBoxLayout(self.activity)
+        activity_layout.setContentsMargins(0, 0, 0, 0)
+        self.activity_buttons = {}
+        for state, color in (('running', '#245db5'), ('queued', '#727272'),
+                             ('waiting_resource', '#727272'), ('awaiting_review', '#b37c12')):
+            button = style_button(QPushButton())
+            button.setAutoDefault(False)
+            button.setStyleSheet(button.styleSheet() + f' QPushButton {{ border-left: 4px solid {color}; }}')
+            button.clicked.connect(lambda checked=False, state=state: self.inspect_activity(state))
+            activity_layout.addWidget(button)
+            self.activity_buttons[state] = button
+        layout.addWidget(self.activity)
         self.overall_tests = QLabel('No individual case reports available yet.')
         self.overall_tests.setWordWrap(True)
         layout.addWidget(self.overall_tests)
@@ -479,6 +493,7 @@ class RunView(QWidget):
         self.context.setTextFormat(Qt.TextFormat.PlainText)
         self.run_timing = ''
         self.outcome = ''
+        self.cancelling = False
         self.set_review_available(False)
         self.steps.clear()
         self.tests.clear()
@@ -551,6 +566,16 @@ class RunView(QWidget):
         text = ' · '.join(f'{value} {key.replace("_", " ")}' for key, value in visible_counts.items()) or 'No steps'
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
         self.summary.setText(prefix + text + self.run_timing)
+        activity_names = {'running': 'Running', 'queued': 'Queued',
+            'waiting_resource': 'Waiting for capacity', 'awaiting_review': 'Needs approval'}
+        for state, button in self.activity_buttons.items():
+            count = visible_counts.get(state, 0)
+            button.setText(activity_names[state] + ' · ' + str(count))
+            button.setVisible(bool(count) and not self.outcome)
+            button.setEnabled(not self.cancelling)
+        self.activity.setVisible(not self.outcome and any(visible_counts.get(state) for state in activity_names))
+        if self.cancelling:
+            self.summary.setText('Stopping… · ' + text + self.run_timing)
         self.run_choices.set_facts(self.facts)
         cases = [case for fact in self.facts.values() for case in fact.get('tests', ())]
         problems = sum(case['status'] in {'failed', 'error'} for case in cases)
@@ -581,6 +606,17 @@ class RunView(QWidget):
             self.destinations.clear()
         self.refresh_attention()
         self.refresh_delivered()
+
+    def inspect_activity(self, state):
+        from .workflow_ui import display_states
+        key = next((key for key, (value, _) in display_states(self.plan, self.facts).items()
+                    if value == state), None)
+        if key:
+            self.inspect_blocking_phase(key)
+
+    def cancellation_requested(self):
+        self.cancelling = True
+        self.refresh_summary()
 
     def refresh_delivered(self):
         from .journeys import outcomes
@@ -626,6 +662,7 @@ class RunView(QWidget):
 
     def complete(self, report):
         self.started.clear()
+        self.cancelling = False
         self.outcome = report['status']
         self.run_timing = ' · Active time: ' + duration(report.get('seconds'))
         if report.get('attempts'):
@@ -639,6 +676,7 @@ class RunView(QWidget):
 
     def unverified(self, reason):
         self.started.clear()
+        self.cancelling = False
         self.outcome = 'failed'
         self.run_timing = ' · Result could not be verified: ' + reason
         for key, fact in list(self.facts.items()):

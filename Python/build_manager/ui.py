@@ -764,6 +764,8 @@ class ManagerPanel(QWidget):
         self.view_history_button.setEnabled(not busy and self.history.currentItem() is not None)
         self.cancel.setEnabled(busy and not self.preparing)
         self.cancel.setVisible(busy)
+        if not busy:
+            self.cancel.setText('Cancel active work')
         self.update_run_actions()
         self.busy_changed.emit(busy)
 
@@ -1075,6 +1077,9 @@ class ManagerPanel(QWidget):
             self.status.setText('Cancelling artifact verification…')
             return
         if self.process.state() != QProcess.ProcessState.NotRunning:
+            self.run_view.cancellation_requested()
+            self.cancel.setText('Cancelling…')
+            self.cancel.setEnabled(False)
             self.session.current_phase = 'Cancelling active work and running owned cleanup…'
             self.show_elapsed()
             # Windows console processes do not reliably receive QProcess's
