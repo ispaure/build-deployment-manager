@@ -6,7 +6,7 @@ not automatically upload, install or publish anything.
 
 ## First run: choose the checkout before the operation
 
-Complete [setup](../setup.md) and open the platform launcher. Add the project
+Complete [setup](setup.md) and open the platform launcher. Add the project
 checkout. Adding it authorizes its adapter to load settings and prepare work
 without a separate trust prompt. Project code runs in its declared interpreter. If you have
 two checkouts, register them separately so history and settings remain distinct.
@@ -51,7 +51,7 @@ displayed checkout, source and host match your intention.
 If a backend is unavailable, fix the stated prerequisite or explicitly choose
 another declared backend. The manager does not silently substitute a hosted run.
 Projects can allow working-tree tests while requiring committed release sources.
-See [guided UI](../guided-ui.md) for each control and [host requirements](../hosts.md).
+See [guided UI](guided-ui.md) for each control and [host requirements](hosts.md).
 
 ## Remember choices and save run presets
 
@@ -112,7 +112,7 @@ Changing selections invalidates a late verification result. Approval is tied to
 the verified prerequisites, which are checked again when execution resumes.
 
 Do not start another upload merely because a network connection disappeared.
-The [recovery guide](../workflows.md) explains which passed steps can be reused
+The [recovery guide](workflows.md) explains which passed steps can be reused
 and why old approvals are not silently restored after restart.
 
 ## Return to an earlier run
@@ -142,8 +142,12 @@ data, signing keys and personal VMs are not disposable build outputs.
 
 For support, include manager/project revisions, source selection, failed step,
 platform and redacted error. Keep credentials and private document contents out
-of shared reports. [Validation scope](../validation.md) distinguishes tested
+of shared reports. [Validation scope](../development/validation.md) distinguishes tested
 native paths from unavailable platforms.
 
 - [Documentation home](../docs.md)
 - [Developer guide](../development/development.md)
+
+## Further reading
+
+- [Dedicated Fedora and Windows test machines](virtual-machines.md)

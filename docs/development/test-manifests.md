@@ -83,4 +83,4 @@ summary until the adapter has prepared its plan.
 
 - [Test organization](test-organization.md)
 - [Adapter contract](adapters.md)
-- [Documentation home](docs.md)
+- [Documentation home](../docs.md)

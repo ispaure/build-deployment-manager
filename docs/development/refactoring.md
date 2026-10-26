@@ -2,7 +2,7 @@
 
 Reviewed source: manager `6b727bc8`, with its own commonUtils pin `f2a0cf1`.
 This is a source/contract audit and documentation pass. Existing native acceptance
-is recorded in [validation](../validation.md); this review does not claim a new
+is recorded in [validation](validation.md); this review does not claim a new
 Windows, Fedora, emulator or publication run.
 
 ## Assessment
@@ -26,7 +26,7 @@ manual CLI approval retains its existing explicit flags. Structured CLI failures
 remain visible when an older awaiting-review report exists. All 159 local
 portable/offscreen contracts pass, as do native-platform runs on the dedicated
 Fedora and Windows guests (three explicit POSIX-only Windows skips). See
-[validation scope](../validation.md). The numbered findings retain starting evidence.
+[validation scope](validation.md). The numbered findings retain starting evidence.
 
 The generic/project boundary is sound: registration, isolated adapter execution,
 Plan/Phase contracts, scheduling, review/recovery and retention mechanics are
@@ -102,7 +102,7 @@ release gates belong in adapters. Windows durable invocation receipts and POSIX
 process groups have different semantics; do not replace them with a common retry
 loop. Project pruning policy stays outside the reusable retention mechanism.
 Linux/Windows Android support remains intentionally unavailable as documented in
-[host capabilities](../hosts.md), pending its own implementation and native proof.
+[host capabilities](../user/hosts.md), pending its own implementation and native proof.
 
 Recommended order: artifact verification first, panel boundaries second, result
 loading third. Each change should keep saved Plan/Phase fields stable and finish

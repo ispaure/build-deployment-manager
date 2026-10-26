@@ -15,7 +15,7 @@ my attention? What has actually been delivered?”
 This document is an implementation brief, not a claim that these changes have
 shipped. It follows the existing [guided UI implementation plan](ui-improvement-plan.md)
 and replaces its preset-first interaction recommendation for the next iteration.
-The current [usage guide](guided-ui.md) describes today's behavior until the
+The current [usage guide](../user/guided-ui.md) describes today's behavior until the
 redesign is implemented. No release, upload or device action was performed for
 this assessment.
 
@@ -421,6 +421,6 @@ conflict using harmless fixtures. Then add the versioned multi-platform contract
 and coordinated destination behavior. This gives the user an immediately clearer
 path while keeping the full validation-to-delivery outcome as the completion goal.
 
-- [Documentation home](docs.md)
-- [Current guided UI](guided-ui.md)
-- [Workflow review and recovery](workflows.md)
+- [Documentation home](../docs.md)
+- [Current guided UI](../user/guided-ui.md)
+- [Workflow review and recovery](../user/workflows.md)

@@ -8,7 +8,9 @@ Use Python as a source root, never as an import namespace. Keep headless imports
 free of Qt and project modules. Keep project interpreters and dependencies isolated.
 Use the pinned real Python/commonUtils submodule; never discover sibling checkouts.
 
-Documentation lives in the root docs wiki, starting at docs/docs.md. Each folder
+Documentation lives in the root docs wiki, starting at docs/docs.md.
+User setup and workflows belong in docs/user/; architecture, adapter contracts
+and validation belong in docs/development/. Each folder
 has a same-named landing linking every child. Every page begins with an H1.
 Raw evidence belongs under ignored test-results, not in public documentation.
 

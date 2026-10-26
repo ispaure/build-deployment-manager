@@ -1,6 +1,6 @@
 # Developing the build manager
 
-Start with [setup](../setup.md) to create this checkout's locked environment.
+Start with [setup](../user/setup.md) to create this checkout's locked environment.
 The manager's source root is `Python`; import `build_manager`, never
 `Python.build_manager`. Its commonUtils submodule is independent of the one in
 the project being built. Keep each project's interpreter and dependency pins.
@@ -20,8 +20,8 @@ the project being built. Keep each project's interpreter and dependency pins.
 
 The engine does not decide which Logistics tests, signing identities or release
 destinations are correct. A project adapter supplies that policy. See
-[adapter contracts](../adapters.md), [test organization](../test-organization.md)
-and [provider boundaries](../providers.md) before adding another abstraction.
+[adapter contracts](adapters.md), [test organization](test-organization.md)
+and [provider boundaries](providers.md) before adding another abstraction.
 
 ## Run a harmless plan before changing an adapter
 
@@ -92,7 +92,7 @@ Use only explicitly authorized test hosts; never substitute a held personal VM.
 
 Then run the affected consumer adapter tests with that project's interpreter and
 pin. A manager-only pass cannot establish its release gate inventory. The
-[validation guide](../validation.md) records actual native coverage and remaining
+[validation guide](validation.md) records actual native coverage and remaining
 limits separately from the test commands above.
 
 ## Update the right guide
@@ -106,3 +106,13 @@ from its parent. Raw logs, screenshots and timing reports stay under ignored
 
 - [Current refactoring audit](refactoring.md)
 - [Documentation home](../docs.md)
+
+## Further reading
+
+- [Integrated validation and delivery contract](journey-contract.md)
+- [Historical data and migration](migration.md)
+- [Bounded scheduling and resource ownership](scheduling.md)
+- [Discovering project and dependency tests](test-manifests.md)
+- [Guided testing and delivery implementation plan](ui-improvement-plan.md)
+- [UX redesign: implementation audit and second pass](ux-redesign-audit.md)
+- [UX redesign brief: validation and coordinated delivery](ux-redesign-brief.md)

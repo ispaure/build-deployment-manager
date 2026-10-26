@@ -36,7 +36,7 @@ an explanation. The integrated contract currently requires selected validation;
 the UI shows that requirement rather than offering unsupported bypass controls.
 
 Choose Validate for checks only, or Validate and deliver for checks, preparation
-and reviewed delivery. Projects declaring the [journey contract](journey-contract.md)
+and reviewed delivery. Projects declaring the [journey contract](../development/journey-contract.md)
 offer platform checkboxes and independent destination choices. Selecting a
 destination expands its description, notes and recipient inputs directly below
 its checkbox, before the next destination. Deselecting keeps typed text for later
@@ -222,12 +222,12 @@ time as the starting total; missing historic attempt details are not reconstruct
 
 The manager supplies no hard-coded Logistics or Blue Hole release commands.
 Projects implement presets, suites, reports and dependency gates under the
-[test organization contract](test-organization.md). They retain native runtimes,
+[test organization contract](../development/test-organization.md). They retain native runtimes,
 source policy and destinations. Their current descriptors continue to work while
 adopting named suites and case reporting. Multi-platform selection requires project
 adoption of journey schema 1; the manager never merges independently prepared
 plans or guesses shared source/version policy. A new UI does not establish native mobile,
-Blender or hosted publication acceptance; see [validation](validation.md).
+Blender or hosted publication acceptance; see [validation](../development/validation.md).
 
 ## Development devices and delivery groups
 

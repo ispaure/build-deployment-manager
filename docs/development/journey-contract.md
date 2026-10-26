@@ -146,9 +146,9 @@ shared source/settings capture and the existing native release gates. See its
 `docs/development/build-manager-journeys.md` for usage and remaining native acceptance.
 
 - [Adapter contract](adapters.md)
-- [Guided UI](guided-ui.md)
-- [Workflow review and recovery](workflows.md)
-- [Documentation home](docs.md)
+- [Guided UI](../user/guided-ui.md)
+- [Workflow review and recovery](../user/workflows.md)
+- [Documentation home](../docs.md)
 
 ## Explicit execution and one-run values
 

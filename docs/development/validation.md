@@ -37,7 +37,7 @@ native junction fixtures without Developer Mode or symlink privilege changes;
 POSIX signal-only cases remain explicit skips, alongside Windows process-job checks.
 Project filesystem suites may additionally require actual Windows symbolic links.
 The dedicated VM setup supports explicitly approved Developer Mode and preserves
-that approval across recreation, as described in [VM setup](virtual-machines.md).
+that approval across recreation, as described in [VM setup](../user/virtual-machines.md).
 Its normal-user symlink probe is separate from completing the project's suite.
 Report publication retries transient Windows sharing conflicts for at most two
 seconds, and closing a project panel cancels/drains its history reader before
@@ -46,7 +46,7 @@ releasing project files. Raw attempts and corrections remain in ignored evidence
 Linux/Windows Android testing is intentionally unavailable in this release,
 including on x64. Its remaining implementation and native validation are recorded
 as known limitations and deferred to separate Windows and Linux follow-ups.
-Existing ARM64 guests must not be presented as Android passes. See [dedicated test machines](virtual-machines.md).
+Existing ARM64 guests must not be presented as Android passes. See [dedicated test machines](../user/virtual-machines.md).
 The held Fedora guest and Windows Testbed are not substitutes.
 Blue Hole requires a supported Blender 5.2.2 isolated enable/import smoke test;
 portable tests and an inspected ZIP do not replace that gate. Missing environments
@@ -95,7 +95,7 @@ from its selected Android image ABI. Linux/Windows hosts report
 Unavailable before SDK commands or workspace creation, including when project
 configuration claims readiness. A separately declared hosted option remains visible.
 The dedicated VM readiness view uses the guest's actual architecture for this check.
-See [host requirements](hosts.md#android-emulator-host-architecture). Current implementation briefs close with this explicitly deferred scope; the
+See [host requirements](../user/hosts.md#android-emulator-host-architecture). Current implementation briefs close with this explicitly deferred scope; the
 platform follow-ups require real Android acceptance before enabling x64 support.
 
 ## Logistics native desktop acceptance — 2026-10-25
