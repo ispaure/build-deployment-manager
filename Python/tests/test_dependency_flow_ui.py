@@ -88,7 +88,7 @@ class DependencyFlowTests(unittest.TestCase):
             finally:
                 view.run_fields.stop(); view.close()
 
-    def test_rows_of_one_two_and_three_share_a_center_after_resize_and_reset(self):
+    def test_left_to_right_columns_share_a_vertical_center_after_resize_and_reset(self):
         from build_manager.workflow_ui import FlowCanvas
         with TemporaryDirectory() as directory:
             def step(name, parents=()):
@@ -100,13 +100,16 @@ class DependencyFlowTests(unittest.TestCase):
             try:
                 for width in (1000, 1250):
                     canvas.resize(width, 900); self.app.processEvents()
+                    for source, target in canvas.edges:
+                        self.assertLess(canvas.cards[source][0].geometry().right(), canvas.cards[target][0].geometry().left())
                     centers = {}
                     for key, (level, _) in canvas.positions.items():
-                        centers.setdefault(level, []).append(canvas.cards[key][0].geometry().center().x())
+                        centers.setdefault(level, []).append(canvas.cards[key][0].geometry().center().y())
                     axes = [sum(row) / len(row) for row in centers.values()]
                     self.assertLessEqual(max(axes) - min(axes), 1)
                 canvas.reset(replace(plan, phases=plan.phases[:1])); self.app.processEvents()
                 self.assertLessEqual(abs(canvas.cards['source'][0].geometry().center().x() - canvas.rect().center().x()), 1)
+                self.assertLess(canvas.headers[0].geometry().bottom(), canvas.cards['source'][0].geometry().top())
             finally:
                 canvas.close()
 

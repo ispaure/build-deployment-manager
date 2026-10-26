@@ -22,7 +22,7 @@ class ProposedWorkflow:
 
 
 def propose(*, capability, goal, revision, platforms, destinations, backends,
-            operation='', platform='', backend='', recipients=None):
+            operation='', platform='', backend='', recipients=None, values=None):
     """Summarize intent, never manufacture executable phases or verified readiness."""
     messages = []
     source = ('Current files · includes edits' if revision == 'working-tree' else
@@ -37,6 +37,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         messages.append('This project defines the operation’s internal steps and effects during Review.')
         return ProposedWorkflow(tuple(nodes), tuple(messages))
     checks = []
+    source_requirements = {}
     for target in platforms:
         row = capability['platforms'][target]
         key = 'platform.' + target
@@ -47,25 +48,52 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         nodes.append(ProposedStep('choose-platforms', 'Choose platforms', 'Select at least one platform to test.',
                                   ('source',), 'platforms', issue=True))
         messages.append('Select at least one platform to see its branches.')
+    def platform_requirements(targets):
+        required = []
+        for target in targets:
+            key = ('platform.' if target in platforms else 'missing.') + target
+            if target not in platforms and not any(node.id == key for node in nodes):
+                label = capability['platforms'][target].get('label', target).split(' (')[0]
+                nodes.append(ProposedStep(key, 'Select ' + label, 'Required by the selected delivery.',
+                                          ('source',), 'platforms', target, True))
+            required.append(key)
+        return tuple(required)
+
+    def add_package(key, destination):
+        node_id = 'package.' + key
+        if any(node.id == node_id for node in nodes):return node_id
+        row = capability['packages'][key]
+        if row.get('source_policy', 'captured') != 'captured':
+            label = capability['destinations'][destination]['label'].split(' · ')[0]
+            if source_requirements.get(label) != 'clean-checkout':
+                source_requirements[label] = row['source_policy']
+        parents = tuple(add_package(parent, destination) for parent in row.get('dependencies', []))
+        covered = {target for parent in row.get('dependencies', [])
+                   for target in capability['packages'][parent]['platforms']}
+        required = platform_requirements([target for target in row['platforms'] if target not in covered])
+        nodes.append(ProposedStep(node_id, row['label'], row.get('description', ''),
+            tuple(dict.fromkeys((*required, *parents))), 'delivery', destination,
+            bool(set(row['platforms']) - set(platforms))))
+        return node_id
+
     if goal == 'deliver':
         for name in destinations:
             row = capability['destinations'][name]
-            required = ['platform.' + target for target in row['platforms'] if target in platforms]
-            for target in row['platforms']:
-                if target not in platforms:
-                    key = 'missing.' + target
-                    if not any(node.id == key for node in nodes):
-                        label = capability['platforms'][target].get('label', target).split(' (')[0]
-                        nodes.append(ProposedStep(key, 'Select ' + label, 'Required by the selected delivery.',
-                                                  ('source',), 'platforms', target, True))
-                    required.append(key)
+            if row.get('source_policy', 'captured') != 'captured':
+                source_requirements[row['label'].split(' · ')[0]] = row['source_policy']
+            from .journeys import destination_package
+            required = platform_requirements(row['platforms'])
             missing = set(row['platforms']) - set(platforms)
             if missing:
                 messages.append(row['label'] + ' needs: ' + ', '.join(sorted(missing)) + '.')
-            prepare = 'prepare.' + name
             label = row['label'].split(' · ')[0]
-            nodes.append(ProposedStep(prepare, 'Prepare package', label + ' package',
-                tuple(required) or ('choose-platforms',), 'delivery', name, bool(missing)))
+            package = destination_package(row, values or {})
+            if package:
+                prepare = add_package(package, name)
+            else:
+                prepare = 'prepare.' + name
+                nodes.append(ProposedStep(prepare, 'Prepare package', label + ' package · project resolves build steps during Review',
+                    required or ('choose-platforms',), 'delivery', name, bool(missing)))
             people = (recipients or {}).get(row.get('recipient_field'), [])
             if row.get('recipient_field') and people:
                 for index, person in enumerate(people):
@@ -80,7 +108,12 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             nodes.append(ProposedStep('choose-delivery', 'Choose destinations', 'Select where successful builds should go.',
                                       tuple(checks) or ('choose-platforms',), 'delivery', issue=True))
             messages.append('Select a delivery destination, or choose Validate for checks only.')
-        if revision == 'working-tree':
+        for policy in ('committed', 'clean-checkout'):
+            names = [name for name, required in source_requirements.items() if required == policy]
+            if names:
+                messages.append(', '.join(names) + (' requires committed source and a clean checkout. Commit your intended edits or set them aside before release.'
+                    if policy == 'clean-checkout' else ' requires committed source. Choose Latest commit to exclude edits, or commit the edits you want to deliver.'))
+        if revision == 'working-tree' and not source_requirements:
             messages.append('Delivery policy may require committed source. Latest commit excludes your uncommitted edits.')
     if revision == 'working-tree' and any(backends.get(target) == 'GitHub' for target in platforms):
         messages.append('GitHub checks use committed source. Choose Latest commit or a specific revision to exclude local edits.')

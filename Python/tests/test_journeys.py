@@ -187,7 +187,17 @@ class JourneyTests(unittest.TestCase):
         original = asdict(plan); original.pop('journey')
         for phase in original['phases']:
             phase.pop('waits_for')
+            phase.pop('label')
+            phase.pop('description')
+            phase.pop('section')
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
+
+    def test_step_display_metadata_round_trips_and_changes_review_identity(self):
+        phase = Phase('build', (sys.executable, '-V'), str(self.root), effect='build',
+                      label='Build Release archive', description='Shared by two exports')
+        plan = Plan('Fixture', 'Build', {}, (phase,), str(self.root))
+        self.assertEqual(Plan.from_data(plan.data()), plan)
+        self.assertNotEqual(plan.identity, replace(plan, phases=(replace(phase, label='Different build'),)).identity)
 
     def test_isolated_bridge_receives_one_intent_and_cli_writes_same_journey(self):
         root = self.root

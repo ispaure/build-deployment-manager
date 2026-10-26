@@ -371,7 +371,8 @@ class ConfigurationView(QWidget):
         if any(self.platform_checks[name].isChecked() and choice.currentText() == 'GitHub'
                for name, choice in self.platform_backends.items()):
             text += ' GitHub runs committed source; local edits are excluded.'
-        if revision == 'working-tree' and self.goal.currentData() == 'deliver':
+        declared_policy = any('source_policy' in row for row in (getattr(self.project, 'journey_capability', None) or {}).get('destinations', {}).values())
+        if revision == 'working-tree' and self.goal.currentData() == 'deliver' and not declared_policy:
             text += ' Delivery policy may require committed source. Latest commit excludes your edits without committing them.'
         self.source_summary.setText(text)
         self.refresh_proposal()
@@ -389,7 +390,7 @@ class ConfigurationView(QWidget):
             revision=self.revision.text(), platforms=[name for name, item in self.platform_checks.items() if item.isChecked()],
             destinations=[name for name, item in self.destination_checks.items() if item.isChecked()],
             backends={name: item.currentText() for name, item in self.platform_backends.items()},
-            operation=self.operation.currentText(), platform=self.platform.currentText(), backend=self.backend.currentText(), recipients=recipients)
+            operation=self.operation.currentText(), platform=self.platform.currentText(), backend=self.backend.currentText(), recipients=recipients, values=self.run_fields.values())
         self.readiness.setText('\n'.join(proposal.messages))
         self.readiness.setVisible(bool(proposal.messages))
         if proposal == self.current_proposal:

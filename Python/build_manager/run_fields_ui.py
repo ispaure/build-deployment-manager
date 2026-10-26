@@ -2,7 +2,25 @@
 from queue import Queue,Empty
 from threading import Event
 from PySide6.QtCore import QRunnable,QThreadPool,QTimer,Signal
-from PySide6.QtWidgets import QWidget,QFormLayout,QLabel,QLineEdit,QPlainTextEdit
+from PySide6.QtWidgets import QWidget,QFormLayout,QLabel,QLineEdit,QPlainTextEdit,QComboBox
+
+
+class RunChoice(QComboBox):
+    textChanged = Signal(str)
+
+    def __init__(self, row):
+        super().__init__()
+        for key, label in row['options'].items():self.addItem(label, key)
+        self.setCurrentIndex(self.findData(row['default']))
+        self.currentIndexChanged.connect(lambda _: self.textChanged.emit(self.text()))
+
+    def text(self):return self.currentData()
+
+    def setText(self, value):
+        index = self.findData(value)
+        if index >= 0:self.setCurrentIndex(index)
+
+    def setPlaceholderText(self, value):self.setToolTip(value)
 
 
 class ReadDefaults(QRunnable):
@@ -36,7 +54,7 @@ class RunFieldsView(QWidget):
         self.status.setWordWrap(True);self.form.addRow(self.status)
         from .recipient_ui import RecipientPicker
         for row in self.fields:
-            field=(RecipientPicker() if row.get('kind') == 'multiselect' else
+            field=(RunChoice(row) if row.get('kind') == 'choice' else RecipientPicker() if row.get('kind') == 'multiselect' else
                    QPlainTextEdit() if row.get('kind')=='multiline' else QLineEdit())
             if isinstance(field, RecipientPicker):
                 field.reload_requested.connect(self.reload_choices)

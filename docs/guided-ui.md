@@ -255,3 +255,22 @@ TestFlight retain their committed-source and complete release-acceptance policie
 Local device delivery currently requires the configured Mac build environment.
 Native builds and personal-device installation acceptance require separate runs;
 portable contract tests and offscreen layout checks do not establish those results.
+
+## Reading shared build workflows
+
+Read the workflow from left to right under Source, Testing and Delivery headings.
+Delivery can span several columns: build, export/sign and delivery to each
+recipient. Cards stay near their parents; a shared build appears once and branches
+to its consumers when the project declares package metadata.
+
+Logistics device destinations offer Debug (default) and Release. Debug prepares a
+separate development app. Release reuses the signed Firebase APK on Android, or
+exports a separately provisioned iOS device app from the shared Release archive.
+Each device still has its own reviewed installation. Release packaging requires
+committed source, the existing release signing setup and full release gates.
+
+The overview explains source requirements for selected destinations. Current files
+can be used for local tests and Debug device delivery. GitHub releases, tester
+services and Release device packages require committed source. Latest commit
+excludes edits without committing them; GitHub releases also require a clean
+checkout matching that commit. Selecting a source never commits or pushes it.

@@ -50,11 +50,53 @@ def validate_capability(value, capabilities):
                 or not isinstance(row.get('recipient_field', ''), str)
                 or not isinstance(row.get('description', ''), str)):
             raise ValueError('Journey destinations need unique IDs, labels and declared platforms.')
+    metadata = [*platforms.values(), *destinations.values()]
+    if isinstance(value.get('packages', {}), dict):metadata.extend(value.get('packages', {}).values())
+    for row in metadata:
+        if not isinstance(row, dict) or row.get('source_policy', 'captured') not in ('captured', 'committed', 'clean-checkout'):
+            raise ValueError('Source policy must be captured, committed or clean-checkout.')
+    validate_packages(value)
     unavailable = value.get('unavailable_destinations', [])
     if not isinstance(unavailable, list) or any(not isinstance(row, dict)
             or not isinstance(row.get('label'), str) or not row['label']
             or not isinstance(row.get('reason'), str) or not row['reason'] for row in unavailable):
         raise ValueError('Unavailable destinations need labels and an explanation.')
+
+
+def validate_packages(value):
+    """Validate optional project-owned package sketches as an ordered DAG."""
+    packages = value.get('packages', {})
+    if not isinstance(packages, dict):raise ValueError('Journey packages must be a mapping.')
+    seen = set()
+    coverage = {}
+    for key, row in packages.items():
+        if (not _identifier(key) or not isinstance(row, dict)
+                or not isinstance(row.get('label'), str) or not row['label']
+                or not isinstance(row.get('description', ''), str)
+                or not isinstance(row.get('stage'), str) or row['stage'] not in {'build', 'package'}
+                or not isinstance(row.get('platforms'), list) or not row['platforms']
+                or any(not isinstance(target, str) or target not in value['platforms'] for target in row['platforms'])
+                or not isinstance(row.get('dependencies', []), list)
+                or any(not isinstance(parent, str) or parent not in seen for parent in row.get('dependencies', []))):
+            raise ValueError('Packages need labels, stages, platforms and preceding package dependencies.')
+        seen.add(key)
+        coverage[key] = set(row['platforms']).union(*(coverage[parent] for parent in row.get('dependencies', [])))
+    for row in value.get('destinations', {}).values():
+        variants = row.get('package_variants', {})
+        if (not isinstance(variants, dict) or
+                any(not isinstance(key, str) or not key or not isinstance(ref, str) or ref not in seen for key, ref in variants.items())
+                or (variants and (not isinstance(row.get('package_field'), str) or not row['package_field']
+                                  or not isinstance(row.get('package_default'), str) or row['package_default'] not in variants))
+                or ('package' in row and (not isinstance(row['package'], str) or row['package'] not in seen))):
+            raise ValueError('Destination packages must reference declared packages and variant inputs.')
+        for key in ([row['package']] if 'package' in row else list(variants.values())):
+            if not coverage[key].issubset(row['platforms']):
+                raise ValueError('Destination platforms must include their package prerequisites.')
+
+
+def destination_package(row, values):
+    variants = row.get('package_variants', {})
+    return variants.get(values.get(row.get('package_field'), row.get('package_default'))) if variants else row.get('package')
 
 
 def request(capability, goal, platforms, destinations, *, backends=None):

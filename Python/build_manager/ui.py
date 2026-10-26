@@ -560,7 +560,8 @@ class ManagerPanel(QWidget):
             self.preparation_message('Could not prepare the plan. ' + self.redact(error))
             if 'committed' in error.lower() and ('source' in error.lower() or 'revision' in error.lower()):
                 self.configuration.open_section('source')
-                self.configuration.proposal_detail.setText('Project policy requires committed source. Choose Latest commit to exclude local edits, or select a specific revision. Nothing is committed or pushed by this choice.')
+                requirements = [message for message in self.configuration.current_proposal.messages if 'requires committed source' in message]
+                self.configuration.proposal_detail.setText('\n'.join(requirements) if requirements else 'Project policy requires committed source. Choose Latest commit to exclude local edits, or select a specific revision. Nothing is committed or pushed by this choice.')
             return
         if self.selection_revision != self.preparation_revision:
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')

@@ -216,3 +216,31 @@ Reload preserves selected IDs, including entered recipients absent from a refres
 list. Failures allow explicit ID entry and do not silently broaden recipients.
 External installation steps declare effect `deploy` and require ordinary exact-
 artifact review, destination validation gates and unknown-outcome reconciliation.
+
+## Package cards and source requirements
+
+A journey may declare an ordered `packages` mapping for its non-executable
+configuration overview. Each entry has a `label`, optional `description`, a
+`stage` (`build` or `package`), required `platforms` and optional `dependencies`
+referencing earlier package IDs. A destination's `package` references its final
+package. Shared IDs appear once with branches to their consumers. Packages never
+create executable commands; the project must return the matching actual phases.
+Legacy descriptors retain a generic preparation card until Review.
+
+For selectable variants, a destination may declare `package_field`,
+`package_default` and `package_variants` mapping option IDs to package IDs. The
+field must be a declared run input with kind `choice`, matching `default`,
+`options` (ID-to-label mapping) and destination applicability. The selected ID is
+forwarded as a text run override and retained like other run choices. Distinct
+Debug and Release package IDs prevent the overview from implying false reuse.
+
+Destinations and packages may declare `source_policy`: `captured` (default),
+`committed`, or `clean-checkout`. The overview explains selected requirements
+before preparation. The project adapter remains responsible for enforcement;
+metadata neither commits changes nor authorizes publication.
+
+Executable phases can provide optional `label`, `description`, and `section`
+(`source`, `platforms`, `delivery`) for readable cards and grouped headings.
+Empty metadata is omitted from serialization to preserve legacy plan identities.
+The map reads left to right; sibling order follows the adapter's dependencies,
+and later columns stay near their parents. These positions do not alter scheduling.

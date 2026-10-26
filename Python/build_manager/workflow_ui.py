@@ -16,16 +16,18 @@ def title(phase):
 def effect_label(phase, plan):
     if getattr(plan, 'proposed', False):
         return phase.description
+    if getattr(phase, 'description', ''):
+        return phase.description
     if phase.always:
         return 'Cleanup · runs even after a failure' if phase.kind == 'cleanup' else 'Continue after completion · allows prior failure'
     effect = phase.effect if phase.effect != 'inherit' else plan.effect
-    return {'test': 'Run checks', 'inspect': 'Inspect files', 'build': 'Prepare files',
+    return {'test': 'Run checks', 'inspect': 'Inspect files', 'build': 'Build / package',
             'upload': 'Upload · approval required', 'deploy': 'Deliver · approval required',
             'publish': 'Publish · approval required', 'dispatch': 'Launch checks · approval required'}[effect]
 
 
 def layout_positions(phases):
-    """Center every row and keep descendants ordered by their parents' positions."""
+    """Keep each column near its parents, preserving stable sibling order."""
     levels, rows = {}, {}
     for phase in phases:
         parents = (*phase.dependencies, *getattr(phase, 'waits_for', ()))
@@ -37,10 +39,15 @@ def layout_positions(phases):
     for level, row in rows.items():
         def parent_center(phase):
             parents = (*phase.dependencies, *getattr(phase, 'waits_for', ()))
+            nearest = max((levels[key] for key in parents), default=-1)
+            parents = [key for key in parents if levels[key] == nearest]
             return sum(positions[key][1] for key in parents) / len(parents) if parents else width - 1
-        for index, phase in enumerate(sorted(row, key=parent_center)):
-            positions[phase.id] = (level, width - len(row) + 2 * index)
-    return positions
+        ordered = sorted(row, key=parent_center)
+        start = round(sum(parent_center(phase) for phase in ordered) / len(ordered) - len(ordered) + 1)
+        for index, phase in enumerate(ordered):
+            positions[phase.id] = (level, start + 2 * index)
+    offset = min((lane for _, lane in positions.values()), default=0)
+    return {key: (level, lane - min(0, offset)) for key, (level, lane) in positions.items()}
 
 
 def display_states(plan, facts, preview=False):
@@ -81,8 +88,8 @@ class FlowCanvas(QWidget):
         self.cards, self.edges, self.states = {}, [], {}
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(12, 10, 12, 12)
-        self.grid.setHorizontalSpacing(24)
-        self.grid.setVerticalSpacing(42)
+        self.grid.setHorizontalSpacing(48)
+        self.grid.setVerticalSpacing(24)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.setStyleSheet('''
             QPushButton#workflowCard { background: palette(base); border: 1px solid palette(mid);
@@ -105,17 +112,35 @@ class FlowCanvas(QWidget):
                 item.widget().hide()
                 item.widget().deleteLater()
         self.cards, self.states = {}, {}
-        self.grid.setVerticalSpacing(22 if getattr(plan, 'proposed', False) else 34)
+        self.headers = []
+        self.positions = layout_positions(plan.phases)
+        for column in range(self.grid.columnCount()):
+            self.grid.setColumnMinimumWidth(column, 0)
         self.order_edges = {(key, phase.id) for phase in plan.phases for key in getattr(phase, 'waits_for', ())}
         self.edges = [(key, phase.id) for phase in plan.phases
                       for key in (*phase.dependencies, *getattr(phase, 'waits_for', ()))]
-        for column in range(self.grid.columnCount()):
-            self.grid.setColumnMinimumWidth(column, 0)
-        self.positions = layout_positions(plan.phases)
-        columns = max((column + 2 for _, column in self.positions.values()), default=2)
-        width = 156 if getattr(plan, 'proposed', False) else 184
-        for column in range(columns):
-            self.grid.setColumnMinimumWidth(column, (width - 24) // 2)
+        width = 176 if getattr(plan, 'proposed', False) else 184
+        column_sections = {}
+        for phase in plan.phases:
+            section = getattr(phase, 'section', '')
+            label = {'source': 'Source', 'platforms': 'Testing', 'delivery': 'Delivery'}.get(section)
+            if not label:
+                effect = phase.effect if phase.effect != 'inherit' else plan.effect
+                label = 'Delivery' if effect in {'upload', 'publish', 'deploy'} else 'Build / package' if effect == 'build' else 'Testing'
+            column_sections.setdefault(self.positions[phase.id][0], set()).add(label)
+        groups = []
+        for column, labels in column_sections.items():
+            heading = ' / '.join(sorted(labels))
+            if groups and groups[-1][0] == heading and groups[-1][1] + groups[-1][2] == column:
+                groups[-1][2] += 1
+            else:groups.append([heading, column, 1])
+        for heading, column, span in groups:
+            label = QLabel(heading)
+            label.setObjectName('workflowSectionHeader')
+            label.setStyleSheet('font-weight: 600; padding-bottom: 8px;')
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.grid.addWidget(label, 0, column, 1, span)
+            self.headers.append(label)
         for phase in plan.phases:
             card = FlowCard()
             card.setObjectName('workflowCard')
@@ -137,7 +162,8 @@ class FlowCanvas(QWidget):
                 label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 body.addWidget(label)
             card.clicked.connect(lambda checked=False, key=phase.id: self.selected.emit(key))
-            self.grid.addWidget(card, *self.positions[phase.id], 1, 2)
+            level, lane = self.positions[phase.id]
+            self.grid.addWidget(card, lane + 1, level, 2, 1)
             self.cards[phase.id] = (card, status, counts)
         self.adjustSize()
         self.updateGeometry()
@@ -186,7 +212,7 @@ class FlowCanvas(QWidget):
         pen = QPen(self.palette().mid().color(), 1.7)
         for source, target in self.edges:
             start_rect, end_rect = self.cards[source][0].geometry(), self.cards[target][0].geometry()
-            start, end = QPointF(start_rect.center().x(), start_rect.bottom()), QPointF(end_rect.center().x(), end_rect.top() - 4)
+            start, end = QPointF(start_rect.right(), start_rect.center().y()), QPointF(end_rect.left() - 4, end_rect.center().y())
             blocked = self.states.get(target, ('', ''))[0] in {'blocked', 'skipped'}
             pen.setStyle(Qt.PenStyle.DotLine if (source, target) in self.order_edges else
                          Qt.PenStyle.DashLine if blocked else Qt.PenStyle.SolidLine)
@@ -194,15 +220,15 @@ class FlowCanvas(QWidget):
             path = QPainterPath(start)
             if self.positions[target][0] > self.positions[source][0] + 1:
                 # Route long edges around intervening cards, retaining every dependency.
-                gutter = self.width() - 18
-                path.lineTo(start.x(), start.y() + 16)
-                path.lineTo(gutter, start.y() + 16)
-                path.lineTo(gutter, end.y() - 16)
-                path.lineTo(end.x(), end.y() - 16)
+                gutter = self.height() - 6
+                path.lineTo(start.x() + 18, start.y())
+                path.lineTo(start.x() + 18, gutter)
+                path.lineTo(end.x() - 18, gutter)
+                path.lineTo(end.x() - 18, end.y())
                 path.lineTo(end)
             else:
-                middle = (start.y() + end.y()) / 2
-                path.cubicTo(QPointF(start.x(), middle), QPointF(end.x(), middle), end)
+                middle = (start.x() + end.x()) / 2
+                path.cubicTo(QPointF(middle, start.y()), QPointF(middle, end.y()), end)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
             angle = atan2(end.y() - path.pointAtPercent(.97).y(), end.x() - path.pointAtPercent(.97).x())
@@ -258,7 +284,7 @@ class WorkflowFlow(QWidget):
         for control, name in ((self.fit_button, 'Fit whole workflow'), (self.zoom_in, 'Zoom in'), (self.zoom_out, 'Zoom out')):
             control.setAccessibleName(name); control.setToolTip(name); control.setMaximumWidth(52); tools.addWidget(control)
         layout.addLayout(tools)
-        self.guidance = QLabel('Arrows show prerequisites. Branches can overlap when workers and resources allow. Select a card for details.')
+        self.guidance = QLabel('Read left to right. Arrows show prerequisites. Branches can overlap when workers and resources allow. Select a card for details.')
         self.guidance.setWordWrap(True)
         layout.addWidget(self.guidance)
         self.canvas = FlowCanvas()
@@ -282,11 +308,11 @@ class WorkflowFlow(QWidget):
         self.whole.setVisible(not getattr(plan, 'proposed', False))
         if getattr(plan, 'proposed', False):
             self.whole.setText('Overview')
-            self.guidance.setText('Select a card to configure it. Arrows show the order.')
+            self.guidance.setText('Select a card to configure it. Read left to right. Arrows show the order.')
             self.legend.setText('Review resolves the exact steps. Nothing starts here.')
         else:
             self.whole.setText('Reviewed plan' if preview else 'Whole workflow')
-            self.guidance.setText(f'Arrows show prerequisites. Up to {plan.max_workers} steps can run together, subject to shared resources. Select a card for details.')
+            self.guidance.setText(f'Read left to right. Arrows show prerequisites. Up to {plan.max_workers} steps can run together, subject to shared resources. Select a card for details.')
             self.legend.setText('Prepared plan · not started. Select a card for its exact prerequisites.' if preview else
                 'Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
         if self.canvas.order_edges:

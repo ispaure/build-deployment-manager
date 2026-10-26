@@ -25,10 +25,17 @@ class Phase:
     provider: str = ''
     stop_grace: float = 1
     waits_for: tuple[str, ...] = ()
+    label: str = ''
+    description: str = ''
+    section: str = ''
 
     def __post_init__(self):
         if not isinstance(self.waits_for, (tuple, list)) or any(not isinstance(name, str) or not name for name in self.waits_for):
             raise ValueError('Order prerequisites must be a list of step IDs.')
+        if any(not isinstance(value, str) or len(value) > 2000 for value in (self.label, self.description)):
+            raise ValueError('Step labels and descriptions must be bounded text.')
+        if self.section not in ('', 'source', 'platforms', 'delivery'):
+            raise ValueError('Step section must be source, platforms or delivery.')
         from .providers import require_provider
         require_provider(self.provider)
         if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish','dispatch'}:
@@ -85,6 +92,9 @@ class Plan:
         data = asdict(self)
         # Keep legacy plan hashes stable when scheduling-only edges are absent.
         for phase in data['phases']:
+            for key in ('label', 'description', 'section'):
+                if not phase[key]:
+                    phase.pop(key)
             if not phase['waits_for']:
                 phase.pop('waits_for')
         # Preserve pre-journey plan hashes so retained legacy runs still resume.
