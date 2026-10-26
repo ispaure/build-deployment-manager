@@ -6,8 +6,8 @@ history, even when two checkouts belong to the same project.
 
 Use the visible Add project button to choose a folder. The preview identifies the
 project, its platforms and whether its own Python environment exists before you
-add it. The newly added project becomes selected. The Project setup panel gives
-the next step; missing environments have instructions rather than an empty form.
+add it. The newly added project becomes selected. A setup notice appears only when the project environment needs attention.
+Project settings has one toolbar entry; setup does not repeat it.
 
 Use New run to begin. The workflow uses three guided pages, with Back/Next
 actions and an explicit Start button. Past runs is separate history navigation.
@@ -59,6 +59,28 @@ real bridge settings requests time out after 30 seconds. Failed saves preserve
 input, and closing with unsaved edits asks whether to discard them. Saving locks
 the editor until the write completes or reports failure. Changing saved values
 invalidates the previous plan review.
+
+## Settings versus this run
+
+Project settings stores reusable tools, accounts, signing references, app identities
+and default destinations. Its “Defaults for new runs” section seeds delivery fields.
+Choose the platform, execution location, source, destination and optional build
+number for each run. TestFlight “what to test” and recipient group, and Firebase
+notes/group appear with the applicable delivery choice. Editing these run fields
+never saves over project defaults. Review displays the captured run values.
+
+Projects supporting selectable execution locations show a location beside each
+platform: macOS can run on GitHub while iOS uses local simulators, for example.
+Choosing GitHub selects committed HEAD and explicitly excludes local edits.
+GitHub checks need no release identifier: launching checks is a separately reviewed
+external action, distinct from publishing. Native tester delivery can still require
+local native receipts; unsupported combinations explain that prerequisite.
+
+Step 1 is a flat page with one window scrollbar, so controls remain reachable in
+short windows. Advanced options contains an optional custom release identifier.
+Leave it blank for the owning project's automatic naming policy. The suggested
+identifier is based on project version and local tags; publication rechecks remote
+availability. Preparing a suggestion does not create or reserve a remote tag.
 
 ## Review and results
 

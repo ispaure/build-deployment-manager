@@ -40,6 +40,8 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(bridge.call('anything'), 'loaded')
         path = root / 'build-project.json'
         path.write_text(path.read_text() + ' ')
+        import hashlib
+        self.assertEqual(self.registry.resolve(key)[0]['descriptor'], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual(bridge.call('anything'), 'loaded')
 
     def test_existing_untrusted_registration_works_without_approval(self):

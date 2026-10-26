@@ -28,7 +28,7 @@ class Phase:
     def __post_init__(self):
         from .providers import require_provider
         require_provider(self.provider)
-        if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish'}:
+        if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish','dispatch'}:
             raise ValueError('Unsupported step effect.')
         if any(not isinstance(name,str) or not name or type(amount) is not int or amount<1 for name,amount in self.resources.items()):
             raise ValueError('Invalid step resources.')
@@ -65,7 +65,7 @@ class Plan:
             raise ValueError('Choose 1–16 bounded workers.')
         if self.schema != 1:
             raise ValueError('Unsupported plan schema; keep the original and migrate explicitly.')
-        if not self.project or not self.phases or self.effect not in {'inspect', 'test', 'build', 'deploy', 'upload', 'publish'}:
+        if not self.project or not self.phases or self.effect not in {'inspect', 'test', 'build', 'deploy', 'upload', 'publish', 'dispatch'}:
             raise ValueError('Invalid operation plan.')
         seen = set()
         for phase in self.phases:

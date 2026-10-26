@@ -6,7 +6,7 @@ from pathlib import Path
 from commonUtils.runtime.streams import file_sha256
 from commonUtils.runtime.operations import check_cancelled
 
-EXTERNAL={'deploy','upload','publish'}
+EXTERNAL={'deploy','upload','publish','dispatch'}
 
 
 def verify_artifacts(row, *, cancelled=lambda: False):

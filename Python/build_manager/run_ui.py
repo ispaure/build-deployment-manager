@@ -44,7 +44,7 @@ def plan_overview(plan):
         lines += [f'{number}. {phase.id} · {phase.kind} · {effect}',
                   f'   {"Required" if phase.required else "Optional"}; timeout {duration(phase.timeout)}; '
                   f'depends on: {", ".join(phase.dependencies) or "none"}',
-                  '   ' + ('External action: explicit review required.' if effect in {'upload', 'deploy', 'publish'}
+                  '   ' + ('External action: explicit review required.' if effect in {'upload', 'deploy', 'publish','dispatch'}
                             else 'Preparation / local execution.')]
     return '\n'.join(lines)
 
@@ -241,7 +241,9 @@ class RunView(QWidget):
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
         self.summary.setText(prefix + text + self.run_timing)
         if self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
-            action = 'Tests and preparation have paused for approval. Use “Review and continue this run…” to inspect the files and destinations.'
+            action = ('GitHub checks are waiting for approval to start. Review the workflow and exact source before continuing.'
+                if any(fact.get('effect')=='dispatch' and fact['status']=='awaiting_review' for fact in self.facts.values())
+                else 'Tests and preparation have paused for approval. Use “Review and continue this run…” to inspect the files and destinations.')
         elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
             action = 'This run did not finish successfully. Open Tests and choose Problems, or inspect Step details for the reason.'
         elif self.outcome == 'unknown':

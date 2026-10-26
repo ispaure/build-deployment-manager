@@ -50,7 +50,7 @@ class EffectReviewDialog(QDialog):
     """Keep the precise retained evidence visible while authorizing continuation."""
     def __init__(self, text, parent=None, steps=()):
         super().__init__(parent)
-        self.setWindowTitle('Review prepared delivery')
+        self.setWindowTitle('Review external actions')
         self.resize(850, 650)
         layout = QVBoxLayout(self)
         heading = QLabel('Approve only after checking the original source, settings, destinations and '
@@ -70,7 +70,7 @@ class EffectReviewDialog(QDialog):
         approve = buttons.addButton('Approve and continue', QDialogButtonBox.ButtonRole.AcceptRole)
         approve.setAutoDefault(False)
         if steps:
-            approve.setText('Approve selected delivery actions')
+            approve.setText('Approve selected actions')
             approve.setEnabled(False)
             for control in self.approvals.values():
                 control.toggled.connect(lambda: approve.setEnabled(any(c.isChecked() for c in self.approvals.values())))
@@ -144,6 +144,11 @@ class ManagerPanel(QWidget):
         self.goal.currentIndexChanged.connect(self.goal_changed)
         for control in (*self.platform_checks.values(), *self.destination_checks.values()):
             control.toggled.connect(self.invalidate)
+        for control in self.platform_backends.values():
+            control.currentTextChanged.connect(self.invalidate)
+        for control in self.run_fields.controls.values():
+            control.textChanged.connect(self.invalidate)
+        self.run_fields.defaults_loaded.connect(self.invalidate)
         self.preset.currentTextChanged.connect(self.select_preset)
         self.configuration.restore_preset.clicked.connect(lambda: self.select_preset(self.preset.currentText()))
         self.platform.currentTextChanged.connect(self.refresh_operations)
@@ -193,6 +198,12 @@ class ManagerPanel(QWidget):
         self.review_summary.setWordWrap(True)
         self.review_summary.setTextFormat(Qt.TextFormat.PlainText)
         review_layout.addWidget(self.review_summary)
+        self.review_run_inputs = QPlainTextEdit()
+        self.review_run_inputs.setReadOnly(True)
+        self.review_run_inputs.setAccessibleName('Notes and recipients captured for this run')
+        self.review_run_inputs.setMaximumHeight(135)
+        self.review_run_inputs.hide()
+        review_layout.addWidget(self.review_run_inputs)
         details_toggle = QCheckBox('Show technical details and complete plan')
         review_layout.addWidget(details_toggle)
         self.review_board = QTreeWidget()
@@ -451,6 +462,8 @@ class ManagerPanel(QWidget):
                        **{name: control.isChecked() for name, control in self.run_controls.items()})
         if self.suite.currentData():
             choices['suite'] = self.suite.currentData()
+        if self.run_fields.values():
+            choices['run_overrides'] = self.run_fields.values()
         goal = self.goal.currentData()
         integrated = bool(self.platform_checks) and goal != 'advanced'
         if integrated:
@@ -469,6 +482,10 @@ class ManagerPanel(QWidget):
                 return
             # Hidden legacy suite/operation switches cannot alter a guided journey.
             integrated_choices = {name: choices[name] for name in ('revision', 'pattern', 'build_override', 'release_tag')}
+            if self.configuration.selectable_backends:
+                integrated_choices['backends'] = {target:self.platform_backends[target].currentText() for target in targets}
+            if choices.get('run_overrides'):
+                integrated_choices['run_overrides'] = choices['run_overrides']
             prepare = partial(self.project.make_journey, goal, targets, destinations, **integrated_choices)
         else:
             operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(platform)
@@ -542,7 +559,7 @@ class ManagerPanel(QWidget):
     def run_plan(self):
         if self.plan is None or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
-        confirmed = self.plan.effect in {'deploy', 'upload', 'publish'}
+        confirmed = self.plan.effect in {'deploy', 'upload', 'publish', 'dispatch'}
         if confirmed and QMessageBox.question(self, 'Confirm reviewed operation',
                 f'{self.plan.operation} on {self.plan.backend}? Review the source and destinations above.',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -612,7 +629,7 @@ class ManagerPanel(QWidget):
             self.open_results.setEnabled(True)
             self.preview.setPlainText(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
             self.stages.setCurrentIndex(1)
-            confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish'})
+            confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish', 'dispatch'})
             selected = self.confirm_continuation(plan, previous, steps) if confirmed else True
             if not selected:
                 return
@@ -668,7 +685,7 @@ class ManagerPanel(QWidget):
         for control in (self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
                         self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
                         self.refresh_history_button, self.view_history_button, self.history, self.continue_run,
-                        self.goal, *self.platform_checks.values(), *self.destination_checks.values(), *self.run_controls.values()):
+                        self.goal, *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
             control.setEnabled(not busy)
         if not busy:
             self.configuration.update_mode()
@@ -755,20 +772,32 @@ class ManagerPanel(QWidget):
         counts = {effect: effects.count(effect) for effect in set(effects)}
         work = ' · '.join(f'{counts[effect]} {label}' for effect, label in
             (('test', 'check steps'), ('inspect', 'inspection steps'), ('build', 'build steps'),
-             ('upload', 'uploads requiring review'), ('deploy', 'deliveries requiring review'), ('publish', 'publication steps requiring review'))
+             ('upload', 'uploads requiring review'), ('deploy', 'deliveries requiring review'), ('publish', 'publication steps requiring review'), ('dispatch','GitHub test launches requiring review'))
             if counts.get(effect))
         self.review_summary.setText(f'Project: {safe.project}\nSource: {source}\nPlatforms: {platforms}\nRuns on: {safe.backend}\n\n'
             + ('First: test every selected platform.\nThen: prepare files for delivery.\nFinally: pause for your approval of these destinations:\n' + destinations
                if destinations else 'This plan will run the selected checks. No delivery is selected.' if safe.effect == 'test' and all(phase.effect not in {'upload', 'deploy', 'publish'} for phase in safe.phases)
                else f'Operation: {safe.operation}\nEffect: {safe.effect}. Review technical steps before starting.')
             + f'\n\n{len(safe.phases)} steps in total: {work}.')
+        executions = journey.get('executions',{})
+        if executions:
+            self.review_summary.setText(self.review_summary.text()+'\n'+'\n'.join(
+                target+': '+row['backend'] for target,row in executions.items()))
+        if safe.source.get('release_tag'):
+            self.review_summary.setText(self.review_summary.text()+'\nRelease identifier: '+safe.source['release_tag'])
+        values = safe.source.get('effective_settings',{}).get('values',{})
+        captured_inputs = safe.source.get('run_overrides',{})
+        run_inputs = [field['label']+':\n'+str(values[field['id']]) for field in getattr(self.project,'run_fields',[])
+            if field['id'] in values and field['id'] in captured_inputs]
+        self.review_run_inputs.setPlainText('\n\n'.join(run_inputs))
+        self.review_run_inputs.setVisible(bool(run_inputs))
         self.review_board.clear()
         for phase in safe.phases:
             effect = phase.effect if phase.effect != 'inherit' else safe.effect
             label = phase.id.replace('-', ' ').replace('_', ' ').replace('.', ' ').capitalize()
             description = {'test': 'Run checks', 'inspect': 'Inspect local files', 'build': 'Prepare files',
                 'upload': 'Upload · separate approval', 'deploy': 'Deliver · separate approval',
-                'publish': 'Publish · separate approval'}[effect]
+                'publish': 'Publish · separate approval','dispatch':'Start GitHub checks · separate approval'}[effect]
             row = QTreeWidgetItem([label, ', '.join(phase.dependencies) or 'Ready to start', description])
             row.setToolTip(0, phase.id)
             self.review_board.addTopLevelItem(row)
@@ -780,6 +809,7 @@ class ManagerPanel(QWidget):
         self.view_run.setEnabled(True)
 
     def closeEvent(self, event):
+        self.run_fields.stop()
         self.closing = True
         self.history_timer.stop()
         self.review_timer.stop()
@@ -861,7 +891,9 @@ class ManagerPanel(QWidget):
             self.resumable = report['status'] in {'awaiting_review', 'failed', 'cancelled'}
             self.continue_run.setEnabled(self.resumable)
             self.continue_run.setVisible(self.resumable)
-            self.continue_run.setText('Review and continue delivery…' if report['status'] == 'awaiting_review' else 'Retry unfinished steps…')
+            self.continue_run.setText('Review and start GitHub checks…' if report['status']=='awaiting_review' and any(
+                row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in report['phases'])
+                else 'Review and continue delivery…' if report['status'] == 'awaiting_review' else 'Retry unfinished steps…')
             self.open_results.setEnabled(True)
             self.stages.setCurrentIndex(2)
             self.status.setText(f'Viewing retained run: {report["status"]}. Resume separately to continue work.')
@@ -936,7 +968,9 @@ class ManagerPanel(QWidget):
         self.resumable = status in {'awaiting_review', 'failed', 'cancelled'} and bool(self.result and self.result.is_file())
         self.continue_run.setEnabled(self.resumable)
         self.continue_run.setVisible(self.resumable)
-        self.continue_run.setText('Review and continue delivery…' if status == 'awaiting_review' else 'Retry unfinished steps…')
+        self.continue_run.setText('Review and start GitHub checks…' if status=='awaiting_review' and any(
+            row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in self.run_view.facts.values())
+            else 'Review and continue delivery…' if status == 'awaiting_review' else 'Retry unfinished steps…')
         self.refresh_history()
         next_action = ' Review and continue this run to approve prepared delivery.' if status == 'awaiting_review' else ''
         self.status.setText(f'{status}; exit {code}. Results: {self.result}' + next_action)

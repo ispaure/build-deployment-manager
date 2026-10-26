@@ -27,7 +27,7 @@ def main(argv=None):
 
 # Qt imports are isolated in this GUI-only module.
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget, QMenu, QToolButton, QGroupBox)
+    QMessageBox, QPushButton, QVBoxLayout, QWidget, QMenu, QToolButton, QGroupBox, QScrollArea, QFrame)
 from .bridge import ProjectBridge
 from .ui import ManagerPanel
 
@@ -50,12 +50,15 @@ class ManagerWindow(QWidget):
         self.add_project.clicked.connect(self.add)
         self.controls.addWidget(self.add_project)
         self.buttons.append(self.add_project)
+        self.project_settings = QPushButton('Project settings…')
+        self.project_settings.clicked.connect(self.open_project_settings)
+        self.controls.addWidget(self.project_settings)
+        self.buttons.append(self.project_settings)
         self.menu_actions = {}
         for title, actions in (
-                ('Project', [('Add project…', self.add), ('Locate moved checkout…', self.locate),
+                ('Project', [('Locate moved checkout…', self.locate),
                              ('Remove registration', self.remove)]),
-                ('Setup', [('Project settings…', lambda: self.panel.edit_settings() if self.panel else None),
-                           ('Accounts…', self.accounts), ('Test machines…', self.test_machines),
+                ('Setup', [('Accounts…', self.accounts), ('Test machines…', self.test_machines),
                            ('Check connections and settings…', lambda: self.panel.verify_settings() if self.panel else None),
                            ('Clean up builds…', lambda: self.panel.clean_builds() if self.panel and hasattr(self.panel.project, 'storage_inventory') else None)])):
             button = QToolButton()
@@ -75,6 +78,14 @@ class ManagerWindow(QWidget):
         self.layout.addLayout(self.controls)
         self.status=QLabel('Add a project checkout to load its settings and prepare work.')
         self.status.setWordWrap(True);self.layout.addWidget(self.status)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        self.scroll.setWidget(content)
+        self.layout.addWidget(self.scroll,1)
+        self.root_layout = self.layout
+        self.layout = QVBoxLayout(content)
         self.setup_card = QGroupBox('Project setup')
         setup_layout = QHBoxLayout(self.setup_card)
         self.setup_summary = QLabel()
@@ -100,6 +111,10 @@ class ManagerWindow(QWidget):
         ApplicationSettingsDialog(self.panel.project if self.panel else None, self,
             directory=getattr(self.registry, 'directory', None)).exec()
 
+    def open_project_settings(self):
+        if self.panel is not None:
+            self.panel.edit_settings()
+
     def guarded(self,action):
         try:
             action()
@@ -118,10 +133,12 @@ class ManagerWindow(QWidget):
             return
         key=self.projects.currentData()
         self.empty.setVisible(not bool(key))
+        self.project_settings.setEnabled(bool(key))
+        self.setup_card.hide()
         if not key:
             self.setup_summary.setText('Start by adding a project. Its source files and existing settings stay in their project folder.')
             self.setup_action.setText('Add your first project…')
-        for label in ('Locate moved checkout…', 'Remove registration', 'Project settings…',
+        for label in ('Locate moved checkout…', 'Remove registration',
                       'Accounts…', 'Check connections and settings…', 'Clean up builds…'):
             self.menu_actions[label].setEnabled(bool(key))
         if self.panel:
@@ -135,6 +152,7 @@ class ManagerWindow(QWidget):
                 self.panel=ManagerPanel(project,self)
                 self.panel.app_settings.hide()
                 self.panel.identity.hide()
+                self.panel.settings.hide()
                 self.menu_actions['Clean up builds…'].setEnabled(hasattr(project, 'storage_inventory'))
                 for name,value in project.row.get('selections', {}).items():
                     if name in ('selected_platforms', 'selected_destinations'):
@@ -144,6 +162,11 @@ class ManagerWindow(QWidget):
                         continue
                     if name == 'goal':
                         self.panel.goal.setCurrentIndex(max(0, self.panel.goal.findData(value)))
+                        continue
+                    if name == 'platform_backends':
+                        for target,backend in value.items():
+                            if target in self.panel.platform_backends:
+                                self.panel.platform_backends[target].setCurrentText(backend)
                         continue
                     control=getattr(self.panel,name)
                     if name == 'suite':control.setCurrentIndex(max(0,control.findData(value)))
@@ -163,9 +186,11 @@ class ManagerWindow(QWidget):
         row, descriptor = self.registry.resolve(self.projects.currentData())
         python = interpreter_path(row['root'], descriptor)
         if not python.is_file():
+            self.setup_card.show()
             self.setup_summary.setText('Environment missing · This project needs its own Python environment before settings and plans can load.\n' + str(python))
             self.setup_action.setText('View setup instructions…')
         else:
+            self.setup_card.hide()
             self.setup_summary.setText('Project added · Check tools and destinations in Project settings, then choose your work below.')
             self.setup_action.setText('Project settings…')
         self.status.setText('Selected project: ' + descriptor['name'])

@@ -50,3 +50,13 @@ its owned guest work, collect evidence and clean up remote files. The default is
 still one second; existing plans retain that default when the field is absent.
 This grace does not extend a test's execution timeout or authorize unrelated guest
 operations. Windows child processes remain owned by their process job.
+
+## Hosted test launches
+
+`dispatch` identifies a remote workflow launch separately from publication,
+upload or deployment. It uses the same explicit approval, persisted intent and
+unknown-outcome reconciliation as other external actions. A checks-only plan can
+therefore run hosted tests without selecting a release destination or identifier.
+Integrated plans bind dispatch steps to their selected platform and required gates.
+The UI labels their continuation “Review and start GitHub checks”. Preparing or
+viewing a plan never grants dispatch approval.

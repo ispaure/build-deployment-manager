@@ -51,6 +51,8 @@ def inspect(root):
     validate_suites(data.get('test_suites', []), capabilities)
     from .journeys import validate_capability
     validate_capability(data.get('journey'), capabilities)
+    from .run_fields import validate_fields
+    validate_fields(data.get('run_fields', []), capabilities, data.get('journey'))
     if not (root/data['bridge']).resolve().is_relative_to(root):
         raise ValueError('Project bridge must remain inside its checkout.')
     return data, hashlib.sha256(raw).hexdigest()
@@ -130,8 +132,10 @@ class Registry:
 
     def selections(self, key, choices):
         lists = {'selected_platforms', 'selected_destinations'}
-        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite', 'goal'} | lists
+        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite', 'goal', 'platform_backends'} | lists
         def valid(name, value):
+            if name == 'platform_backends':
+                return isinstance(value,dict) and all(isinstance(k,str) and isinstance(v,str) for k,v in value.items())
             return (isinstance(value, list) and all(isinstance(item, str) for item in value)
                     if name in lists else isinstance(value, str))
         if set(choices) - allowed or not all(valid(name, value) for name, value in choices.items()):
@@ -156,4 +160,5 @@ class Registry:
         # Registration authorizes this checkout, including older registrations
         # and descriptor updates. Inspection and identity checks still apply.
         row['trusted'] = True
+        row['descriptor'] = digest
         return row, descriptor

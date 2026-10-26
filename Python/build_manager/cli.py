@@ -30,6 +30,9 @@ def main(argv=None):
     journey.add_argument('--destination', action='append', default=[], dest='destinations')
     journey.add_argument('--revision', default='working-tree')
     journey.add_argument('--release-tag', default='')
+    journey.add_argument('--execution',action='append',default=[],help='Platform=backend, for example ios=GitHub')
+    for command in (plan,journey):
+        command.add_argument('--run-value',action='append',default=[],help='Declared field=value for this run only')
     journey.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(argv)
     registry = Registry(args.registry)
@@ -44,13 +47,20 @@ def main(argv=None):
             row, descriptor = registry.resolve(args.project); result = dict(registration=row, descriptor=descriptor)
         elif args.command == 'journey':
             from .bridge import ProjectBridge
-            prepared = ProjectBridge(registry, args.project).make_journey(args.goal, args.platforms,
-                args.destinations, revision=args.revision, release_tag=args.release_tag)
+            project = ProjectBridge(registry, args.project)
+            options = dict(revision=args.revision,release_tag=args.release_tag)
+            if args.execution:
+                choices=dict(item.split('=',1) for item in args.execution)
+                if set(choices)-set(args.platforms):raise ValueError('Execution choices must name selected platforms.')
+                options['backends']={target:choices.get(target,project.journey_capability['platforms'][target]['backend']) for target in args.platforms}
+            if args.run_value:options['run_overrides']=dict(item.split('=',1) for item in args.run_value)
+            prepared = project.make_journey(args.goal, args.platforms, args.destinations, **options)
             prepared.save(args.output)
             result = dict(plan=str(args.output), identity=prepared.identity)
         elif args.command == 'plan':
             from .bridge import ProjectBridge
             options = dict(suite=args.suite) if args.suite else {}
+            if args.run_value:options['run_overrides']=dict(item.split('=',1) for item in args.run_value)
             plan = ProjectBridge(registry, args.project).make_plan(args.operation, args.target, args.backend,
                 revision=args.revision, pattern=args.pattern, release_tag=args.release_tag, **options)
             plan.save(args.output); result = dict(plan=str(args.output), identity=plan.identity)

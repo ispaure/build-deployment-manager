@@ -13,6 +13,7 @@ Add `journey` alongside existing `capabilities`, presets and suites:
 {
   "journey": {
     "schema": 1,
+    "selectable_backends": true,
     "platforms": {
       "android": {"label": "Android", "operation": "Test", "backend": "Local"},
       "ios": {"label": "iOS", "operation": "Test", "backend": "Local"}
@@ -82,7 +83,7 @@ Add `journey` metadata to the plan, referencing its actual phase IDs:
 ```
 
 The manager checks exact goal/platform/destination agreement with intent. Each
-platform needs required, non-cleanup `kind=test` phases. Every external step must
+platform needs required, non-cleanup `kind=test` phases. Every delivery step must
 belong to exactly one selected destination, use an explicit upload/deploy/publish
 effect, be required, and depend transitively on every selected platform's gates.
 This version implements a common validation barrier; independent-platform release
@@ -148,3 +149,28 @@ shared source/settings capture and the existing native release gates. See its
 - [Guided UI](guided-ui.md)
 - [Workflow review and recovery](workflows.md)
 - [Documentation home](docs.md)
+
+## Explicit execution and one-run values
+
+An adapter opting into `journey.selectable_backends` receives intent `backends`,
+a complete selected-platform-to-backend mapping validated against its declared
+backend options. Older adapters retain their declared defaults. A hosted test
+launch uses explicit phase effect `dispatch`, never `publish`. Plan
+`journey.executions` maps each platform to `{backend, steps}`; each dispatch must
+belong to exactly one platform and precede all its required test gates. It must
+be required and cannot be cleanup. All dispatches require ordinary artifact-bound,
+session-only external approval, persisted intent and unknown-outcome reconciliation.
+Checks-only journeys permit these reviewed launches without any delivery effects.
+
+Optional descriptor `run_fields` declares unique `id`, `label`, `kind` (`text` or
+`multiline`), and optional `operations` and `destinations` applicability lists.
+`run_defaults` returns declared default values; `run_overrides` carries only declared
+text fields into planning. Credential material and oversized values are rejected.
+The owning adapter must capture effective settings immutably and record overrides
+in source evidence; neither preview nor execution writes them into saved defaults.
+Late default loading preserves edited fields and invalidates any earlier review.
+
+CLI examples add `--execution ios=GitHub` and
+`--run-value 'testflight.what_to_test=Try the updated editor'` to a journey request.
+Unspecified selected hosts use declared defaults. These commands prepare plans;
+they do not authorize dispatch or publication.

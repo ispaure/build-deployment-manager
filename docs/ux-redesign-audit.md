@@ -94,3 +94,19 @@ release users, and native multi-platform/provider acceptance remain outstanding.
 Portable tests and offscreen screenshots do not establish those outcomes. The
 app still uses native Qt controls; this pass changes navigation, explanations and
 results, rather than replacing the toolkit.
+
+## Run configuration follow-up — 2026-10-26
+
+Consolidated settings into one toolbar entry and flattened configuration into the
+window scrollbar. Opted-in adapters expose execution location per platform.
+Project-declared run notes and recipient groups are captured separately from saved
+defaults and shown during review. Release adapters supply automatic names when the
+optional advanced override is blank. Hosted validation has a separate reviewed
+`dispatch` effect with reconciliation, rather than masquerading as publication.
+
+Native Cocoa testing uses the actual Logistics adapter: short-window navigation,
+hosted macOS/iOS plan review, TestFlight notes capture and automatic release naming.
+Hosted and release plans are inspected without starting their external actions.
+Portable tests additionally exercise approval, unknown outcomes and stale reviews.
+Evidence remains in ignored test-results; native provider acceptance is not inferred
+from plan previews.

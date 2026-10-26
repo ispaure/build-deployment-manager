@@ -24,6 +24,8 @@ def validate_capability(value, capabilities):
     if not isinstance(value, dict) or value.get('schema') != 1:
         raise ValueError('Unsupported journey capability schema.')
     platforms, destinations = value.get('platforms'), value.get('destinations', {})
+    if type(value.get('selectable_backends',False)) is not bool:
+        raise ValueError('Selectable backends must be explicitly enabled or disabled.')
     if not isinstance(platforms, dict) or not platforms or not isinstance(destinations, dict):
         raise ValueError('Journey platforms and destinations must be mappings.')
     for target, row in platforms.items():
@@ -48,7 +50,7 @@ def validate_capability(value, capabilities):
             raise ValueError('Journey destinations need unique IDs, labels and declared platforms.')
 
 
-def request(capability, goal, platforms, destinations):
+def request(capability, goal, platforms, destinations, *, backends=None):
     if not capability:
         raise ValueError('This project has not declared integrated multi-platform workflows. Use an advanced operation.')
     if goal not in {'validate', 'deliver'} or not platforms or len(set(platforms)) != len(platforms):
@@ -66,7 +68,13 @@ def request(capability, goal, platforms, destinations):
         if missing:
             raise ValueError(capability['destinations'][name]['label'] + ' requires: ' + ', '.join(sorted(missing)) +
                              '. Select those platforms or remove this destination.')
-    return dict(schema=1, goal=goal, platforms=list(platforms), destinations=list(destinations))
+    result = dict(schema=1, goal=goal, platforms=list(platforms), destinations=list(destinations))
+    if backends is not None:
+        if (not isinstance(backends, dict) or set(backends) != set(platforms)
+                or any(not isinstance(value, str) or not value for value in backends.values())):
+            raise ValueError('Choose an execution location for every selected platform.')
+        result['backends'] = dict(backends)
+    return result
 
 
 def validate_plan(plan, intent=None):
@@ -93,7 +101,29 @@ def validate_plan(plan, intent=None):
             if phase.effect == 'inherit' and plan.effect != 'test':
                 raise ValueError('Validation steps cannot inherit an external effect.')
             gates.add(step)
-    external = {phase.id for phase in plan.phases if (phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL}
+    dispatches = {phase.id for phase in plan.phases if (phase.effect if phase.effect!='inherit' else plan.effect) == 'dispatch'}
+    executions = data.get('executions', {})
+    if not isinstance(executions, dict):
+        raise ValueError('Execution locations must be a mapping.')
+    declared_dispatches = set()
+    for target, execution in executions.items():
+        if (target not in platforms or not isinstance(execution, dict)
+                or not isinstance(execution.get('backend'), str) or not execution['backend']
+                or not isinstance(execution.get('steps', []), list)):
+            raise ValueError('Each execution location must identify its platform, backend and dispatch steps.')
+        if intent and intent.get('backends') and execution['backend'] != intent['backends'][target]:
+            raise ValueError('Prepared execution location differs from the selected platform host.')
+        for step in execution.get('steps', []):
+            if (not isinstance(step,str) or step not in dispatches or step in declared_dispatches or phases[step].effect!='dispatch' or phases[step].always
+                    or not phases[step].required
+                    or not all(step in ancestors(plan, gate) for gate in platforms[target])):
+                raise ValueError('Hosted checks must be required, reviewed dispatches upstream of their platform gate.')
+            declared_dispatches.add(step)
+    if declared_dispatches != dispatches:
+        raise ValueError('A hosted test dispatch must belong to a declared platform execution.')
+    if intent and intent.get('backends') and set(executions) != set(platforms):
+        raise ValueError('Prepared plan is missing selected execution locations.')
+    external = {phase.id for phase in plan.phases if (phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL - {'dispatch'}}
     declared = set()
     for name, row in destinations.items():
         if (not _identifier(name) or not isinstance(row, dict) or not isinstance(row.get('identity'), str)

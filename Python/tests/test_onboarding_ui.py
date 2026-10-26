@@ -53,7 +53,7 @@ class OnboardingUITests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root=Path(folder);registry=Registry(root/'private');window=ManagerWindow(registry)
             try:
-                self.assertFalse(window.menu_actions['Project settings…'].isEnabled())
+                self.assertFalse(window.project_settings.isEnabled())
                 for name in ('one','two'):
                     project=root/name;self.descriptor(project,name)
                     with patch('build_manager.project_setup_ui.AddProjectDialog') as chooser:

@@ -27,6 +27,7 @@ class ProjectBridge:
         self.run_options = self.descriptor.get('run_options', {})
         self.workflow_presets = self.descriptor.get('presets', {})
         self.test_suites = self.descriptor.get('test_suites', [])
+        self.run_fields = self.descriptor.get('run_fields', [])
         from .journeys import for_host
         self.journey_capability = for_host(self.descriptor.get('journey'))
 
@@ -91,6 +92,7 @@ class ProjectBridge:
         return data['result']
 
     def make_plan(self, operation, target, backend, **values):
+        self.check_run_overrides(values)
         if operation not in self.operations_for(target) or target not in self.platforms or backend not in self.backend_options(target, operation):
             raise ValueError('Unsupported project operation, platform or backend.')
         suite = values.get('suite')
@@ -112,10 +114,13 @@ class ProjectBridge:
     def make_journey(self, goal, platforms, destinations, **options):
         from dataclasses import replace
         from .journeys import request, validate_plan
-        intent = request(self.journey_capability, goal, platforms, destinations)
+        self.check_run_overrides(options)
+        backends = options.pop('backends', None)
+        intent = request(self.journey_capability, goal, platforms, destinations, backends=backends)
         for target in platforms:
             row = self.journey_capability['platforms'][target]
-            if row['backend'] not in self.backend_options(target, row['operation']):
+            backend = (backends or {}).get(target, row['backend'])
+            if backend not in self.backend_options(target, row['operation']):
                 raise ValueError(target + ': configured execution host is unavailable. Open test-machine setup.')
         plan = Plan.from_data(self.call('journey_plan', intent=intent, **options))
         validate_plan(plan, intent)
@@ -123,6 +128,15 @@ class ProjectBridge:
             raise ValueError('Prepared journey belongs to a different project.')
         return replace(plan, adapter=dict(api=1, project_id=self.descriptor['project_id'],
             descriptor_sha256=self.row['descriptor'], checkout=str(self.root)))
+
+    def check_run_overrides(self, options):
+        if 'run_overrides' in options:
+            from .run_fields import validate_overrides
+            options['run_overrides'] = validate_overrides(self.run_fields, options['run_overrides'])
+
+    def run_defaults(self, *, cancelled=lambda: False):
+        rows = self.load_settings(cancelled=cancelled)
+        return {field['id']:rows[field['id']]['value'] for field in self.run_fields if field['id'] in rows}
 
     def save_settings(self, values):
         return self.store_settings(values)
