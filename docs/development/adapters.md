@@ -132,3 +132,51 @@ Portable second-project fixtures use real harmless subprocesses for ordering,
 terminal input, split UTF-8 prompts, Yes/No decisions, malformed prompts, failed
 starts and target retention. Native macOS Qt checks exercise the same process
 contracts. Neither establishes physical installation or provider acceptance.
+
+
+## CPython mobile preparation
+
+`cpython_mobile` supplies verified upstream archive extraction/source checking,
+pinned offline wheel caches, host-interpreter resolution, Android/iOS compiler
+preparation and prepared-receipt validation. Callers supply explicit CPython and
+wheel pins, artifact-relative paths, host configure arguments and target choices.
+No consumer is imported, no sibling checkout is discovered and headless imports
+require only the standard library plus manager modules.
+
+`prepare_android` and `prepare_ios` accept `command(argv, cwd, timeout)`,
+`prepare_source(cache, pin)` and `prepare_wheels(cache, download=...)` callbacks.
+These let projects select their pins and retain owned process cancellation.
+The latter two can wrap `source` and `runtime_wheels`; neither callback selects
+payloads or grants acceptance. iOS also accepts the caller's `tree_digest` and
+`current_toolchain`, preserving its existing framework identity format.
+`validate_ios` checks the recorded revision/archive, toolchain and framework.
+Android reuse checks revision/archive/version/target plus host/library hashes.
+Changed receipts fail for inspection rather than silently rebuilding.
+
+Preparation uses the supplied cache and existing `mobile-runtime.lock` beside it.
+The historical archive, `manager-wheels`, `prepared-manager.json` and
+`prepared-manager-ios.json` names remain compatible. No default storage hierarchy
+or retention policy is introduced. Compiler setup temporarily updates the process
+environment and restores it even on interruption; invoke preparation serially
+inside its owning worker, not concurrently from application threads. Projects
+retain supported host checks, SDK/OpenSSL choices and storage lifecycle.
+
+`cpython_testbed.prepare_ios` clones the upstream fixture, applies a supplied
+adapter, copies a supplied payload and passes explicit arguments to upstream's
+`update_test_plan`. `modernize` accepts scene class/source, deployment minimum
+and caller adapter checksum; it preserves upstream XCTest setup and refuses
+unexpected scene/delegate/project structure. Its receipt records before/after
+hashes plus caller and manager adapter checksums. `scene_source` supplies the
+reusable Objective-C scene implementation. `normalize_log` removes the upstream
+iOS system-log prefix while preserving Unicode and other output.
+`ios_build_command` and `android_test_command` return structured commands for
+explicit devices; `install_payload_wheels` uses only the supplied cache and
+requirements with `--no-index --no-deps`.
+
+Projects own payload composition, dependency/version policy, suite arguments,
+manifest/platform/case verification and acceptance, and simulator/device leases
+and cleanup. Prepared caches and successful build commands are not native test
+evidence. Portable tiny-archive/fake-compiler/testbed fixtures cover cold/reused
+preparation, invalid hashes, changed artifacts/toolchains, cancellation and
+caller-selected arguments. Consumer tests must verify retained acceptance and
+owned cleanup; real native runtime acceptance remains a separate check.
