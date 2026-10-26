@@ -209,7 +209,8 @@ def outcomes(plan, rows):
         values = [states.get(step, 'queued') for step in steps]
         if all(value == 'passed' for value in values):
             return 'passed'
-        for value in ('unknown', 'failed', 'timeout', 'running', 'awaiting_review', 'cancelled', 'skipped', 'queued'):
+        for value in ('unknown', 'failed', 'error', 'timeout', 'interrupted', 'running',
+                      'awaiting_review', 'cancelled', 'skipped', 'blocked', 'waiting_resource', 'queued'):
             if value in values:
                 return value
         return 'pending'

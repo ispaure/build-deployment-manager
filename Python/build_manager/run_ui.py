@@ -146,6 +146,23 @@ class RunView(QWidget):
         self.pages.setAccessibleName('Run summary and detailed results')
         self.pages.addTab(self.run_choices, 'Run summary')
         self.pages.addTab(self.splitter, 'Results and exact steps')
+        self.delivered = QTreeWidget()
+        self.delivered.setHeaderLabels(['Destination / prepared file', 'Outcome', 'Identity / location'])
+        self.delivered.setAccessibleName('Delivery outcomes and retained files')
+        self.delivered.setColumnWidth(0, 240)
+        self.delivered.setColumnWidth(1, 150)
+        self.delivered.setAlternatingRowColors(True)
+        self.delivered.itemActivated.connect(self.inspect_delivered)
+        self.delivery_page = QWidget()
+        delivery_layout = QVBoxLayout(self.delivery_page)
+        delivery_layout.addWidget(self.delivered, 1)
+        self.inspect_delivery = style_button(QPushButton('Inspect selected result'))
+        self.inspect_delivery.setEnabled(False)
+        self.inspect_delivery.clicked.connect(lambda: self.inspect_delivered(self.delivered.currentItem()))
+        self.delivered.currentItemChanged.connect(lambda item: self.inspect_delivery.setEnabled(item is not None))
+        delivery_layout.addWidget(self.inspect_delivery)
+        self.pages.addTab(self.delivery_page, 'Deliveries and files')
+        self.pages.setTabVisible(2, False)
         layout.addWidget(self.pages, 1)
         results = QWidget()
         results_layout = QVBoxLayout(results)
@@ -449,6 +466,8 @@ class RunView(QWidget):
         self.selected = ''
         self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal)
         self.pages.setCurrentIndex(0)
+        self.delivered.clear()
+        self.pages.setTabVisible(2, False)
         self.output_lines.clear()
         self.flow.reset(plan)
         self.rows, self.facts, self.started = {}, {}, {}
@@ -561,6 +580,49 @@ class RunView(QWidget):
         else:
             self.destinations.clear()
         self.refresh_attention()
+        self.refresh_delivered()
+
+    def refresh_delivered(self):
+        from .journeys import outcomes
+        from pathlib import PurePath
+        selected = self.delivered.currentItem()
+        identity = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
+        self.delivered.clear()
+        if not self.plan:
+            return
+        journey = getattr(self.plan, 'journey', {})
+        states = dict(outcomes(self.plan, self.facts.values())) if journey else {}
+        labels = {'passed': 'Delivered', 'awaiting_review': 'Needs approval', 'unknown': 'Unknown outcome',
+                  'skipped': 'Not delivered', 'queued': 'Not started'}
+        for destination in journey.get('destinations', {}).values():
+            state = states[destination['identity']]
+            row = QTreeWidgetItem([destination['identity'], labels.get(state, state.replace('_', ' ').capitalize()), ''])
+            row.setData(0, Qt.ItemDataRole.UserRole, destination['steps'][0])
+            for key in destination['steps']:
+                child = QTreeWidgetItem([getattr(self.phases[key], 'label', '') or key,
+                    self.facts.get(key, {}).get('status', 'queued').replace('_', ' '), ''])
+                child.setData(0, Qt.ItemDataRole.UserRole, key)
+                row.addChild(child)
+            self.delivered.addTopLevelItem(row)
+        for key, fact in self.facts.items():
+            for artifact in fact.get('artifacts', ()):
+                path = artifact['path']
+                row = QTreeWidgetItem([PurePath(path).name, 'Retained file', path])
+                row.setToolTip(0, 'SHA-256: ' + artifact.get('sha256', 'Not recorded'))
+                row.setToolTip(2, path)
+                row.setData(0, Qt.ItemDataRole.UserRole, key)
+                self.delivered.addTopLevelItem(row)
+        self.pages.setTabVisible(2, bool(self.delivered.topLevelItemCount()))
+        if identity:
+            for index in range(self.delivered.topLevelItemCount()):
+                row = self.delivered.topLevelItem(index)
+                if row.data(0, Qt.ItemDataRole.UserRole) == identity:
+                    self.delivered.setCurrentItem(row)
+                    break
+
+    def inspect_delivered(self, item, column=0):
+        if item:
+            self.inspect_blocking_phase(item.data(0, Qt.ItemDataRole.UserRole))
 
     def complete(self, report):
         self.started.clear()
@@ -571,6 +633,9 @@ class RunView(QWidget):
         self.flow.set_facts(self.facts)
         self.refresh_summary()
         self.refresh_inspector()
+
+        if self.pages.currentIndex() == 0 and report['status'] == 'passed' and self.pages.isTabVisible(2):
+            self.pages.setCurrentIndex(2)
 
     def unverified(self, reason):
         self.started.clear()
