@@ -63,3 +63,32 @@ Optional [journey schema 1](journey-contract.md) adds a single multi-platform
 planning request and explicit platform/destination evidence. The GUI and
 `build-manager journey` share this contract. Older adapters retain their original
 single-platform path; independently prepared plans are never silently merged.
+
+
+## Isolated guest tool preparation
+
+`build_manager.guest_tools` owns transport-independent preparation programs.
+Projects supply every tool/runtime pin; these helpers import no project or Qt code.
+`linux_parameters(uv_version=..., python=...)` validates the data consumed by
+`LINUX_BOOTSTRAP`. Run that program through the existing owned guest transport as
+`python3 -c PROGRAM OWNED_WORKSPACE JSON_PARAMETERS`. It creates a bootstrap venv,
+installs the selected uv and creates the isolated project interpreter. Failures
+stop before later preparation commands; existing per-command budgets remain.
+
+`windows_parameters(token, tools, python=..., guest_architecture=...,
+python_architecture=...)` validates uv/Git HTTPS GitHub archive metadata and
+runtime selectors. Supply its result as structured values to the existing
+PowerShell transport running `WINDOWS_PREPARE`. The program checks the interactive
+account, selected architecture, ownership token and unused workspace; verifies
+archive SHA-256 before extraction; then creates the isolated interpreter and
+returns the existing preparation receipt. It does not change global PATH or
+reuse an unowned workspace. The programs must run only in an explicitly selected
+guest under the existing ownership/cleanup lifecycle.
+
+Projects still select guests, archives, interpreter versions and test suites,
+retain receipts and collect evidence before cleanup. Preparation is not native
+acceptance. First-boot guest provisioning (`vm_bootstrap`) remains a distinct
+stage, with its own interpreter and machine-creation lifecycle. Portable tests
+execute Linux bootstrap commands through a mocked subprocess boundary and check
+Windows parameters/guards; they do not establish native PowerShell execution or
+successful downloads in a real guest.
