@@ -62,9 +62,9 @@ class Executor:
         self.event = event or (lambda value: None)
         self.resource_directory = resource_directory
 
-    def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None):
+    def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None):
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-        from .identity import runtime_identity
+        from .identity import runtime_identity, engine_review_identity
         from .models import Plan
         from .resources import Resources
         from .workflows import EXTERNAL, recover, review_identity, verify_artifacts
@@ -85,8 +85,15 @@ class Executor:
                           started_at=timestamp(), status='queued', phases=[])
         if not resume:
             plan.save(output/'plan.json')
-        elif report.get('engine') is not None and report['engine'] != engine:
-            raise ValueError('Manager/dependency identity changed; inspect a new run or explicitly invalidate old work.')
+        migration = None
+        if resume and report.get('engine') is not None and report['engine'] != engine:
+            digest = engine_review_identity(report['engine'], engine)
+            if engine_review != digest:
+                raise ValueError('Manager/dependency identity changed; inspect review and supply its engine review identity, or start a new run.')
+            migration = dict(previous=report['engine'], current=engine, identity=digest,
+                             reviewed_at=timestamp())
+        elif engine_review is not None:
+            raise ValueError('Engine review does not match a pending engine change.')
         def sanitize(value):
             if isinstance(value, str):
                 return Redactor(os.environ.get(name) for name in plan.secret_environment)(value)
@@ -137,6 +144,10 @@ class Executor:
                     locks.enter_context(workspace_lock(resource))
                 previous = recover(plan,report,reconcile=reconcile) if resume else []
                 rows = {row['id']:row for row in previous if row['status']=='passed'}
+                if migration is not None:
+                    migration['retained_phases'] = list(rows)
+                    report.setdefault('engine_history', []).append(migration)
+                    report['engine'] = engine
                 report['status'] = 'running'
                 report['phases'] = list(rows.values())
                 report['attempt_started_at'] = attempt_started_at

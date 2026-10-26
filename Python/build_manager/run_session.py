@@ -1,5 +1,6 @@
 """One Qt-owned execution process, cancellation marker and output/timing state."""
 from uuid import uuid4
+from pathlib import Path
 from PySide6.QtCore import QObject, QElapsedTimer, QProcess, QTimer
 
 
@@ -7,13 +8,16 @@ class RunSession(QObject):
     def __init__(self, directory, parent=None):
         super().__init__(parent)
         self.process = QProcess(self)
-        self.process.setWorkingDirectory(str(directory))
+        # Match the GUI launcher's source root so the child can import the
+        # pinned commonUtils submodule without inheriting a global PYTHONPATH.
+        self.process.setWorkingDirectory(str(Path(directory) / 'Python'))
         self.elapsed, self.phase_elapsed = QElapsedTimer(), QElapsedTimer()
         self.clock = QTimer(self)
         self.clock.setInterval(1000)
         self.buffer, self.current_phase = '', 'queued'
         self.cancel_file = None
         self.failure = None
+        self.stderr = ''
 
     def set_busy(self, busy):
         if busy:
@@ -29,6 +33,7 @@ class RunSession(QObject):
         self.cancel_file = output.with_suffix(suffix)
         self.buffer = ''
         self.failure = None
+        self.stderr = ''
         arguments = ['-m', 'build_manager', str(plan_path), '--output', str(output),
                      '--cancel-file', str(self.cancel_file)]
         if resume:

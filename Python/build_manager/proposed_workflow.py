@@ -132,7 +132,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             blockers.append(ChoiceBlocker('delivery', 'Choose destinations…', 'delivery'))
         for policy in ('committed', 'clean-checkout'):
             names = [name for name, required in source_requirements.items() if required == policy]
-            if names:
+            if names and (revision == 'working-tree' or policy == 'clean-checkout'):
                 messages.append(', '.join(names) + (' requires committed source and a clean checkout. Commit your intended edits or set them aside before release.'
                     if policy == 'clean-checkout' else ' requires committed source. Choose Latest commit to exclude edits, or commit the edits you want to deliver.'))
         if revision == 'working-tree' and not source_requirements:

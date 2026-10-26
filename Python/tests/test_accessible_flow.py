@@ -57,7 +57,7 @@ class AccessibleFlowTests(unittest.TestCase):
             self.assertIn('Average: 2.50s', view.timing_summary.text())
             self.assertIn('1 without duration', view.timing_summary.text())
             self.assertEqual(view.timings.topLevelItem(0).text(0), 'slow')
-            self.assertIn('Problems', view.next_action.text())
+            self.assertIn('View problems', view.next_action.text())
             view.reset(plan)
             self.assertEqual(view.timings.topLevelItemCount(), 0)
             self.assertIn('0 reported tests', view.result_counts.text())

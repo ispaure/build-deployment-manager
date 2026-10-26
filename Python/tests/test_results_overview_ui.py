@@ -34,12 +34,13 @@ class ResultsOverviewTests(unittest.TestCase):
         self.assertEqual(self.view.selected, 'testflight')
         self.assertEqual(self.view.tabs.currentWidget(), self.view.steps.parentWidget())
 
-    def test_success_opens_outputs_without_stealing_an_inspected_step(self):
+    def test_success_preserves_overview_and_inspected_step(self):
         self.view.complete(dict(status='passed'))
-        self.assertEqual(self.view.pages.currentWidget(), self.view.delivery_page)
+        self.assertEqual(self.view.run_choices.flow.pages.currentIndex(), 0)
         self.view.inspect_summary_phase('android')
         self.view.complete(dict(status='passed'))
-        self.assertEqual(self.view.pages.currentIndex(), 1)
+        self.assertEqual(self.view.run_choices.flow.pages.currentIndex(), 1)
+        self.assertEqual(self.view.selected, 'android')
 
     def test_prepared_files_keep_path_and_full_identity_in_evidence(self):
         self.view.update_phase(dict(id='prepare', status='passed', artifacts=[dict(

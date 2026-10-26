@@ -64,7 +64,8 @@ class RunChoicesTests(unittest.TestCase):
                 panel.configuration.source_mode.setCurrentIndex(panel.configuration.source_mode.findData('HEAD'))
                 self.assertEqual(panel.revision.text(),'HEAD')
                 self.assertEqual(panel.choices()['platform_backends']['ios'],'GitHub')
-                self.assertIn('local edits are excluded',panel.configuration.source_summary.text())
+                self.assertTrue(panel.configuration.source_summary.isHidden())
+                self.assertIn('local edits are excluded',panel.configuration.source_mode.toolTip())
                 panel.plan=OtherProject(Path(directory)).make_plan();panel.start.setEnabled(True)
                 panel.platform_backends['ios'].setCurrentText('Local fixture')
                 self.assertIsNone(panel.plan);self.assertFalse(panel.start.isEnabled())
@@ -79,7 +80,7 @@ class RunChoicesTests(unittest.TestCase):
                 self.app.processEvents()
                 visible=[w for w in window.findChildren(QPushButton) if w.isVisible() and w.text()=='Project settings…']
                 self.assertEqual(visible,[window.project_settings])
-                self.assertIsInstance(window.scroll,QScrollArea)
+                self.assertTrue(window.current_view.isAncestorOf(window.projects))
                 self.assertNotIn('Project settings…',window.menu_actions)
             finally:window.close();self.app.processEvents()
 

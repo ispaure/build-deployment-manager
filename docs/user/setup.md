@@ -13,7 +13,11 @@ For authorized local Fedora/Windows testing, use the manager's
 [dedicated test machines](virtual-machines.md) controls. Their VM bundles and
 private installation state stay in the ignored checkout-local `VM/` directory.
 
-Run headless plans with `.venv/bin/python -m build_manager PLAN --output RESULTS`.
+Use `build-manager` in the activated manager environment for
+[argument-based planning, execution and evidence](cli.md), or invoke
+`.venv/bin/python -m build_manager.cli` directly.
+The existing `.venv/bin/python -m build_manager PLAN --output RESULTS` interface
+remains available for headless plan execution.
 Plans are trusted executable configuration, not incoming documents. Inspect the
 source, commands and destinations first. External effects require `--confirm`.
 On Windows use `.venv\Scripts\python.exe`. An explicit editable installation

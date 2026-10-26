@@ -8,6 +8,8 @@ from .plan_summary import captured_choices
 class PlanSummaryView(QScrollArea):
     phase_selected = Signal(str)
     blocker_selected = Signal(str)
+    problems_selected = Signal(str)
+    group_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,11 +56,13 @@ class PlanSummaryView(QScrollArea):
             choice_layout.addWidget(group, 1)
         self.body_layout.addWidget(choices)
         from .grouped_workflow_ui import GroupedFlowView
-        self.flow = GroupedFlowView()
+        self.flow = GroupedFlowView(graph_mode=not preview)
         choices.setVisible(preview)
         self.flow.pages.currentChanged.connect(lambda index, choices=choices, preview=preview: choices.setVisible(preview and index == 0))
         self.flow.phase_selected.connect(self.phase_selected.emit)
         self.flow.blocker_selected.connect(self.blocker_selected.emit)
+        self.flow.problems_selected.connect(self.problems_selected.emit)
+        self.flow.group_selected.connect(self.group_selected.emit)
         self.flow.reset(plan, fields, preview=preview, capability=capability, proposal=proposal)
         self.body_layout.addWidget(self.flow, 1)
         self.verticalScrollBar().setValue(0)

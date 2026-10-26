@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle, QSizePolicy)
+    QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
 from .ui_components import SelectionSummary, ActionStrip
 
 
@@ -63,14 +63,16 @@ class ConfigurationView(QWidget):
         heading.setStyleSheet('font-weight: 600;')
         preview_layout.addWidget(heading)
         preview_layout.addWidget(self.proposed_flow, 1)
-        self.proposal_detail = QLabel('')
-        self.proposal_detail.setWordWrap(True)
-        self.proposal_detail.setTextFormat(Qt.TextFormat.PlainText)
-        preview_layout.addWidget(self.proposal_detail)
         self.splitter = QSplitter()
-        self.splitter.addWidget(self.editor_scroll)
+        self.editor_pane = QWidget()
+        self.editor_layout = QVBoxLayout(self.editor_pane)
+        self.editor_layout.setContentsMargins(0, 0, 0, 0)
+        self.editor_layout.addWidget(self.editor_scroll, 1)
+        self.splitter.addWidget(self.editor_pane)
         self.splitter.addWidget(preview)
-        self.splitter.setSizes([510, 590])
+        self.splitter.setSizes([400, 1200])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 3)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setMinimumHeight(240)
         self.body_layout.addWidget(self.splitter, 1)
@@ -113,36 +115,20 @@ class ConfigurationView(QWidget):
             self.goal_row.addWidget(button)
         self.goal_row.addStretch()
         header.addLayout(self.goal_row)
-        summary_row = QHBoxLayout()
-        self.choice_summaries = {}
-        self.section_group = QButtonGroup(self)
-        for key in ('source', 'platforms', 'delivery', 'advanced'):
-            button = SelectionSummary()
-            button.setCheckable(True)
-            self.section_group.addButton(button)
-            button.clicked.connect(lambda checked=False, key=key: self.open_section(key))
-            self.choice_summaries[key] = button
-            if key == 'advanced':
-                button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-                button.setFixedWidth(100)
-            summary_row.addWidget(button, 0 if key == 'advanced' else 1)
-        header.addLayout(summary_row)
         self.blocker_strip = ActionStrip()
         self.blocker_strip.setAccessibleName('Resolve workflow requirements')
         self.blocker_strip.hide()
         self.blocker_actions, self.current_blockers = {}, ()
-        header.addWidget(self.blocker_strip)
+        self.body_layout.addWidget(self.blocker_strip)
         self.body_layout.insertWidget(0, self.intent_header)
         self.config_tabs = QTabWidget()
         self.config_tabs.setAccessibleName('Workflow configuration')
-        # The summary row is the section navigation; keep only the page model here.
-        self.config_tabs.tabBar().hide()
+        self.config_tabs.setUsesScrollButtons(True)
+        self.config_tabs.setStyleSheet('QTabBar::tab { padding: 6px 8px; }')
         self.config_pages, self.page_layouts = {}, {}
-        for key, label in [('source', 'Source'), ('platforms', 'Testing'), ('delivery', 'Delivery'), ('advanced', 'Advanced')]:
+        for key, label in [('source', 'Source'), ('platforms', 'Platforms'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
             page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(6)
             self.config_tabs.addTab(page, label); self.config_pages[key], self.page_layouts[key] = page, body
-        self.config_tabs.currentChanged.connect(self.sync_section_navigation)
-        self.sync_section_navigation()
         configuration_layout.addWidget(self.config_tabs, 1)
         def section(key, label, expanded=True):
             item = ConfigurationSection(label, expanded=True)
@@ -320,11 +306,13 @@ class ConfigurationView(QWidget):
             control.setAccessibleName(label)
             advanced_form.addRow(label, control)
         advanced.body.addLayout(advanced_form)
-        self.readiness = QLabel()
+        # Retain aggregate feedback for legacy callers; visible guidance belongs
+        # to the owning setting and the actionable requirement buttons.
+        self.readiness = QLabel(self)
         self.readiness.setWordWrap(True)
         self.readiness.setTextFormat(Qt.TextFormat.PlainText)
         self.readiness.setAccessibleName('Proposed choices and unresolved requirements')
-        configuration_layout.addWidget(self.readiness)
+        self.readiness.hide()
         for body in self.page_layouts.values():body.addStretch()
         self.source_mode.currentIndexChanged.connect(self.choose_source)
         self.revision.textChanged.connect(self.source_revision_changed)
@@ -430,7 +418,9 @@ class ConfigurationView(QWidget):
         declared_policy = any('source_policy' in row for row in (getattr(self.project, 'journey_capability', None) or {}).get('destinations', {}).values())
         if revision == 'working-tree' and self.goal.currentData() == 'deliver' and not declared_policy:
             text += ' Delivery policy may require committed source. Latest commit excludes your edits without committing them.'
-        self.source_summary.setText(text)
+        self._source_help = text
+        self.source_mode.setToolTip(text)
+        self.source_mode.setAccessibleDescription(text)
         self.refresh_proposal()
 
     def refresh_proposal(self):
@@ -458,8 +448,15 @@ class ConfigurationView(QWidget):
         proposal = replace(proposal, blockers=tuple(blockers))
         self.readiness.setText('\n'.join(proposal.messages))
         self.refresh_blockers(proposal.blockers)
-        self.readiness.setVisible(bool(proposal.messages) and not proposal.blockers)
-        self.refresh_choice_summaries(proposal)
+        source_messages = [message for message in proposal.messages if 'committed source' in message]
+        source_blocked = any(blocker.id == 'source' for blocker in proposal.blockers)
+        self.source_summary.setText(('This work requires committed source. Choose Latest commit or a specific revision.'
+            if source_messages else 'Enter a commit, branch or tag.') if source_blocked else '')
+        self.source_summary.setVisible(source_blocked)
+        source_help = '\n'.join((self._source_help, *source_messages))
+        self.source_mode.setToolTip(source_help)
+        self.source_mode.setAccessibleDescription(source_help)
+        self.refresh_section_tabs(proposal)
         if proposal == self.current_proposal:
             return
         selected = self.proposed_flow.selected
@@ -468,12 +465,8 @@ class ConfigurationView(QWidget):
         if selected in self.proposed_flow.canvas.cards:
             self.proposed_flow.selected = selected
             self.proposed_flow.set_facts({})
-            node = next(node for node in proposal.phases if node.id == selected)
-            self.proposal_detail.setText(node.label + ': ' + node.description + '. Settings are open on the left.')
-        else:
-            self.proposal_detail.setText('')
 
-    def refresh_choice_summaries(self, proposal):
+    def refresh_section_tabs(self, proposal):
         guided = bool(self.platform_checks) and self.goal.currentData() != 'advanced'
         platforms = [control.text() for control in self.platform_checks.values() if control.isChecked()] if guided else [self.platform.currentText()]
         destinations = [control.text() for control in self.destination_checks.values() if control.isChecked()] if self.goal.currentData() == 'deliver' else []
@@ -486,14 +479,11 @@ class ConfigurationView(QWidget):
                   'advanced': 'Options'}
         issues = {node.section for node in proposal.phases if node.issue} | {row.section for row in proposal.blockers}
         warning = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
-        for key, control in self.choice_summaries.items():
-            control.setIcon(warning if key in issues else QIcon())
-            control.set_summary(values[key])
-        self.choice_summaries['delivery'].setEnabled(self.goal.currentData() == 'deliver')
-        for key, label in (('source', 'Source'), ('platforms', 'Testing' if guided else 'Operation'), ('delivery', 'Delivery')):
+        for key in self.config_pages:
             index = self.config_tabs.indexOf(self.config_pages[key])
-            count = len(platforms) if key == 'platforms' else len(destinations)
-            self.config_tabs.setTabText(index, label + (f' ({count})' if key != 'source' else ''))
+            label = {'source': 'Source', 'platforms': f'Platforms ({len(platforms)})' if guided else 'Operation',
+                     'delivery': f'Delivery ({len(destinations)})', 'advanced': 'Options'}[key]
+            self.config_tabs.setTabText(index, label)
             self.config_tabs.setTabIcon(index, warning if key in issues else QIcon())
             self.config_tabs.setTabToolTip(index, values[key])
         for category, (page, _) in self.delivery_categories.items():
@@ -501,11 +491,6 @@ class ConfigurationView(QWidget):
                 if self.destination_categories[name] == category) if self.goal.currentData() == 'deliver' else 0
             index = self.delivery_tabs.indexOf(page)
             self.delivery_tabs.setTabText(index, category.removeprefix('Mobile ').capitalize() + (f' ({count})' if count else ''))
-
-    def sync_section_navigation(self, *_):
-        current = self.config_tabs.currentWidget()
-        for key, button in self.choice_summaries.items():
-            button.setChecked(self.config_pages[key] is current)
 
     def refresh_blockers(self, blockers):
         if blockers == self.current_blockers:
@@ -544,11 +529,9 @@ class ConfigurationView(QWidget):
 
     def open_proposed_card(self, key):
         if not key:
-            self.proposal_detail.setText('This is a proposal from your choices. Review checks project policy and resolves exact dependencies.')
             return
         node = next(node for node in self.current_proposal.phases if node.id == key)
         self.open_section(node.section, node.target)
-        self.proposal_detail.setText(node.label + ': ' + node.description + '. Settings are open on the left.')
 
     def open_section(self, section, target=''):
         self.last_opened_section = section

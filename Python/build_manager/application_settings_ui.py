@@ -70,7 +70,7 @@ class ApplicationSettingsDialog(QDialog):
         guide = QLabel('<b>Your next steps</b><br>1. Choose work and press Next to prepare a plan.'
                        '<br>2. Review the plan, then press Start to run tests.'
                        '<br>3. See Results and Timing. If delivery was selected, review the prepared files before approving it.'
-                       '<br><br>Past runs opens saved results. Project settings configures the selected checkout. '
+                       '<br><br>History opens saved results in run tabs. Project settings configures the selected checkout. '
                        'The More menu manages accounts and test machines.')
         guide.setWordWrap(True)
         layout.addWidget(guide)

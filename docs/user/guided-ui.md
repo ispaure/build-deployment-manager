@@ -1,20 +1,37 @@
 # Testing and delivery in the guided UI
 
-Select the registered project checkout at the top of the manager. Add its
+Select the registered project checkout inside the current run tab. Add its
 checkout if necessary; adding a project also authorizes its adapter. Each checkout retains its own settings and
 history, even when two checkouts belong to the same project.
 
 Use Add your first project, or More → Add project, to choose a folder. The preview identifies the
 project, its platforms and whether its own Python environment exists before you
 add it. The newly added project becomes selected. A setup notice appears only when the project environment needs attention.
-Project settings has one toolbar entry; setup does not repeat it.
-The toolbar shows project names; hover to see the checkout path. Duplicate names
+Each run tab owns its project picker, Project settings, More and Help controls;
+there is no shared project toolbar above the tabs. Setup does not repeat Project
+settings. The picker shows project names; hover to see the checkout path. Duplicate names
 include their paths. More contains project registration, setup, cleanup and app
 settings; Help remains directly available.
 
-Use New run to begin. The workflow uses three guided pages, with Back/Next
-actions and an explicit Start button. Past runs is separate history navigation.
-The action footer stays below the scrolling workspace on every page. Filled blue
+The first run opens in a tab. Use + to open another independent run, keeping the
+previous run’s project, choices, progress and results available. Tabs can use
+different projects. Changing a tab’s project replaces only that tab’s idle run;
+its siblings retain their selected projects, drafts, plans and results. Busy tabs
+lock their own project controls while other idle tabs remain editable. A new tab
+starts with the project of the tab/window where + was used. Project settings and
+More actions always target the tab that contains them. Saved settings invalidate
+other plans for the same project, without changing other projects.
+
+Drag a tab out or use its context menu to detach it; its project controls travel
+with it. Dock it back by dragging or using Dock to Main Window.
+The last attached run stays in the main window. Active work must finish before
+its tab can close; closing the app offers to cancel active operations and finish
+cleanup across all tabs.
+
+Each run has Choose work, Review plan, Progress & results and History navigation,
+with Back/Next actions and an explicit Start button. Opening retained results
+from History creates another run tab. The action footer stays below the run’s
+scrolling content, including when detached. Filled blue
 buttons identify the main next action; Back, Cancel and utilities use neutral
 buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
@@ -22,9 +39,12 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 Run checks and Prepare and deliver are visible, exclusive goal buttons.
 Project operation opens the project operation controls. The Source, Platforms,
-Delivery and Options summary buttons are the section navigation; click one to
-open its choices. The selected section has a blue outline, and summaries show
-selected names and warning icons for unresolved requirements.
+Delivery and Options tab buttons sit above the settings pane; click one to
+open its choices. Labels stay short, with selection counts for Platforms and
+Delivery; hover for selected names. The active tab remains highlighted.
+The workflow overview takes roughly three quarters of the workspace by default;
+drag the divider to resize the panes. Requirements appear below both panes,
+keeping warning actions outside the tab contents.
 Amber repair buttons open the exact source, platform or recipient control that
 needs attention and highlight its workflow card. They preserve current choices;
 select the required value explicitly. Source repairs use declared project policy
@@ -36,7 +56,8 @@ Presets appears only in Choose work. Selecting a preset loads its saved choices
 and invalidates any previous review; it never starts work. The adjacent menu
 contains Save preset and Delete preset. Edits mark the selected preset Modified.
 Saving a preset keeps the current choices and review; deleting one leaves the
-current draft intact. Presets remain private to the selected checkout.
+current draft intact. Presets remain private to the selected checkout. On reopening the app, choices
+that exactly match a saved preset re-select its name without reapplying it.
 
 Configuration uses two resizable columns. The selected section's settings appear
 on the left. Platforms presents a platform checkbox and
@@ -57,7 +78,13 @@ Source is visible up front: Current files includes edits; Latest commit selects
 HEAD and excludes edits; Specific commit, branch or tag accepts an explicit Git
 revision. Changing execution hosts no longer silently switches source. Source
 policy is checked during Review, and committed-source failures reopen Source with
-an explanation. The integrated contract currently requires selected validation;
+an explanation. Routine editing and card selection do not add footer messages.
+Unresolved choices appear as requirement buttons; source conflicts explain the
+next step beside Build from and disappear when resolved. Additional source and
+release-policy details are available in that control's tooltip and accessibility
+description. A clean-checkout policy is verified during Review rather than shown
+as a warning before the checkout has been inspected.
+The integrated contract currently requires selected validation;
 the UI shows that requirement rather than offering unsupported bypass controls.
 
 Choose Validate for checks only, or Validate and deliver for checks, preparation
@@ -135,21 +162,24 @@ availability. Preparing a suggestion does not create or reserve a remote tag.
 
 ## Review and results
 
-Deliveries and files lists exact destination outcomes and retained output paths.
-Select a result and choose Inspect selected result for its step evidence. A
-successful run opens this view unless a step is already being inspected; partial
+Live and retained runs open on the main workflow cards. Open a card to see its
+execution dependency graph, then select a step for evidence alongside the graph.
+The inspector's Files and deliveries tab lists relevant destination outcomes and
+retained output paths. A successful run preserves your current view; partial
 delivery and unknown outcomes remain separate.
+Prepared input files from prerequisite steps are included with the delivery
+that consumes them; inspecting a file opens its producing step.
 
 During execution, Running, Queued, Waiting for capacity and Needs approval counts
 open their relevant step. Cancelling shows Stopping until the retained result
 arrives; it does not imply that cleanup has already finished.
 
-Past runs supports search and All runs, Needs attention and Completed filters.
+History supports search and All runs, Needs attention and Completed filters.
 Outcome icons and a Next step column distinguish approvals, failures and unknown
 provider outcomes. Refresh preserves the selected run; viewing remains separate
 from retrying or approving it.
 
-The platform Find shortcut focuses search in Past runs, Project settings and the
+The platform Find shortcut focuses search in History, Project settings and the
 individual Tests tab. Approval choices support Space and Escape; highlighted
 buttons retain visible keyboard focus. Activity controls wrap in narrow windows.
 
@@ -158,16 +188,12 @@ available. Selecting one destination leaves other approvals pending. Completed
 delivery summaries show destination and retained-file counts; output selections
 and expanded groups remain stable while other work updates.
 
-Review opens on Run summary. Captured source, platforms and execution hosts
-appear across the top. The workflow preserves the same Source, platform, preparation
-and destination cards and arrows captured from Choose work. Execution substeps
-do not add columns or split these overview cards. Click a card to open its exact
-subtasks inside Run summary. Destination details include captured notes, recipients
-and approval requirements.
-Back to choices and Start remain below the scrolling summary. Exact steps and
-dependencies opens the resizable stage browser and inspector; Technical details
-contains commands and the complete redacted plan. Uploads and delivery actions are marked as needing
-separate approval. A working tree with uncommitted changes is identified explicitly.
+Review opens as one workspace with a dependency map and a persistent side
+inspector. Captured source and run choices expand above it. The overview preserves
+the Source, platform, preparation and destination cards captured from Choose work.
+Click a card to reveal its exact steps and upstream prerequisites. Its task list
+and details stay beside the map; selecting a task or a map step updates both.
+Back to choices and Start stay below the workspace.
 
 Results displays reported test counts, individual cases and measured timing.
 Unreported counts are shown as unavailable rather than successful zeroes. Cancel
@@ -179,7 +205,7 @@ Unknown outcomes take priority and open their step evidence for reconciliation.
 Review delivery uses the same retained-evidence verification and explicit approval
 dialog as the footer; it stays disabled while active work or verification prevents
 continuation. Independent failures and ready approvals can appear together.
-Past runs explains its empty state and enables viewing only after a run is selected.
+History explains its empty state and enables viewing only after a run is selected.
 Viewing a saved run never enables Start for that historical plan.
 
 Use environment variable names, credential helpers or existing protected files.
@@ -194,46 +220,55 @@ responsible for obeying this rule in their own storage and artifact outputs.
 
 ## Review
 
-Read the source identity, selected platforms and exact destination identities.
-Run summary opens first, separating work eligible to start from external actions
-and dependent work that wait for approval. Hosted test launches are identified as
-reviewed external actions too. Legacy external operations retain confirmation
-before Start. Clicking an overview card opens its subtask list and a resizable
-details pane inside Run summary. Selecting a subtask shows its prerequisites,
-state and declared outputs. All workflow cards returns to the overview; inspection
-never starts commands. Inspect selected step in full workflow opens Exact steps
-and dependencies with that step selected. Its readable hierarchy is on the left and its resizable inspector
-on the right. Returning to Run summary preserves the selected step. Full source
-identity is available in the source tooltip and Technical details. Large plans start with their purpose groups collapsed, with step counts, statuses
-and approval counts visible. Expand a group with its arrow, double-click, or the
-Right arrow key, then select a step to inspect it. These are the individual
-execution steps supplied by the project adapter; a check step can contain many
-test cases. Grouping is for navigation and does not change scheduling.
-View blocking step opens the recorded failed prerequisite directly in Step
-details, including through intervening blocked steps. Card hover, focus outlines
-and chevrons indicate inspection; approval badges identify work needing review.
-Opening subtask details gives their list and evidence the summary's available
-space. During execution, the compact source/goal line replaces repeated captured
-choice columns; its tooltip retains source details.
+Read the captured source, selected platforms and exact destination identities.
+Expand Captured source and run choices to see the full source identity and captured
+notes and recipients. Click an overview card to inspect its execution steps;
+All workflow cards returns to the overview while keeping the side inspector open.
+Select a task in the inspector or a step on the map to show the same selection,
+prerequisites, execution location, timing and declared outputs. Prerequisite buttons
+open the relevant step, including across card boundaries. Unmapped work remains
+available through Other resolved subtasks.
 
-Dependency map switches to the exact graph. Section bands delimit its headings.
+The task table shows — until measured time exists, with Not started in its
+tooltip. Repeated platform and validation prefixes are shortened so task names
+remain distinguishable; their tooltips retain full identities. Review does not
+manufacture elapsed times or historical estimates. The selected step shows compact
+fields and prerequisite buttons rather than a text dump; timeout, required flags
+and resource settings remain under Command & execution details. Output filenames
+keep their full paths in tooltips.
+
+When evidence is present, failed task rows carry an error icon. View error details
+above the workspace opens the failing step even when another card is selected.
+Its Error details panel appears automatically, with the error headline, full
+traceback, exit code, failed test messages and captured step output. Successful
+and unstarted steps have no empty error box. View blocking step follows a blocked
+step back to the recorded failure. Changing unrelated facts preserves selected
+text and scroll position in the details. A plan-preparation failure exposes Error
+details with the full redacted traceback beside the retained choices.
+
+Command & execution details expands the exact selected step command, working
+directory and environment references. Full plan & commands expands the readable
+plan, every declared dependency and complete redacted plan data in place. There
+are no separate summary, exact-step or technical tabs in Review. Selecting cards
+or expanding details starts no commands.
+
 Fit keeps readable cards, with scrolling for graphs larger than the viewport.
-Keyboard focus brings off-screen cards into view. Live updates preserve map pan
-and manual zoom. Stages returns to
-the readable hierarchy and retains the selected step. Arrows
-show prerequisites; branches can overlap when worker and shared-resource limits
-allow. Select a card to inspect prerequisites, outputs and approval requirements.
-In this technical view, solid arrows require successful prerequisites and dotted
-arrows wait for completion without requiring success. These exact execution
-links can cross between branches; the Run summary preserves the chosen overview
-instead of laying out every such link.
-Whole workflow restores the overall review. Selecting cards executes no code.
-Technical details opens the dependency table and commands. Each step shows
-its kind, effect, required/optional status, timeout and dependencies. Complete plan
-contains the redacted command configuration for detailed inspection. Changing any
-selection requires a fresh inspection. Start validation or Start validation and
-preparation starts the retained plan;
-legacy whole-plan external operations still ask for explicit confirmation.
+Map interaction help is available in its tooltip rather than permanent instruction
+paragraphs. The footer keeps the approval boundary beside Start.
+Keyboard focus brings off-screen cards into view. Connections stay visible when
+selecting a step; selection changes the details, not which arrows appear.
+Arrows show prerequisites;
+branches can overlap when worker and shared-resource limits allow. The map omits
+redundant success arrows: if A → B → C already shows a requirement, it hides the
+extra A → C arrow. Details and the dependency table retain every declared
+dependency. Completion waits and always-run steps keep their separate relationships
+when connections are shown. Dotted arrows wait for completion without requiring success.
+
+Uploads, delivery and hosted test launches identify their approval boundary.
+Start runs eligible checks and preparation; external steps pause for separate
+approval and their dependent work waits too. Legacy whole-plan external operations
+still ask for explicit confirmation before Start. Changing any selection or saved
+setting requires a fresh plan review.
 
 ## Run and results
 
@@ -246,23 +281,29 @@ such as cleaning up one iOS simulator before starting the next, still apply.
 Previously saved plans retain their original order; prepare a new plan after
 updating the manager and project adapter to use the new scheduling policy.
 
-Run summary retains the same captured choices and work groups during execution
-and while viewing retained runs. Group statuses and waiting reasons update in
-place, including failed prerequisites and eligible approvals on independent branches.
-The same card drilldown works for running and saved results. Shared preparation stays in the chosen package cards, with shared task references
-where needed. Other resolved subtasks exposes any work the project did not map
-to a chosen card. Scheduling waits are explained inside the applicable card;
-the technical Dependency map retains their exact edges. When source capture
-already happened during planning, Source shows that identity without inventing
-executable subtasks.
-The overall outcome, next action and reported case count stay visible when a step
-is selected. An unknown external outcome takes priority over approval guidance.
+The main workflow cards retain the captured Source, platform, preparation and
+destination groups during execution and while viewing retained runs. Open a card
+to see only its execution steps as a dependency graph. Select a step for its
+Details, Summary, Tests, Timing, Output and relevant Files and deliveries in the
+resizable inspector alongside the graph. Opening a card shows its combined
+evidence; selecting a step focuses its evidence. All workflow cards returns to
+the main overview.
+There is no separate results browser or stage list in the run view.
 
-Results and exact steps opens the same stages, dependency map and resizable
-inspector used for detailed investigation. Select a step or card to scope
-Results, Tests, Timing and Output to that step. Whole workflow restores combined
-totals. Switching cards preserves the open inspector tab. The splitter can be
-resized; larger maps scroll in both directions. Cards support Tab and Space.
+Shared preparation stays in the chosen package cards, with shared task references
+where needed. Other resolved subtasks exposes work the project did not map to a
+chosen card. Dependencies outside the open card remain in the step's details;
+Open prerequisite in another card navigates to their original card. Dotted arrows
+wait for completion without requiring success. View blocking step opens the
+recorded failed prerequisite even when it belongs to another card. View problems
+opens the relevant card and failing step, selecting its reported failure message
+when individual test reports exist. Source displays its captured identity without
+inventing executable steps when capture already happened during planning.
+
+The overall outcome, next action and reported test-case count stay visible while
+inspecting a step. Opening a card selects a failed, running or approval step when
+available. Maps support pan, zoom, Tab and Space. Live updates preserve the graph
+selection, pan and zoom, and the text selection and scroll in Details.
 
 Card text and colored edges identify running, passed, failed and approval states.
 A failed prerequisite immediately mutes affected pending descendants and explains
@@ -271,13 +312,17 @@ the executor later records skipped steps. Muted cards remain selectable. Cleanup
 steps declared to run after failure remain eligible, and unrelated branches stay
 independent.
 
-Results shows reported test counts and guidance for the next action. Timing
+Summary shows reported test counts and guidance for the next action. Timing
 lists measured tests slowest first, with total, average and median durations.
 Missing durations are excluded from statistics; summed test time differs from
 active run time because parallel work can overlap.
 
-The Step details tab includes every declared phase from the start. Running steps have
-independent clocks; completed steps retain measured durations. Select a step for
+The graph includes every execution step belonging to its card from the start.
+Running cards and their inspector share the same elapsed clock; completed steps
+retain measured durations. Never-started steps show Not started rather than a
+synthetic zero duration. Main cards label summed durations as Total step time
+(may overlap); this is distinct from the run's active time and individual test
+time. Select a step's Details for
 dependency information, errors, log filename and artifact checksums. Progress
 counts finished steps, including failures and skips; it is not a success percentage.
 The workflow outcome remains explicit.
@@ -290,8 +335,8 @@ Search case/suite/class names and messages, or filter by Problems, Passed or
 Skipped. Select a case to read its failure/skip detail and measured duration.
 Adapters without individual reports still show complete phase status and logs.
 Cases appear after report capture at phase completion; Live output streams during
-execution. Output is scoped to the selected card; unassigned runner messages
-appear under Whole workflow. Saved runs can preview each step’s retained log
+execution. Output is scoped to the selected step or all steps in the open card;
+unassigned runner messages appear when viewing all steps in that card. Saved runs can preview each step’s retained log
 within its own result directory. Console text is never treated as proof that a case passed.
 
 Cancel operation requests cancellation and owned cleanup. Closing the application

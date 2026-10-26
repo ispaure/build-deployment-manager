@@ -118,6 +118,7 @@ from its parent. Raw logs, screenshots and timing reports stay under ignored
 
 ## Further reading
 
+- [Headless automation API](automation-api.md)
 - [Integrated validation and delivery contract](journey-contract.md)
 - [Historical data and migration](migration.md)
 - [Bounded scheduling and resource ownership](scheduling.md)

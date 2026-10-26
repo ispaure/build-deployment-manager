@@ -96,6 +96,70 @@ with TemporaryDirectory() as folder:
         self.assertIn('passed', panel.status.text())
         panel.close()
 
+    def test_runner_imports_pinned_dependency_without_pythonpath(self):
+        source = Path(__file__).resolve().parents[1]
+        code = ('from pathlib import Path; import sys; '
+                f'assert Path.cwd().resolve() == Path({str(self.root)!r}).resolve(); '
+                'assert "commonUtils" not in sys.modules; '
+                'print("isolated fixture phase")')
+        panel = ManagerPanel(OtherProject(self.root, code=code))
+        self.addCleanup(panel.close)
+        self.inspect(panel)
+        from PySide6.QtCore import QProcessEnvironment
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.remove('PYTHONPATH')
+        environment.remove('PYTHONHOME')
+        panel.process.setProcessEnvironment(environment)
+        self.assertEqual(Path(panel.process.workingDirectory()), source)
+        panel.run_plan()
+        report = self.finish(panel)
+        self.assertEqual(report['status'], 'passed', panel.preview.toPlainText())
+        from build_manager.identity import checkout_identity
+        self.assertEqual(report['engine']['commonUtils'], checkout_identity(source / 'commonUtils'))
+        self.assertIn('isolated fixture phase', panel.preview.toPlainText())
+
+    def test_startup_traceback_is_visible_and_redacted_without_running_a_step(self):
+        from build_manager.redaction import Redactor
+        panel = ManagerPanel(OtherProject(self.root, code='raise AssertionError("must not run")'))
+        self.addCleanup(panel.close)
+        self.inspect(panel)
+        # Fail at module import, before CLI parsing or any phase execution.
+        package = self.root / 'build_manager'
+        package.mkdir()
+        (package / '__init__.py').write_text('raise RuntimeError("startup fixture private-token-value")\n')
+        panel.process.setWorkingDirectory(str(self.root))
+        panel.redact = Redactor(['private-token-value'])
+        panel.run_plan()
+        deadline = time.monotonic() + 10
+        while panel.cancel.isEnabled():
+            self.app.processEvents()
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.01)
+        self.assertFalse(panel.result.parent.exists())
+        self.assertIn('RuntimeError: startup fixture', panel.run_view.summary.text())
+        self.assertIn('Traceback', panel.preview.toPlainText())
+        self.assertNotIn('private-token-value', panel.preview.toPlainText())
+        self.assertNotIn('private-token-value', panel.run_view.summary.text())
+        self.assertTrue(all(fact['status'] == 'queued' for fact in panel.run_view.facts.values()))
+
+    def test_finished_drains_pending_stderr_before_reporting_missing_result(self):
+        panel = ManagerPanel(OtherProject(self.root))
+        self.addCleanup(panel.close)
+        panel.result = self.root / 'missing' / 'result.json'
+        with patch.object(panel.process, 'readAllStandardError',
+                          return_value=b'ModuleNotFoundError: synthetic missing dependency\n'):
+            panel.finished(1)
+        self.assertIn('ModuleNotFoundError: synthetic missing dependency', panel.run_view.summary.text())
+
+    def test_new_launch_clears_previous_startup_stderr(self):
+        panel = ManagerPanel(OtherProject(self.root))
+        self.addCleanup(panel.close)
+        self.inspect(panel)
+        panel.session.stderr = 'old startup failure'
+        panel.run_plan()
+        self.assertEqual(panel.session.stderr, '')
+        self.assertEqual(self.finish(panel)['status'], 'passed')
+
     def test_declined_confirmation_launches_nothing(self):
         panel = ManagerPanel(OtherProject(self.root, effect='upload'))
         panel.goal.setCurrentIndex(panel.goal.findData('advanced'))

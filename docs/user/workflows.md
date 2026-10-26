@@ -26,11 +26,36 @@ dialog. Step clocks, declared JUnit cases and failure details remain attached to
 their original run. Active duration accumulates across resume attempts; time spent
 waiting between attempts for human approval is excluded.
 
+If the execution process exits before writing a result report, the run summary
+shows the final startup error from stderr, when available. The Output tab retains
+the traceback with credential redaction. Steps that never started remain queued;
+inspect a fresh plan after correcting the startup problem.
+
 Workflow cards show small Windows, Linux, Apple, Android, GitHub and Docker icons
 when their declared platform or execution location is known. A card can show both
 the target platform and its execution service. Hover for the icon names; the same
 context is available to screen readers. Icons describe the affected platform or
-service, while the card's status and border describe progress and outcome.
+service. Passed cards have a green background; failed cards have a red background.
+Running cards show a progress bar at the bottom, with completed/total subtasks
+when a task count is available. A single running step shows activity without an
+invented percentage. Waiting cards stay neutral; cards blocked by a failed
+prerequisite are greyed out and remain available for inspection. Status text
+also describes the outcome.
+
+During a live or retained run, opening a main workflow card shows its relevant
+dependency graph. Selecting a step opens the shared inspector alongside the graph;
+there is no separate run results browser. Details shows state, waiting reasons,
+errors and captured context. Tests, Timing, Output and Files and deliveries stay
+scoped to that step; All steps in this card shows the card's combined evidence.
+All workflow cards returns to the main overview. View problems opens the failing
+step and selects its first reported test problem. External prerequisites and
+failed blockers link to their own cards.
+
+Running cards and details use the same elapsed clock. Completed steps keep their
+measured durations; skipped steps without measured runtime show Not started.
+Main cards show Total step time (may overlap), which differs from active run time
+and reported individual test time. Progress updates preserve graph navigation and
+Details text selection and scroll position.
 
 Interrupted harmless work is retryable. A running/failed/timeout external effect
 has an unknown outcome until its provider reconciles the recorded operation.

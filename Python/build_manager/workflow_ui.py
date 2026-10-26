@@ -1,10 +1,9 @@
 """Read-only, keyboard-selectable dependency cards shared by review and execution."""
-from math import atan2, cos, sin
 from PySide6.QtCore import Qt, QPointF, Signal, QTimer, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (QGridLayout, QLabel, QPushButton,
     QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget,
-    QHeaderView, QStackedWidget, QTreeWidget, QTreeWidgetItem)
+    QHeaderView, QProgressBar, QStackedWidget, QTreeWidget, QTreeWidgetItem)
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
 
 FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', 'skipped'}
@@ -119,8 +118,9 @@ class StageBrowser(QTreeWidget):
 def layout_positions(phases):
     """Keep each column near its parents, preserving stable sibling order."""
     levels, rows = {}, {}
+    visible = {phase.id for phase in phases}
     for phase in phases:
-        parents = (*phase.dependencies, *getattr(phase, 'waits_for', ()))
+        parents = [key for key in (*phase.dependencies, *getattr(phase, 'waits_for', ())) if key in visible]
         level = 1 + max((levels[key] for key in parents), default=-1)
         levels[phase.id] = level
         rows.setdefault(level, []).append(phase)
@@ -128,7 +128,7 @@ def layout_positions(phases):
     positions = {}
     for level, row in rows.items():
         def parent_center(phase):
-            parents = (*phase.dependencies, *getattr(phase, 'waits_for', ()))
+            parents = [key for key in (*phase.dependencies, *getattr(phase, 'waits_for', ())) if key in visible]
             nearest = max((levels[key] for key in parents), default=-1)
             parents = [key for key in parents if levels[key] == nearest]
             return sum(positions[key][1] for key in parents) / len(parents) if parents else width - 1
@@ -138,6 +138,36 @@ def layout_positions(phases):
             positions[phase.id] = (level, start + 2 * index)
     offset = min((lane for _, lane in positions.values()), default=0)
     return {key: (level, lane - min(0, offset)) for key, (level, lane) in positions.items()}
+
+
+def visible_dependencies(phases):
+    """Omit success arrows already implied by a visible success-only path.
+
+    Completion waits and always-run steps do not propagate success, so they
+    must never be used to hide a success requirement. Reduce only the drawing;
+    the original plan remains the source for scheduling and inspection.
+    """
+    phases = {phase.id: phase for phase in phases}
+    ancestors = {}
+    for key in phases:
+        seen, pending = set(), [key]
+        while pending:
+            phase = phases[pending.pop()]
+            if phase.always:
+                continue
+            for parent in phase.dependencies:
+                if parent in phases and parent not in seen:
+                    seen.add(parent)
+                    pending.append(parent)
+        ancestors[key] = seen
+    edges = []
+    for phase in phases.values():
+        parents = [key for key in phase.dependencies if key in phases]
+        for parent in parents:
+            if phase.always or not any(parent in ancestors[other] for other in parents if other != parent):
+                edges.append((parent, phase.id))
+        edges.extend((key, phase.id) for key in getattr(phase, 'waits_for', ()) if key in phases)
+    return edges
 
 
 def display_states(plan, facts, preview=False):
@@ -181,6 +211,22 @@ def blocking_prerequisite(plan, facts, key):
     return ''
 
 
+def state_label(status):
+    return {'proposed': 'Proposed', 'needs_selection': 'Needs selection',
+        'blocked': 'Won’t run · prerequisite failed', 'planned': 'Planned',
+        'queued': 'Waiting to start', 'pending': 'Waiting to start',
+        'waiting_resource': 'Waiting for shared resource', 'awaiting_review': 'Waiting for approval',
+        'skipped': 'Skipped'}.get(status, status.replace('_', ' ').capitalize())
+
+
+def step_time(fact, status):
+    """Never present a never-started step's synthetic zero as measured runtime."""
+    from .run_ui import duration
+    if status in {'queued', 'pending', 'planned', 'blocked', 'skipped', 'waiting_resource'}:
+        return 'Not started' if not fact.get('seconds') else duration(fact['seconds'])
+    return duration(fact.get('seconds')) if fact.get('seconds') is not None else ''
+
+
 class FlowCard(QPushButton):
     focused = Signal()
 
@@ -205,6 +251,7 @@ class FlowCanvas(QWidget):
     def __init__(self):
         super().__init__()
         self.cards, self.edges, self.states = {}, [], {}
+        self.headers, self.order_edges, self.positions = [], set(), {}
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(12, 10, 12, 12)
         self.grid.setHorizontalSpacing(48)
@@ -212,20 +259,22 @@ class FlowCanvas(QWidget):
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.setStyleSheet('''
             QPushButton#workflowCard { background: palette(base); border: 1px solid palette(mid);
-                border-left: 4px solid palette(mid); border-radius: 8px; text-align: left; }
+                border-radius: 8px; text-align: left; }
             QPushButton#workflowCard:hover { border-color: palette(highlight); }
-            QPushButton#workflowCard:checked { border: 2px solid #245db5; border-left-width: 4px; }
-            QPushButton#workflowCard:focus { border: 2px dashed palette(highlight); border-left-width: 4px; }
-            QPushButton#workflowCard[state="running"] { border-left-color: #2980b9; }
-            QPushButton#workflowCard[state="passed"] { border-left-color: #20834a; }
+            QPushButton#workflowCard:checked, QPushButton#workflowCard:focus { border-color: palette(highlight); }
+            QPushButton#workflowCard[state="passed"], QPushButton#workflowCard[state="captured"] {
+                background: #dff2e4; color: #173d24; }
             QPushButton#workflowCard[state="failed"], QPushButton#workflowCard[state="error"],
-            QPushButton#workflowCard[state="timeout"] { border-left-color: #c54040; }
-            QPushButton#workflowCard[state="needs_selection"], QPushButton#workflowCard[state="awaiting_review"] { border-left-color: #b37c12; }
+            QPushButton#workflowCard[state="timeout"], QPushButton#workflowCard[state="unknown"],
+            QPushButton#workflowCard[state="interrupted"] { background: #f8dede; color: #632020; }
             QPushButton#workflowCard[state="blocked"], QPushButton#workflowCard[state="skipped"] {
-                background: palette(alternate-base); color: palette(mid); border-left-color: palette(mid); }
+                background: palette(alternate-base); color: palette(mid); }
+            QProgressBar#cardProgress { border: 1px solid palette(mid); border-radius: 3px;
+                background: palette(base); color: palette(text); text-align: center; }
+            QProgressBar#cardProgress::chunk { background: #69acd5; }
         ''')
 
-    def reset(self, plan):
+    def reset(self, plan, keys=None):
         while self.grid.count():
             item = self.grid.takeAt(0)
             if item.widget():
@@ -233,16 +282,19 @@ class FlowCanvas(QWidget):
                 item.widget().deleteLater()
         self.cards, self.states = {}, {}
         self.headers = []
-        self.positions = layout_positions(plan.phases)
+        keys = set(keys) if keys is not None else {phase.id for phase in plan.phases}
+        # Filter only the drawing. Statuses, inspection and execution keep the
+        # original plan, including prerequisites outside this card.
+        phases = tuple(phase for phase in plan.phases if phase.id in keys)
+        self.positions = layout_positions(phases)
         for column in range(self.grid.columnCount()):
             self.grid.setColumnMinimumWidth(column, 0)
-        self.order_edges = {(key, phase.id) for phase in plan.phases for key in getattr(phase, 'waits_for', ())}
-        self.edges = [(key, phase.id) for phase in plan.phases
-                      for key in (*phase.dependencies, *getattr(phase, 'waits_for', ()))]
+        self.order_edges = {(key, phase.id) for phase in phases for key in getattr(phase, 'waits_for', ()) if key in keys}
+        self.edges = visible_dependencies(phases)
         compact = getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False)
         width = max(216, self.fontMetrics().horizontalAdvance('Waiting for approval') + 48)
         column_sections = {}
-        for phase in plan.phases:
+        for phase in phases:
             section = getattr(phase, 'section', '')
             label = {'source': 'Source', 'platforms': 'Testing', 'delivery': 'Delivery'}.get(section)
             if not label:
@@ -262,7 +314,7 @@ class FlowCanvas(QWidget):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.grid.addWidget(label, 0, column, 1, span)
             self.headers.append(label)
-        for phase in plan.phases:
+        for phase in phases:
             card = FlowCard()
             card.setObjectName('workflowCard')
             card.setCheckable(True)
@@ -304,6 +356,13 @@ class FlowCanvas(QWidget):
                 badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 badge.setStyleSheet('border: 1px solid #b37c12; border-radius: 4px; padding: 2px 5px;')
                 body.addWidget(badge, 0, Qt.AlignmentFlag.AlignLeft)
+            progress = QProgressBar(card)
+            progress.setObjectName('cardProgress')
+            progress.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            progress.setFixedHeight(18)
+            progress.setAccessibleName('Completed subtasks')
+            progress.hide()
+            body.addWidget(progress)
             card.clicked.connect(lambda checked=False, key=phase.id: self.selected.emit(key))
             level, lane = self.positions[phase.id]
             self.grid.addWidget(card, lane + 1, level, 2, 1)
@@ -315,22 +374,27 @@ class FlowCanvas(QWidget):
     def update_facts(self, plan, facts, selected, preview=False):
         self.states = display_states(plan, facts, preview)
         for phase in plan.phases:
+            if phase.id not in self.cards:
+                continue
             card, status_label, counts_label = self.cards[phase.id]
             status, reason = self.states[phase.id]
-            label = {'proposed': 'Proposed', 'needs_selection': 'Needs selection', 'blocked': 'Won’t run · prerequisite failed', 'planned': 'Planned',
-                     'queued': 'Waiting to start', 'waiting_resource': 'Waiting for shared resource', 'awaiting_review': 'Waiting for approval',
-                     'skipped': 'Skipped · did not run'}.get(status, status.replace('_', ' ').capitalize())
+            label = state_label(status)
             fact = facts.get(phase.id, {})
-            seconds = fact.get('seconds')
-            if seconds is not None and status != 'running':
-                from .run_ui import duration
-                label += ' · ' + duration(seconds)
+            elapsed = step_time(fact, status)
+            if elapsed and not preview:
+                label += ' · ' + elapsed
             status_label.setText(label)
             status_label.setVisible(status not in {'proposed', 'planned'})
             tests = fact.get('tests', [])
             problems = sum(case['status'] in {'failed', 'error'} for case in tests)
             counts_label.setText(f'{len(tests)} tests · {problems} problems' if tests else '')
             counts_label.setVisible(bool(tests))
+            progress = card.findChild(QProgressBar, 'cardProgress')
+            progress.setVisible(status == 'running')
+            completed, total = fact.get('completed', 0), fact.get('total', 0)
+            progress.setRange(0, total)
+            progress.setValue(completed)
+            progress.setFormat(f'{completed}/{total} steps finished' if total else 'Running')
             card.setChecked(phase.id == selected)
             badge = card.findChild(QLabel, 'approvalBadge')
             if badge:
@@ -341,11 +405,15 @@ class FlowCanvas(QWidget):
                 card.style().polish(card)
             muted = status in {'blocked', 'skipped'}
             text_color = '#b3b3b3' if card.palette().base().color().lightness() < 128 else '#626262'
+            if status in {'passed', 'captured'}:
+                text_color = '#173d24'
+            elif status in {'failed', 'error', 'timeout', 'unknown', 'interrupted'}:
+                text_color = '#632020'
             for child in card.findChildren(QLabel):
                 if child.objectName() == 'approvalBadge':
                     continue
                 child.setStyleSheet(('font-weight: 600;' if child.property('workflowHeading') else '') +
-                    ('color: ' + text_color + ';' if muted else ''))
+                    ('color: ' + text_color + ';' if muted or status in {'passed', 'captured', 'failed', 'error', 'timeout', 'unknown', 'interrupted'} else ''))
             card.setMinimumHeight(max(64 if getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False) else 100,
                 card.layout().totalHeightForWidth(card.width())))
             context = card.property('workflowContext')
@@ -375,24 +443,29 @@ class FlowCanvas(QWidget):
             pen.setStyle(Qt.PenStyle.DotLine if (source, target) in self.order_edges else
                          Qt.PenStyle.DashLine if blocked else Qt.PenStyle.SolidLine)
             painter.setPen(pen)
-            path = QPainterPath(start)
-            if self.positions[target][0] > self.positions[source][0] + 1:
-                # Route long edges around intervening cards, retaining every dependency.
-                gutter = self.height() - 6
-                path.lineTo(start.x() + 18, start.y())
-                path.lineTo(start.x() + 18, gutter)
-                path.lineTo(end.x() - 18, gutter)
-                path.lineTo(end.x() - 18, end.y())
-                path.lineTo(end)
-            else:
-                middle = (start.x() + end.x()) / 2
-                path.cubicTo(QPointF(middle, start.y()), QPointF(middle, end.y()), end)
+            path, arrow = dependency_path(start, end, long_edge=self.positions[target][0] > self.positions[source][0] + 1,
+                gutter=self.height() - 6)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
-            angle = atan2(end.y() - path.pointAtPercent(.97).y(), end.x() - path.pointAtPercent(.97).x())
             painter.setBrush(pen.color())
-            painter.drawPolygon(QPolygonF([end, end - QPointF(8 * cos(angle - .45), 8 * sin(angle - .45)),
-                                          end - QPointF(8 * cos(angle + .45), 8 * sin(angle + .45))]))
+            painter.drawPolygon(arrow)
+
+
+def dependency_path(start, end, *, long_edge=False, gutter=0):
+    """Finish every connector horizontally through the centre of its arrowhead."""
+    path = QPainterPath(start)
+    approach = end - QPointF(16, 0)
+    if long_edge:
+        path.lineTo(start.x() + 18, start.y())
+        path.lineTo(start.x() + 18, gutter)
+        path.lineTo(approach.x() - 8, gutter)
+        path.lineTo(approach.x() - 8, end.y())
+        path.lineTo(approach)
+    else:
+        middle = (start.x() + approach.x()) / 2
+        path.cubicTo(QPointF(middle, start.y()), QPointF(middle, end.y()), approach)
+    path.lineTo(end)
+    return path, QPolygonF([end, end - QPointF(8, -4), end - QPointF(8, 4)])
 
 
 class FitMapView(QGraphicsView):
@@ -454,8 +527,9 @@ class FitMapView(QGraphicsView):
 class WorkflowFlow(QWidget):
     phase_selected = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, graph_only=False):
         super().__init__(parent)
+        self.graph_only = graph_only
         self.plan, self.facts, self.selected, self.preview = None, {}, '', False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -487,10 +561,11 @@ class WorkflowFlow(QWidget):
         self.fit_button.clicked.connect(self.fit_map)
         self.zoom_in.clicked.connect(lambda: self.scroll.zoom(1.2))
         self.zoom_out.clicked.connect(lambda: self.scroll.zoom(1 / 1.2))
-        self.browser = StageBrowser()
-        self.browser.selected.connect(self.select)
+        self.browser = StageBrowser() if not graph_only else None
+        if self.browser is not None:
+            self.browser.selected.connect(self.select)
         self.views = QStackedWidget()
-        self.views.addWidget(self.browser)
+        self.views.addWidget(self.browser if self.browser is not None else QWidget())
         self.views.addWidget(self.scroll)
         layout.addWidget(self.views, 1)
         self.legend = legend = QLabel('Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
@@ -506,13 +581,13 @@ class WorkflowFlow(QWidget):
         self.canvas.reset(plan)
         self.scroll.reset_view()
         proposed = getattr(plan, 'proposed', False)
-        self.guidance.setVisible(not proposed)
-        self.legend.setVisible(not proposed)
-        if not proposed:
+        self.guidance.setVisible(not proposed and not self.graph_only)
+        self.legend.setVisible(not proposed and not self.graph_only)
+        if not proposed and not self.graph_only:
             self.browser.load_plan(plan)
-        self.stages_button.setVisible(not proposed)
-        self.map_button.setVisible(not proposed)
-        self.show_map(proposed)
+        self.stages_button.setVisible(not proposed and not self.graph_only)
+        self.map_button.setVisible(not proposed and not self.graph_only)
+        self.show_map(proposed or self.graph_only)
         self.whole.setVisible(not getattr(plan, 'proposed', False))
         if getattr(plan, 'proposed', False):
             self.whole.setText('Overview')
@@ -523,6 +598,15 @@ class WorkflowFlow(QWidget):
         self.update_guidance()
         self.set_facts({})
         self.scroll.verticalScrollBar().setValue(0)
+        self.center_timer.start(0)
+
+    def set_scope(self, keys):
+        # Card inspection already has its own back-to-overview navigation.
+        self.whole.hide()
+        self.selected = ''
+        self.canvas.reset(self.plan, keys)
+        self.scroll.reset_view()
+        self.set_facts(self.facts)
         self.center_timer.start(0)
 
     def show_map(self, visible):
@@ -552,7 +636,10 @@ class WorkflowFlow(QWidget):
                 'Groups can overlap: prerequisites determine order. Use Dependency map to trace them.')
         else:
             self.guidance.setText(f'Read left to right. Arrows show prerequisites. Up to {self.plan.max_workers} steps can run together. '
-                'Drag to pan; use + to zoom. Stages returns to the readable step list.')
+                'Drag to pan; use + to zoom. Redundant success arrows are omitted; details list every prerequisite.' +
+                ('' if self.graph_only else ' Stages returns to the readable step list.'))
+
+        self.scroll.setToolTip(self.guidance.text() + '\n' + self.legend.text())
 
     def center_map(self):
         self.scroll.fit_map()
@@ -566,12 +653,12 @@ class WorkflowFlow(QWidget):
         if self.plan:
             self.whole.setChecked(not self.selected)
             self.canvas.update_facts(self.plan, facts, self.selected, self.preview)
-            if not getattr(self.plan, 'proposed', False):
+            if not getattr(self.plan, 'proposed', False) and not self.graph_only:
                 self.browser.update_facts(self.plan, facts, self.selected, self.preview)
             self.center_timer.start(0)
 
     def select(self, key):
-        if self.plan is None or key and key not in self.canvas.cards:
+        if self.plan is None or key and not any(phase.id == key for phase in self.plan.phases):
             return
         self.selected = key
         self.set_facts(self.facts)

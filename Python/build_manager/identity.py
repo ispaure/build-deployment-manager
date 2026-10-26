@@ -31,3 +31,10 @@ def runtime_identity():
     root = Path(__file__).resolve().parents[2]
     return dict(api=API_VERSION, manager=checkout_identity(root),
                 commonUtils=checkout_identity(root / 'Python/commonUtils'))
+
+
+def engine_review_identity(previous, current):
+    """Bind explicit continuation review to both exact engine identities."""
+    import json
+    return hashlib.sha256(json.dumps(dict(previous=previous, current=current),
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()

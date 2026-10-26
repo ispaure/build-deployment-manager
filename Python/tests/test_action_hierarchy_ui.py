@@ -78,10 +78,10 @@ class ActionHierarchyTests(unittest.TestCase):
                 panel.stages.setCurrentIndex(stage)
                 for _ in range(4): self.app.processEvents()
                 self.assertEqual((window.width(), window.height()), size)
-                self.assertFalse(window.scroll.isAncestorOf(panel.action_footer))
+                self.assertFalse(panel.configuration.editor_scroll.isAncestorOf(panel.action_footer))
                 self.assertTrue(button.isVisible())
-                for value in (0, window.scroll.verticalScrollBar().maximum()):
-                    window.scroll.verticalScrollBar().setValue(value)
+                for value in (0, panel.configuration.editor_scroll.verticalScrollBar().maximum()):
+                    panel.configuration.editor_scroll.verticalScrollBar().setValue(value)
                     self.app.processEvents()
                     rect = button.rect().translated(button.mapTo(window, QPoint()))
                     self.assertTrue(window.rect().contains(rect), (size, stage, rect))
@@ -101,7 +101,7 @@ class ActionHierarchyTests(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(previous.isVisible())
         self.assertIsNot(window.panel.action_footer, previous)
-        self.assertIs(window.panel.action_footer.parentWidget(), window)
+        self.assertIs(window.panel.action_footer.parentWidget(), window.panel)
         self.assertEqual([frame for frame in window.findChildren(QFrame, 'actionFooter') if frame.isVisible()],
                          [window.panel.action_footer])
 
@@ -111,7 +111,7 @@ class ActionHierarchyTests(unittest.TestCase):
         view.inspect_summary_phase('android')
         view.attention_problems.click()
         self.assertEqual(view.selected, 'ios')
-        self.assertEqual(view.pages.currentIndex(), 1)
+        self.assertEqual(view.pages.currentIndex(), 0)
         self.assertIs(view.tabs.currentWidget(), view.steps.parentWidget())
         self.assertIn('Simulator check failed', view.detail.toPlainText())
 
@@ -122,7 +122,7 @@ class ActionHierarchyTests(unittest.TestCase):
         view.inspect_summary_phase('android')
         view.search.setText('unrelated')
         view.attention_problems.click()
-        self.assertEqual(view.selected, '')
+        self.assertEqual(view.selected, 'ios')
         self.assertEqual(view.search.text(), '')
         self.assertEqual(view.filter.currentText(), 'Problems')
         self.assertIs(view.tabs.currentWidget(), view.tests.parentWidget())

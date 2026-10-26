@@ -178,6 +178,17 @@ class Registry:
                 data['selected'] = next(iter(data['projects']), None)
         self.mutate(update)
 
+    def project_key(self, selector=None):
+        data = self.read()
+        selector = selector or data.get('selected')
+        if selector in data['projects']:
+            return selector
+        matches = [key for key, row in data['projects'].items()
+                   if selector in (row['project_id'], row['name'], row['root'])]
+        if len(matches) != 1:
+            raise ValueError('Select a unique registered project ID, name or checkout path.')
+        return matches[0]
+
     def resolve(self, key=None, *, trusted=False):
         data = self.read()
         row = dict(data['projects'][key or data.get('selected')])

@@ -12,3 +12,8 @@ trust its project adapter. Named workflows capture source/settings, retain resul
 pause for artifact review and support safe restart. Resource declarations bound
 parallel work. See [workflow recovery](docs/user/workflows.md) and
 [current validation scope](docs/development/validation.md).
+
+For AI agents and scripts, use the [CLI](docs/user/cli.md) to discover supported
+work, prepare and run plans, inspect compact JSON errors, read bounded logs and
+resume reviewed delivery. The [Python API](docs/development/automation-api.md)
+exposes the same headless execution and evidence mechanisms.

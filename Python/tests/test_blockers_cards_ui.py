@@ -173,9 +173,9 @@ class BlockerCardTests(unittest.TestCase):
         view.pages.setCurrentIndex(0)
         grouped = view.run_choices.flow
         grouped.open_group('deliver.firebase')
-        self.assertEqual(grouped.blocking_key, 'ios')
-        grouped.blocker.click()
-        self.assertEqual(view.pages.currentIndex(), 1)
+        self.assertEqual(view.blocking_key, 'ios')
+        view.blocking_step.click()
+        self.assertEqual(view.pages.currentIndex(), 0)
         self.assertEqual(view.selected, 'ios')
         self.assertIs(view.tabs.currentWidget(), view.steps.parentWidget())
         self.assertEqual(plan.data(), before)
@@ -192,7 +192,7 @@ class BlockerCardTests(unittest.TestCase):
         font = QFont(original); font.setPointSize(14); self.app.setFont(font)
         self.window.resize(1024, 700); self.window.show()
         for _ in range(8): self.app.processEvents()
-        button = grouped.blocker
+        button = panel.run_view.blocking_step
         self.assertTrue(button.isVisible())
         ancestor = button.parentWidget()
         while ancestor:

@@ -66,8 +66,9 @@ class SelectionSummary(QPushButton):
 
 class ActionStrip(QWidget):
     """Let compact attention actions wrap instead of widening a small window."""
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, compact=False):
         super().__init__(parent)
+        self.compact = compact
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.buttons, self.columns = [], 0
@@ -83,6 +84,10 @@ class ActionStrip(QWidget):
 
     def reflow(self):
         columns = max(1, min(4, self.width() // max(220, self.fontMetrics().horizontalAdvance('Choose committed source…') + 50)))
+        if self.compact:
+            width = max((self.fontMetrics().horizontalAdvance(button.full_text) +
+                         (48 if not button.icon().isNull() else 26) for button in self.buttons), default=100)
+            columns = 4 if self.width() >= width * 4 + self.grid.horizontalSpacing() * 3 else 2
         if columns == self.columns:
             return
         for button in self.buttons:

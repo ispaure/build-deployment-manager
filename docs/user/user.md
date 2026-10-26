@@ -150,4 +150,5 @@ native paths from unavailable platforms.
 
 ## Further reading
 
+- [CLI for automation and AI agents](cli.md)
 - [Dedicated Fedora and Windows test machines](virtual-machines.md)

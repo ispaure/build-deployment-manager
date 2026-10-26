@@ -111,7 +111,7 @@ class ProposedWorkflowTests(unittest.TestCase):
             self.assertIn('Choose Latest commit', view.readiness.text())
             view.proposed_flow.canvas.cards['source'][0].click()
             view.source_mode.setCurrentIndex(view.source_mode.findData('HEAD'))
-            self.assertIn('excludes edits', view.proposal_detail.text())
+            self.assertIn('uncommitted edits are excluded', view.source_mode.toolTip())
             self.assertEqual(panel.choices()['revision'], 'HEAD')
             self.assertIn('excludes edits', view.current_proposal.phases[0].description)
             panel.revision.setText('v2.0-alpha')
@@ -125,6 +125,47 @@ class ProposedWorkflowTests(unittest.TestCase):
             self.assertTrue(view.source_mode.isEnabled())
             self.assertFalse(view.require_validation.isEnabled())
             self.assertTrue(view.require_validation.isChecked())
+
+    def test_valid_choices_stay_quiet_and_source_conflicts_resolve_in_place(self):
+        with TemporaryDirectory() as directory:
+            panel = self.panel(Path(directory)); view = panel.configuration
+            panel.project.journey_capability['destinations']['testflight']['source_policy'] = 'committed'
+            panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
+            panel.platform_checks['ios'].setChecked(True)
+            panel.destination_checks['testflight'].setChecked(True)
+            self.assertIn('source', view.blocker_actions)
+            view.blocker_actions['source'].click()
+            self.assertFalse(view.source_summary.isHidden())
+            self.assertIn('Choose Latest commit', view.source_summary.text())
+            view.source_mode.setCurrentIndex(view.source_mode.findData('HEAD'))
+            self.assertNotIn('source', view.blocker_actions)
+            self.assertTrue(view.source_summary.isHidden())
+            self.assertTrue(view.readiness.isHidden())
+            self.assertEqual(view.current_proposal.messages, ())
+            self.assertEqual(panel.status.text(), '')
+            view.proposed_flow.canvas.cards['source'][0].click()
+            self.assertEqual(view.last_opened_section, 'source')
+            self.assertTrue(view.source_summary.isHidden())
+            panel.project.make_journey.assert_not_called()
+
+    def test_clean_checkout_policy_is_available_without_a_speculative_warning(self):
+        with TemporaryDirectory() as directory:
+            panel = self.panel(Path(directory)); view = panel.configuration
+            panel.project.journey_capability['destinations']['testflight']['source_policy'] = 'clean-checkout'
+            panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
+            panel.platform_checks['ios'].setChecked(True)
+            panel.destination_checks['testflight'].setChecked(True)
+            view.source_mode.setCurrentIndex(view.source_mode.findData('HEAD'))
+            self.assertNotIn('source', view.blocker_actions)
+            self.assertTrue(view.source_summary.isHidden())
+            self.assertTrue(view.readiness.isHidden())
+            self.assertIn('clean checkout', view.source_mode.toolTip())
+            help_text = view.source_mode.toolTip()
+            view.refresh_proposal(); view.refresh_proposal()
+            self.assertEqual(view.source_mode.toolTip(), help_text)
+            view.source_mode.setCurrentIndex(view.source_mode.findData('working-tree'))
+            self.assertFalse(view.source_summary.isHidden())
+            self.assertIn('source', view.blocker_actions)
 
     def test_custom_revision_typing_does_not_hide_field_at_head_prefix_and_empty_source_is_local_error(self):
         with TemporaryDirectory() as directory:
@@ -191,7 +232,7 @@ class ProposedWorkflowTests(unittest.TestCase):
             self.assertEqual(panel.stages.currentIndex(), 0)
             self.assertTrue(view.sections['source'].toggle.isChecked())
             self.assertEqual(panel.revision.text(), 'working-tree')
-            self.assertIn('Choose Latest commit', view.proposal_detail.text())
+            self.assertIn('Choose Latest commit', view.source_summary.text())
             self.assertIsNone(panel.plan)
 
     def test_long_proposed_card_labels_fit_and_source_choices_preserve_custom_revision(self):

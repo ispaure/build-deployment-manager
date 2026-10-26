@@ -12,7 +12,7 @@ from .redaction import Redactor
 
 class ProjectBridge:
     def __init__(self, registry, key=None):
-        self.registry, self.key = registry, key or registry.read().get('selected')
+        self.registry, self.key = registry, registry.project_key(key)
         self.row, self.descriptor = registry.resolve(self.key)
         self.root = Path(self.row['root'])
         capabilities = self.descriptor['capabilities']
