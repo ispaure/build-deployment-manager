@@ -104,6 +104,15 @@ See [host capabilities](hosts.md). Keep native launcher/process/locking results
 distinct from Android acceptance and from controlled portable transport tests.
 Save exact source/toolchain evidence under ignored `test-results/`.
 
+Windows guest commands publish an atomic completion receipt tied to the workspace,
+operation and individual invocation before returning their result. If Parallels
+loses a job handle, the manager reads that receipt or supervises the matching live
+worker within the original timeout. It never replays the command. Missing or
+mismatched proof remains a failure; actual nonzero exits remain failures.
+Cancellation requested before admission prevents the child from starting.
+Only explicitly idempotent setup, evidence collection and owned removal retry
+the known Parallels lost-handle errors, at most three times.
+
 The same operations are available without Qt:
 
 ```sh

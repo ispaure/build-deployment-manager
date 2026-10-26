@@ -8,6 +8,7 @@ import subprocess
 import shutil
 import time
 import zipfile
+from uuid import uuid4
 
 
 OWNED = r'''
@@ -46,12 +47,45 @@ $directory=OwnedPath $p.directory;$reports=OwnedPath $p.reports
 $null=New-Item -ItemType Directory -Path $reports -Force
 $stdout=Join-Path $reports 'runner.stdout.log';$stderr=Join-Path $reports 'runner.stderr.log'
 $active=OwnedPath 'active.json'
-@{pid=$PID;started=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');operation=$p.operation;token=$p.token}|ConvertTo-Json|Set-Content -LiteralPath $active -Encoding UTF8
+@{pid=$PID;started=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');operation=$p.operation;invocation=$p.invocation;token=$p.token}|ConvertTo-Json|Set-Content -LiteralPath $active -Encoding UTF8
 try {
  foreach ($property in $p.environment.PSObject.Properties) { [Environment]::SetEnvironmentVariable($property.Name,[string]$property.Value,'Process') }
- $process=Start-Process -FilePath $p.python -ArgumentList $p.command_line -WorkingDirectory $directory -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
- @{exit=$process.ExitCode;operation=$p.operation}|ConvertTo-Json -Compress
-} finally { if (Test-Path -LiteralPath $active) { Remove-Item -LiteralPath $active } }
+ if(Test-Path -LiteralPath (OwnedPath ('cancel-'+$p.operation))) { $exit=130 } else {
+  $process=Start-Process -FilePath $p.python -ArgumentList $p.command_line -WorkingDirectory $directory -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+  if ($null -eq $process.ExitCode) { throw 'Worker exit code is unavailable' }
+  $exit=$process.ExitCode
+ }
+ $result=@{exit=$exit;operation=$p.operation;invocation=$p.invocation;token=$p.token}|ConvertTo-Json -Compress
+ $receipt=Join-Path $reports ('runner-result-'+$p.invocation+'.json')
+ $bytes=[Text.Encoding]::UTF8.GetBytes($result)
+ $file=[IO.File]::Open($receipt+'.tmp',[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+ try {$file.Write($bytes,0,$bytes.Length);$file.Flush($true)} finally {$file.Dispose()}
+ [IO.File]::Move($receipt+'.tmp',$receipt)
+ $result
+} finally {
+ if (Test-Path -LiteralPath $active) {
+  $record=Get-Content -LiteralPath $active -Raw|ConvertFrom-Json
+  if($record.token -eq $p.token -and $record.operation -eq $p.operation -and $record.invocation -eq $p.invocation){Remove-Item -LiteralPath $active}
+ }
+}
+'''
+
+COMPLETION = OWNED + r'''
+$reports=OwnedPath $p.reports
+$receipt=Join-Path $reports ('runner-result-'+$p.invocation+'.json')
+if(Test-Path -LiteralPath $receipt){Get-Content -LiteralPath $receipt -Raw} else {
+ $running=$false;$active=OwnedPath 'active.json'
+ if(Test-Path -LiteralPath $active){
+  try {
+   $record=Get-Content -LiteralPath $active -Raw|ConvertFrom-Json
+   if($record.token -eq $p.token -and $record.operation -eq $p.operation -and $record.invocation -eq $p.invocation){
+    $worker=Get-Process -Id $record.pid -ErrorAction SilentlyContinue
+    $running=$worker -and $worker.StartTime.ToUniversalTime().Ticks -eq ([DateTime]::Parse($record.started)).ToUniversalTime().Ticks
+   }
+  } catch { $running=$false }
+ }
+ @{state=$(if($running){'running'}else{'absent'});operation=$p.operation;invocation=$p.invocation;token=$p.token}|ConvertTo-Json -Compress
+}
 '''
 
 CANCEL = OWNED + r'''
@@ -61,7 +95,7 @@ Start-Sleep -Milliseconds 750
 $active=OwnedPath 'active.json'
 if (Test-Path -LiteralPath $active) {
  $record=Get-Content -LiteralPath $active -Raw|ConvertFrom-Json
- if ($record.token -ne $p.token -or $record.operation -ne $p.operation -or $record.pid -eq $PID) { throw 'Worker ownership mismatch' }
+ if ($record.token -ne $p.token -or $record.operation -ne $p.operation -or $record.pid -eq $PID -or ($p.invocation -and $record.invocation -ne $p.invocation)) { throw 'Worker ownership mismatch' }
  $worker=Get-Process -Id $record.pid -ErrorAction SilentlyContinue
  if ($worker -and $worker.StartTime.ToUniversalTime().Ticks -eq ([DateTime]::Parse($record.started)).ToUniversalTime().Ticks) {
   $rows=Get-CimInstance Win32_Process;$ids=@([int]$record.pid)
@@ -110,6 +144,18 @@ class WindowsGuest:
     def call(self, script, *, values=None, data=None, timeout=60):
         return self.client.powershell(self.vm, script, dict(self.values, **(values or {})), data=data, timeout=timeout)
 
+    def call_idempotent(self, script, *, values=None, data=None, timeout=60):
+        """Only explicitly replay-safe setup, reads and owned removal use this."""
+        for attempt in range(3):
+            try:
+                return self.call(script, values=values, data=data, timeout=timeout)
+            except RuntimeError as error:
+                message = str(error)
+                if (attempt == 2 or '(255)' not in message or not any(detail in message for detail in
+                        ('PrlJob_GetRetCode: Invalid argument', 'PrlJob_GetResult: Invalid argument'))):
+                    raise
+                time.sleep(.5)
+
     def stage(self, folder, payload):
         self.call(STAGE, values=dict(folder=folder, sha256=hashlib.sha256(payload).hexdigest()), data=payload, timeout=180)
 
@@ -117,8 +163,9 @@ class WindowsGuest:
         self.call(WRITE, values=dict(file=relative), data=data)
 
     def run(self, python, argv, directory, reports, environment, cancelled, *, timeout):
+        invocation = uuid4().hex
         values = dict(self.values, python=python, command_line=subprocess.list2cmdline(argv),
-                      directory=directory, reports=reports, environment=environment)
+                      directory=directory, reports=reports, environment=environment, invocation=invocation)
         process = subprocess.Popen(self.client.powershell_command(self.vm), stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         payload = self.client.powershell_payload(RUN, values)
@@ -131,7 +178,7 @@ class WindowsGuest:
                 except subprocess.TimeoutExpired:
                     payload = None
                     if cancelled.is_set() or time.monotonic() - started > timeout:
-                        self.call(CANCEL, timeout=30)
+                        self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
                         try:
                             process.communicate(timeout=3)
                         except subprocess.TimeoutExpired:
@@ -139,19 +186,63 @@ class WindowsGuest:
                         return 130 if cancelled.is_set() else 124
             if process.returncode:
                 from .redaction import Redactor
+                if process.returncode == 255 and any(detail in stderr for detail in
+                        (b'PrlJob_GetRetCode: Invalid argument', b'PrlJob_GetResult: Invalid argument')):
+                    # Read proof from this invocation, never rerun accepted work.
+                    recovered = self.recover_completion(reports, invocation, started, timeout, cancelled)
+                    if recovered is not None:
+                        return recovered
+                # Prevent an admitted-but-delayed invocation from starting work
+                # after the controller has already reported an unverified exit.
+                self.call_idempotent(WRITE, values=dict(file='cancel-'+self.values['operation']), data=b'cancel')
                 raise RuntimeError('Windows operation transport failed: ' + Redactor()(stderr.decode(errors='replace')[-2000:]))
-            code = json.loads(stdout)['exit']
-            if not isinstance(code, int):
-                raise ValueError('Windows worker did not report an actual process exit code.')
-            return code
+            return self.completion_code(json.loads(stdout), invocation)
         finally:
             if process.poll() is None:
-                self.call(CANCEL, timeout=30)
+                self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
                 process.terminate()
                 process.wait(timeout=3)
 
+    def recover_completion(self, reports, invocation, started, timeout, cancelled):
+        absent_since = time.monotonic()
+        while True:
+            if cancelled.is_set() or time.monotonic() - started > timeout:
+                self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
+                return 130 if cancelled.is_set() else 124
+            try:
+                raw = self.call(COMPLETION, values=dict(reports=reports, invocation=invocation))
+            except RuntimeError as error:
+                if '(255)' not in str(error):
+                    raise
+                raw = b''
+            if raw.strip():
+                record = json.loads(raw)
+                self.validate_completion(record, invocation)
+                if 'exit' in record:
+                    return self.completion_code(record, invocation)
+                if record.get('state') == 'running':
+                    absent_since = None
+                elif absent_since is None:
+                    absent_since = time.monotonic()
+            if absent_since is not None and time.monotonic() - absent_since >= 5:
+                return None  # No matching live worker or durable result: remain unverified.
+            cancelled.wait(.25)
+
+    def completion_code(self, record, invocation):
+        self.validate_completion(record, invocation)
+        code = record.get('exit')
+        if not isinstance(code, int) or isinstance(code, bool):
+            raise ValueError('Windows worker did not report an actual process exit code.')
+        return code
+
+    def validate_completion(self, record, invocation):
+        if (not isinstance(record, dict) or record.get('token') != self.values['token']
+                or record.get('operation') != self.values['operation']
+                or record.get('invocation') != invocation):
+            raise ValueError('Windows completion belongs to a different invocation or workspace.')
+
     def collect(self, paths, destination):
-        record = json.loads(self.call(COLLECT, values=dict(paths=paths), timeout=180))
+        record = json.loads(self.call_idempotent(COLLECT, values=dict(paths=paths), timeout=180))
         payload = base64.b64decode(record['data'], validate=True)
         if hashlib.sha256(payload).hexdigest() != record['sha256']:
             raise ValueError('Windows evidence transfer digest mismatch.')
@@ -171,15 +262,4 @@ class WindowsGuest:
                         shutil.copyfileobj(source, output)
 
     def remove_paths(self, paths):
-        # Deletion is idempotent and revalidates the ownership marker each time.
-        # Parallels occasionally loses a completed job's return-code handle.
-        # Never apply this retry to test execution or source staging.
-        for attempt in range(3):
-            try:
-                self.call(REMOVE, values=dict(paths=paths), timeout=120)
-                return
-            except RuntimeError as error:
-                if (attempt == 2 or 'Windows guest command failed (255)' not in str(error)
-                        or 'PrlJob_GetRetCode: Invalid argument' not in str(error)):
-                    raise
-                time.sleep(.5)
+        self.call_idempotent(REMOVE, values=dict(paths=paths), timeout=120)
