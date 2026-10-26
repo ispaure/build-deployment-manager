@@ -81,13 +81,13 @@ class RunView(QWidget):
         self.attention = QFrame()
         self.attention.setObjectName('runAttention')
         self.attention.setAccessibleName('Run needs attention')
-        attention_layout = QVBoxLayout(self.attention)
+        attention_layout = QHBoxLayout(self.attention)
         attention_layout.setContentsMargins(10, 8, 10, 8)
         self.attention_title = QLabel()
         self.attention_title.setWordWrap(True)
         self.attention_title.setTextFormat(Qt.TextFormat.PlainText)
         self.attention_title.setStyleSheet('font-weight: 600;')
-        attention_layout.addWidget(self.attention_title)
+        attention_layout.addWidget(self.attention_title, 1)
         attention_actions = QHBoxLayout()
         self.attention_problems = style_button(QPushButton('View problems'))
         self.attention_problems.clicked.connect(self.show_problems)
@@ -95,7 +95,6 @@ class RunView(QWidget):
         self.attention_review.clicked.connect(self.review_requested.emit)
         attention_actions.addWidget(self.attention_problems)
         attention_actions.addWidget(self.attention_review)
-        attention_actions.addStretch()
         attention_layout.addLayout(attention_actions)
         layout.addWidget(self.attention)
         self.attention.hide()
@@ -127,6 +126,11 @@ class RunView(QWidget):
         self.selection_info.setWordWrap(True)
         inspector_layout.addWidget(self.selection_heading)
         inspector_layout.addWidget(self.selection_info)
+        self.blocking_step = style_button(QPushButton('View blocking step'))
+        self.blocking_step.hide()
+        self.blocking_key = ''
+        self.blocking_step.clicked.connect(self.show_blocking_step)
+        inspector_layout.addWidget(self.blocking_step)
         self.tabs = QTabWidget()
         inspector_layout.addWidget(self.tabs, 1)
         self.splitter = QSplitter()
@@ -137,6 +141,7 @@ class RunView(QWidget):
         from .plan_summary_ui import PlanSummaryView
         self.run_choices = PlanSummaryView()
         self.run_choices.phase_selected.connect(self.inspect_summary_phase)
+        self.run_choices.blocker_selected.connect(self.inspect_blocking_phase)
         self.pages = QTabWidget()
         self.pages.setAccessibleName('Run summary and detailed results')
         self.pages.addTab(self.run_choices, 'Run summary')
@@ -256,6 +261,11 @@ class RunView(QWidget):
         self.flow.select(key)
         self.flow.browser.setFocus()
 
+    def inspect_blocking_phase(self, key):
+        self.inspect_summary_phase(key)
+        self.tabs.setCurrentWidget(self.steps.parentWidget())
+        self.steps.setFocus()
+
     def scoped_facts(self):
         return {key: fact for key, fact in self.facts.items() if not self.selected or key == self.selected}
 
@@ -280,6 +290,9 @@ class RunView(QWidget):
             self.refresh_summary()
 
     def refresh_inspector(self):
+        from .workflow_ui import blocking_prerequisite
+        self.blocking_key = blocking_prerequisite(self.plan, self.facts, self.selected) if self.plan else ''
+        self.blocking_step.setVisible(bool(self.blocking_key))
         if not self.selected:
             self.selection_heading.setText('Whole workflow')
             self.selection_info.setText('Totals below include every step. Select a card on the left for that step’s details.' +
@@ -352,6 +365,13 @@ class RunView(QWidget):
         self.pages.setCurrentIndex(1)
         self.filter.setCurrentText('Problems')
         self.tabs.setCurrentWidget(self.tests.parentWidget())
+
+    def show_blocking_step(self):
+        if self.blocking_key:
+            self.pages.setCurrentIndex(1)
+            self.flow.select(self.blocking_key)
+            self.tabs.setCurrentWidget(self.steps.parentWidget())
+            self.steps.setFocus()
 
     def has_problems(self):
         return self.outcome in {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown'} or any(
@@ -434,7 +454,9 @@ class RunView(QWidget):
         self.rows, self.facts, self.started = {}, {}, {}
         self.phases = {phase.id: phase for phase in plan.phases}
         from .plan_summary import captured_choices
-        self.context.setText(f'{plan.project} · {plan.operation}\n' + captured_choices(plan)[0][1])
+        source = captured_choices(plan)[0][1]
+        self.context.setText(f'{plan.project} · {plan.operation} · ' + source.replace('\n', ' · '))
+        self.context.setToolTip(source)
         self.context.setTextFormat(Qt.TextFormat.PlainText)
         self.run_timing = ''
         self.outcome = ''
@@ -515,6 +537,7 @@ class RunView(QWidget):
         problems = sum(case['status'] in {'failed', 'error'} for case in cases)
         self.overall_tests.setText(f'{len(cases)} reported test cases · {problems} problems' if cases
             else 'No individual case reports available yet. Step outcomes remain available.')
+        self.overall_tests.setVisible(bool(cases))
         if self.outcome == 'unknown' or counts.get('unknown'):
             action = 'An external action has an unknown outcome. Check its provider status before retrying; the manager will not repeat it automatically.'
         elif self.outcome == 'awaiting_review' or counts.get('awaiting_review'):

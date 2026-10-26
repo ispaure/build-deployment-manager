@@ -1,6 +1,15 @@
 """Shared action hierarchy for the optional Qt presentation."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialogButtonBox, QPushButton, QSizePolicy, QWidget, QGridLayout
+from PySide6.QtWidgets import QDialogButtonBox, QPushButton, QSizePolicy, QWidget, QGridLayout, QStackedWidget
+
+
+class ViewportStack(QStackedWidget):
+    """Bound stage content to its viewport, independent of hidden-page text."""
+    def hasHeightForWidth(self):
+        return False
+
+    def heightForWidth(self, width):
+        return -1
 
 
 class SelectionSummary(QPushButton):
@@ -13,6 +22,7 @@ class SelectionSummary(QPushButton):
         self.setStyleSheet('''QPushButton { padding: 6px 10px; min-height: 20px;
             border: 1px solid palette(mid); border-radius: 6px; background: palette(alternate-base); }
             QPushButton:hover, QPushButton:focus { border: 1px solid palette(highlight); }
+            QPushButton:checked { border: 2px solid #245db5; padding: 5px 9px; font-weight: 600; }
             QPushButton:disabled { color: palette(mid); }''')
 
     def set_summary(self, text):

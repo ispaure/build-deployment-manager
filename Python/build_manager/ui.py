@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem, QTabWidget, QStackedWidget, QSplitter, QSizePolicy, QFrame,
 )
 from .settings_ui import SettingsDialog
-from .ui_components import style_button, style_dialog_buttons
+from .ui_components import style_button, style_dialog_buttons, ViewportStack
 
 
 class PreparePlan(QRunnable):
@@ -139,7 +139,7 @@ class ManagerPanel(QWidget):
         self.stage_heading = QLabel()
         self.stage_heading.setWordWrap(True)
         layout.addWidget(self.stage_heading)
-        self.stages = QStackedWidget()
+        self.stages = ViewportStack()
         self.stages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         self.stages.currentChanged.connect(self.show_stage)
         self.stages.setAccessibleName('Testing and delivery stages')
@@ -608,6 +608,7 @@ class ManagerPanel(QWidget):
         if error is not None:
             self.preparation_message('Could not prepare the plan. ' + self.redact(error))
             if 'committed' in error.lower() and ('source' in error.lower() or 'revision' in error.lower()):
+                self.configuration.show_source_blocker()
                 self.configuration.open_section('source')
                 requirements = [message for message in self.configuration.current_proposal.messages if 'requires committed source' in message]
                 self.configuration.proposal_detail.setText('\n'.join(requirements) if requirements else 'Project policy requires committed source. Choose Latest commit to exclude local edits, or select a specific revision. Nothing is committed or pushed by this choice.')
@@ -774,7 +775,7 @@ class ManagerPanel(QWidget):
         for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
                         self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
                         self.refresh_history_button, self.view_history_button, self.history, self.continue_run,
-                        self.goal, *self.configuration.goal_buttons.values(), *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
+                        self.goal, self.configuration.blocker_strip, *self.configuration.goal_buttons.values(), *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
             control.setEnabled(not busy)
         if not busy:
             self.configuration.update_mode()

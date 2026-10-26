@@ -1,5 +1,34 @@
 # Validation scope and remaining acceptance
 
+## October 26 actionable blockers and readable cards
+
+Configuration requirements now supply compact repair actions for missing
+platforms, destinations, recipient fields and declared committed-source needs.
+Actions focus the specific control and matching proposal card without changing
+selections or preparing work. Unknown source policy remains advisory. Runtime
+blocked-step inspection opens a recorded failed prerequisite through intermediate
+blocked steps, preserving the original plan and run.
+
+Workflow maps retain native text scale as their zoom floor and scroll larger
+graphs. Keyboard focus reveals cards; status changes preserve pan and manual
+zoom. Wider cards, hover/focus feedback, chevrons and approval badges replace
+repeated inspection guidance. Stage viewports ignore hidden-page height hints;
+compact runtime context and subtask inspection keep repair controls visible at
+1024×700 with 14-point text. Existing navigation cleanup remains intact.
+
+Eight added contracts cover repair targeting and unchanged choices, source-policy
+boundaries, recipient focus, wrapped/busy actions, readable zoom, keyboard
+inspection, stable live views and failed-prerequisite navigation. These and the
+existing footer, goal and summary contracts pass 30 native macOS Cocoa checks.
+The final full portable run passes all 290 tests. An earlier attempt returned
+awaiting-review in the existing continuation fixture; its isolated recheck and
+the subsequent complete runs passed. No execution or approval policy was changed.
+Synthetic 1280×800 and 1024×700 previews cover source/platform repairs, readable
+destination cards, review, blocked delivery and its failure evidence. These are
+portable presentation and native layout checks; real-provider, screen-reader,
+held-VM and personal-device acceptance remain separate. Raw captures and all test
+attempts remain in ignored test-results.
+
 ## October 26 toolbar, presets and visible choices
 
 The header now keeps project selection, Project settings, More and Help. Checkout

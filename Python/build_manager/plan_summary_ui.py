@@ -7,6 +7,7 @@ from .plan_summary import captured_choices
 
 class PlanSummaryView(QScrollArea):
     phase_selected = Signal(str)
+    blocker_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,10 +55,12 @@ class PlanSummaryView(QScrollArea):
         self.body_layout.addWidget(choices)
         from .grouped_workflow_ui import GroupedFlowView
         self.flow = GroupedFlowView()
+        choices.setVisible(preview)
+        self.flow.pages.currentChanged.connect(lambda index, choices=choices, preview=preview: choices.setVisible(preview and index == 0))
         self.flow.phase_selected.connect(self.phase_selected.emit)
+        self.flow.blocker_selected.connect(self.blocker_selected.emit)
         self.flow.reset(plan, fields, preview=preview, capability=capability, proposal=proposal)
         self.body_layout.addWidget(self.flow, 1)
-        self.label('Cards and arrows match Choose work. Open a card for resolved subtasks; the full dependency map shows exact execution order.', self.body_layout)
         self.verticalScrollBar().setValue(0)
 
     def set_facts(self, facts):

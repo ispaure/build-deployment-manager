@@ -1,26 +1,28 @@
 """Familiar journey cards with an in-place desktop subtask browser."""
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+    QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QSizePolicy)
 from .grouped_workflow import group_workflow
 from .plan_summary import captured_choices, phase_title, summary_rows
-from .workflow_ui import FlowCanvas, FitMapView, display_states, effect_label
+from .workflow_ui import FlowCanvas, FitMapView, display_states, effect_label, blocking_prerequisite
+from .ui_components import style_button, ViewportStack
 
 
 class GroupedFlowView(QWidget):
     phase_selected = Signal(str)
+    blocker_selected = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.plan, self.selected, self.facts = None, '', {}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.pages = QStackedWidget()
+        self.pages = ViewportStack()
+        self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         overview = QWidget()
         body = QVBoxLayout(overview)
         body.setContentsMargins(0, 0, 0, 0)
         toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel('Select a card to see its subtasks.'))
         self.additional = QPushButton()
         self.additional.clicked.connect(lambda: self.open_group('__unassigned__'))
         toolbar.addWidget(self.additional)
@@ -28,12 +30,19 @@ class GroupedFlowView(QWidget):
         self.canvas = FlowCanvas()
         self.canvas.selected.connect(self.open_group)
         self.map = FitMapView(self.canvas)
-        self.map.setMinimumHeight(250)
+        self.map.setMinimumHeight(180)
         for title, callback in [('Fit', self.fit), ('+', lambda: self.map.zoom(1.2)), ('−', lambda: self.map.zoom(1 / 1.2))]:
             button = QPushButton(title)
-            button.setAccessibleName({'Fit': 'Fit workflow cards', '+': 'Zoom in', '−': 'Zoom out'}[title])
+            button.setAccessibleName({'Fit': 'Fit readable cards', '+': 'Zoom in', '−': 'Zoom out'}[title])
+            button.setToolTip(button.accessibleName())
+            if title == '+':
+                self.zoom_in = button
+            elif title == '−':
+                self.zoom_out = button
             button.clicked.connect(callback)
             toolbar.addWidget(button)
+        self.map.scale_changed.connect(lambda scale: self.zoom_out.setEnabled(scale > self.map.minimum_scale))
+        self.map.scale_changed.connect(lambda scale: self.zoom_in.setEnabled(scale < self.map.maximum_scale))
         body.addLayout(toolbar)
         body.addWidget(self.map, 1)
         self.pages.addWidget(overview)
@@ -66,7 +75,15 @@ class GroupedFlowView(QWidget):
         inner.addWidget(self.splitter, 1)
         self.inspect = QPushButton('Inspect selected step in full workflow…')
         self.inspect.clicked.connect(self.inspect_task)
-        inner.addWidget(self.inspect, 0, Qt.AlignmentFlag.AlignRight)
+        self.blocker = style_button(QPushButton('View blocking step'))
+        self.blocker.clicked.connect(lambda: self.blocker_selected.emit(self.blocking_key) if self.blocking_key else None)
+        self.blocking_key = ''
+        self.blocker.hide()
+        actions = QHBoxLayout()
+        actions.addWidget(self.blocker)
+        actions.addStretch()
+        actions.addWidget(self.inspect)
+        inner.addLayout(actions)
         self.pages.addWidget(inside)
         layout.addWidget(self.pages, 1)
         self.timer = QTimer(self)
@@ -86,12 +103,13 @@ class GroupedFlowView(QWidget):
         self.details.clear()
         self.pages.setCurrentIndex(0)
         self.canvas.reset(self.grouped)
+        self.map.reset_view()
         self.set_facts({})
         self.timer.start(0)
 
     def fit(self):
         self.map.fit_mode = True
-        self.map.fit_map()
+        self.map.fit_map(force=True)
 
     def open_group(self, key):
         self.selected = key
@@ -163,6 +181,8 @@ class GroupedFlowView(QWidget):
     def show_task(self, row, previous=None):
         key = row.data(0, Qt.ItemDataRole.UserRole) if row else ''
         self.inspect.setEnabled(bool(key))
+        self.blocking_key = blocking_prerequisite(self.plan, self.facts, key) if key and not self.preview else ''
+        self.blocker.setVisible(bool(self.blocking_key))
         lines = [self.group_context()]
         if key:
             phase = self.phases[key]

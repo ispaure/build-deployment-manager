@@ -1,6 +1,6 @@
 """Read-only, keyboard-selectable dependency cards shared by review and execution."""
 from math import atan2, cos, sin
-from PySide6.QtCore import Qt, QPointF, Signal, QTimer
+from PySide6.QtCore import Qt, QPointF, Signal, QTimer, QRectF
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (QGridLayout, QLabel, QPushButton,
     QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget,
@@ -161,7 +161,33 @@ def display_states(plan, facts, preview=False):
     return states
 
 
+def blocking_prerequisite(plan, facts, key):
+    """Navigate to recorded failure evidence behind a predicted blocked step."""
+    phases = {phase.id: phase for phase in plan.phases}
+    states = display_states(plan, facts)
+    if key not in phases or states[key][0] not in {'blocked', 'skipped'}:
+        return ''
+    pending = list(phases[key].dependencies)
+    visited = set()
+    while pending:
+        parent = pending.pop(0)
+        if parent in visited:
+            continue
+        visited.add(parent)
+        if states[parent][0] in {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown'}:
+            return parent
+        if states[parent][0] in {'blocked', 'skipped'}:
+            pending.extend(phases[parent].dependencies)
+    return ''
+
+
 class FlowCard(QPushButton):
+    focused = Signal()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focused.emit()
+
     def sizeHint(self):
         hint = super().sizeHint()
         if self.layout() is not None:
@@ -174,6 +200,7 @@ class FlowCard(QPushButton):
 
 class FlowCanvas(QWidget):
     selected = Signal(str)
+    focused = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -186,6 +213,9 @@ class FlowCanvas(QWidget):
         self.setStyleSheet('''
             QPushButton#workflowCard { background: palette(base); border: 1px solid palette(mid);
                 border-left: 4px solid palette(mid); border-radius: 8px; text-align: left; }
+            QPushButton#workflowCard:hover { border-color: palette(highlight); }
+            QPushButton#workflowCard:checked { border: 2px solid #245db5; border-left-width: 4px; }
+            QPushButton#workflowCard:focus { border: 2px dashed palette(highlight); border-left-width: 4px; }
             QPushButton#workflowCard[state="running"] { border-left-color: #2980b9; }
             QPushButton#workflowCard[state="passed"] { border-left-color: #20834a; }
             QPushButton#workflowCard[state="failed"], QPushButton#workflowCard[state="error"],
@@ -193,8 +223,6 @@ class FlowCanvas(QWidget):
             QPushButton#workflowCard[state="needs_selection"], QPushButton#workflowCard[state="awaiting_review"] { border-left-color: #b37c12; }
             QPushButton#workflowCard[state="blocked"], QPushButton#workflowCard[state="skipped"] {
                 background: palette(alternate-base); color: palette(mid); border-left-color: palette(mid); }
-            QPushButton#workflowCard:checked { border: 2px solid palette(highlight); }
-            QPushButton#workflowCard:focus { border: 2px solid palette(highlight); }
         ''')
 
     def reset(self, plan):
@@ -212,7 +240,7 @@ class FlowCanvas(QWidget):
         self.edges = [(key, phase.id) for phase in plan.phases
                       for key in (*phase.dependencies, *getattr(phase, 'waits_for', ()))]
         compact = getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False)
-        width = 176 if compact else 184
+        width = max(216, self.fontMetrics().horizontalAdvance('Waiting for approval') + 48)
         column_sections = {}
         for phase in plan.phases:
             section = getattr(phase, 'section', '')
@@ -238,34 +266,44 @@ class FlowCanvas(QWidget):
             card = FlowCard()
             card.setObjectName('workflowCard')
             card.setCheckable(True)
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.focused.connect(lambda key=phase.id: self.focused.emit(key))
             card.setFixedWidth(width)
             card.setMinimumHeight(64 if compact else 100)
             card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
             body = QVBoxLayout(card)
-            body.setContentsMargins(9, 7, 7, 7)
-            body.setSpacing(4)
+            body.setContentsMargins(12, 10, 10, 10)
+            body.setSpacing(6)
             heading, kind, status, counts = (QLabel() for _ in range(4))
             heading.setText(title(phase))
             heading.setStyleSheet('font-weight: 600;')
             kind.setText(effect_label(phase, plan))
             icons = step_icons(phase, plan)
             card.setProperty('workflowContext', ' · '.join(NAMES[name] for name in icons))
-            inline_icons = 0 < len(icons) <= 2
-            if inline_icons:
-                badges = QHBoxLayout()
-                badges.setSpacing(6)
-                badges.addWidget(heading, 1)
+            badges = QHBoxLayout()
+            badges.setSpacing(6)
+            badges.addWidget(heading, 1)
+            if icons:
                 badges.addWidget(WorkflowIcons(icons, card), 0, Qt.AlignmentFlag.AlignTop)
-                body.addLayout(badges)
-            elif icons:
-                body.addWidget(WorkflowIcons(icons, card), 0, Qt.AlignmentFlag.AlignRight)
+            disclosure = QLabel('›')
+            disclosure.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            badges.addWidget(disclosure, 0, Qt.AlignmentFlag.AlignTop)
+            body.addLayout(badges)
             for label in (heading, kind, status, counts):
                 label.setProperty('workflowHeading', label is heading)
                 label.setWordWrap(True)
                 label.setTextFormat(Qt.TextFormat.PlainText)
                 label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-                if label is not heading or not inline_icons:
+                if label is not heading:
                     body.addWidget(label)
+            external = phase.id.startswith('deliver.') if compact else (
+                phase.effect if phase.effect != 'inherit' else plan.effect) in {'upload', 'deploy', 'publish', 'dispatch'}
+            if external:
+                badge = QLabel('Approval required')
+                badge.setObjectName('approvalBadge')
+                badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                badge.setStyleSheet('border: 1px solid #b37c12; border-radius: 4px; padding: 2px 5px;')
+                body.addWidget(badge, 0, Qt.AlignmentFlag.AlignLeft)
             card.clicked.connect(lambda checked=False, key=phase.id: self.selected.emit(key))
             level, lane = self.positions[phase.id]
             self.grid.addWidget(card, lane + 1, level, 2, 1)
@@ -294,6 +332,9 @@ class FlowCanvas(QWidget):
             counts_label.setText(f'{len(tests)} tests · {problems} problems' if tests else '')
             counts_label.setVisible(bool(tests))
             card.setChecked(phase.id == selected)
+            badge = card.findChild(QLabel, 'approvalBadge')
+            if badge:
+                badge.setVisible(status in {'proposed', 'planned', 'pending', 'queued', 'awaiting_review'})
             if card.property('state') != status:
                 card.setProperty('state', status)
                 card.style().unpolish(card)
@@ -301,6 +342,8 @@ class FlowCanvas(QWidget):
             muted = status in {'blocked', 'skipped'}
             text_color = '#b3b3b3' if card.palette().base().color().lightness() < 128 else '#626262'
             for child in card.findChildren(QLabel):
+                if child.objectName() == 'approvalBadge':
+                    continue
                 child.setStyleSheet(('font-weight: 600;' if child.property('workflowHeading') else '') +
                     ('color: ' + text_color + ';' if muted else ''))
             card.setMinimumHeight(max(64 if getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False) else 100,
@@ -353,29 +396,55 @@ class FlowCanvas(QWidget):
 
 
 class FitMapView(QGraphicsView):
+    scale_changed = Signal(float)
+    minimum_scale = 1.0
+    maximum_scale = 2.5
+
     def __init__(self, canvas):
         super().__init__()
         self.canvas, self.fit_mode = canvas, True
+        self._fitted = None
+        self.anchor = ''
         scene = QGraphicsScene(self); self.setScene(scene); self.proxy = scene.addWidget(canvas)
         self.setBackgroundBrush(canvas.palette().window())
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        canvas.focused.connect(self.reveal)
 
-    def fit_map(self):
+    def fit_map(self, force=False):
         self.canvas.adjustSize()
         rect = self.proxy.boundingRect().adjusted(-4, -4, 4, 4)
         self.setSceneRect(rect)
-        if self.fit_mode and rect.width() and rect.height():
+        geometry = (rect, self.viewport().size())
+        needs_fit = force or self._fitted is None or geometry[1] != self._fitted[1]
+        if self.fit_mode and rect.width() and rect.height() and needs_fit:
             self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
-            # Keep small graphs at readable native size, centered in the viewport.
-            if self.transform().m11() > 1.35:
-                self.resetTransform(); self.scale(1.35, 1.35)
+            fitted = self.transform().m11()
+            scale = max(self.minimum_scale, min(1.35, fitted))
+            self.resetTransform(); self.scale(scale, scale)
+            self._fitted = (rect, self.viewport().size())
+            if fitted < self.minimum_scale:
+                self.reveal(self.anchor if self.anchor in self.canvas.cards else next(iter(self.canvas.cards), ''))
+            self.scale_changed.emit(scale)
+        elif self.fit_mode:
+            self._fitted = geometry
+
+    def reveal(self, key):
+        if key in self.canvas.cards:
+            self.anchor = key
+            self.ensureVisible(self.proxy.mapRectToScene(QRectF(self.canvas.cards[key][0].geometry())), 24, 24)
+
+    def reset_view(self):
+        self.fit_mode, self._fitted, self.anchor = True, None, ''
 
     def zoom(self, amount):
         self.fit_mode = False
-        if .08 <= self.transform().m11() * amount <= 2.5:self.scale(amount, amount)
+        current = self.transform().m11()
+        scale = max(self.minimum_scale, min(self.maximum_scale, current * amount))
+        self.scale(scale / current, scale / current)
+        self.scale_changed.emit(scale)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -404,7 +473,7 @@ class WorkflowFlow(QWidget):
         self.map_button.clicked.connect(lambda: self.show_map(True))
         tools.addStretch()
         self.fit_button, self.zoom_in, self.zoom_out = QPushButton('Fit'), QPushButton('+'), QPushButton('−')
-        for control, name in ((self.fit_button, 'Fit whole workflow'), (self.zoom_in, 'Zoom in'), (self.zoom_out, 'Zoom out')):
+        for control, name in ((self.fit_button, 'Fit readable cards'), (self.zoom_in, 'Zoom in'), (self.zoom_out, 'Zoom out')):
             control.setAccessibleName(name); control.setToolTip(name); control.setMaximumWidth(52); tools.addWidget(control)
         layout.addLayout(tools)
         self.guidance = QLabel('Read left to right. Arrows show prerequisites. Branches can overlap when workers and resources allow. Select a card for details.')
@@ -412,7 +481,9 @@ class WorkflowFlow(QWidget):
         layout.addWidget(self.guidance)
         self.canvas = FlowCanvas()
         self.scroll = FitMapView(self.canvas)
-        self.scroll.setAccessibleName('Workflow dependency map. Fit shows the whole flow; zoom for details. Tab between cards; Space selects a step.')
+        self.scroll.setAccessibleName('Workflow dependency map. Scroll or drag to pan. Tab between cards; Space selects a step.')
+        self.scroll.scale_changed.connect(lambda scale: self.zoom_out.setEnabled(scale > self.scroll.minimum_scale))
+        self.scroll.scale_changed.connect(lambda scale: self.zoom_in.setEnabled(scale < self.scroll.maximum_scale))
         self.fit_button.clicked.connect(self.fit_map)
         self.zoom_in.clicked.connect(lambda: self.scroll.zoom(1.2))
         self.zoom_out.clicked.connect(lambda: self.scroll.zoom(1 / 1.2))
@@ -433,7 +504,10 @@ class WorkflowFlow(QWidget):
     def reset(self, plan, preview=False):
         self.plan, self.facts, self.selected, self.preview = plan, {}, '', preview
         self.canvas.reset(plan)
+        self.scroll.reset_view()
         proposed = getattr(plan, 'proposed', False)
+        self.guidance.setVisible(not proposed)
+        self.legend.setVisible(not proposed)
         if not proposed:
             self.browser.load_plan(plan)
         self.stages_button.setVisible(not proposed)
@@ -485,7 +559,7 @@ class WorkflowFlow(QWidget):
 
     def fit_map(self):
         self.scroll.fit_mode = True
-        self.scroll.fit_map()
+        self.scroll.fit_map(force=True)
 
     def set_facts(self, facts):
         self.facts = facts
@@ -501,4 +575,5 @@ class WorkflowFlow(QWidget):
             return
         self.selected = key
         self.set_facts(self.facts)
+        self.scroll.reveal(key)
         self.phase_selected.emit(key)

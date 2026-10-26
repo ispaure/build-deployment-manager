@@ -137,6 +137,34 @@ class ToolbarGoalTests(unittest.TestCase):
         panel.project.make_plan.assert_not_called()
         panel.project.make_journey.assert_not_called()
 
+    def test_single_section_navigation_tracks_buttons_cards_and_goal_changes(self):
+        view, panel = self.view, self.panel
+        self.window.show(); self.app.processEvents()
+        self.assertFalse(view.config_tabs.tabBar().isVisible())
+        self.assertEqual(view.goal_buttons['advanced'].text(), 'Project operation…')
+        self.assertEqual(view.choice_summaries['advanced'].full_text, 'Options')
+        for key, button in view.choice_summaries.items():
+            if key == 'delivery':
+                view.choose_goal('deliver')
+            before = panel.choices()
+            button.setFocus()
+            QTest.keyClick(button, Qt.Key.Key_Space)
+            self.assertIs(view.config_tabs.currentWidget(), view.config_pages[key])
+            self.assertEqual([name for name, item in view.choice_summaries.items() if item.isChecked()], [key])
+            self.assertEqual(panel.choices(), before)
+        view.open_proposed_card('source')
+        self.assertTrue(view.choice_summaries['source'].isChecked())
+        view.open_section('delivery')
+        view.choose_goal('validate')
+        self.assertFalse(view.choice_summaries['delivery'].isEnabled())
+        selected = next(name for name, page in view.config_pages.items() if page is view.config_tabs.currentWidget())
+        self.assertTrue(view.choice_summaries[selected].isChecked())
+        self.assertNotEqual(selected, 'delivery')
+        view.choose_goal('advanced')
+        self.assertTrue(view.choice_summaries['platforms'].isChecked())
+        panel.project.make_plan.assert_not_called()
+        panel.project.make_journey.assert_not_called()
+
     def test_busy_state_locks_new_controls_and_project_switch_isolates_presets(self):
         panel, window = self.panel, self.window
         with patch('build_manager.app.QInputDialog.getText', return_value=('Only one', True)):
@@ -167,7 +195,7 @@ class ToolbarGoalTests(unittest.TestCase):
         self.assertEqual((window.width(), window.height()), (1024, 700))
         for button in self.view.choice_summaries.values():
             self.assertEqual(button.accessibleName(), button.full_text)
-            if button is not self.view.choice_summaries['source']:
+            if button in (self.view.choice_summaries['platforms'], self.view.choice_summaries['delivery']):
                 self.assertLess(len(button.text()), len(button.full_text))
             self.assertTrue(window.rect().contains(button.rect().translated(button.mapTo(window, QPoint()))))
         self.assertTrue(window.rect().contains(panel.prepare.rect().translated(panel.prepare.mapTo(window, QPoint()))))

@@ -21,9 +21,14 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 ## Choose work
 
 Run checks and Prepare and deliver are visible, exclusive goal buttons.
-Advanced opens the project operation controls. The source, platform and delivery
-summaries stay above the configuration tabs; click one to open its choices.
-Tabs show selection counts and warning icons for unresolved requirements.
+Project operation opens the project operation controls. The Source, Platforms,
+Delivery and Options summary buttons are the section navigation; click one to
+open its choices. The selected section has a blue outline, and summaries show
+selected names and warning icons for unresolved requirements.
+Amber repair buttons open the exact source, platform or recipient control that
+needs attention and highlight its workflow card. They preserve current choices;
+select the required value explicitly. Source repairs use declared project policy
+or the selected execution host, without committing or excluding files for you.
 Switching to Run checks excludes delivery without discarding saved destination
 choices; switching back restores their visibility.
 
@@ -33,11 +38,12 @@ contains Save preset and Delete preset. Edits mark the selected preset Modified.
 Saving a preset keeps the current choices and review; deleting one leaves the
 current draft intact. Presets remain private to the selected checkout.
 
-Configuration uses two resizable columns. Source, Testing, Delivery and Advanced
-tabs keep settings compact on the left. Testing presents a platform checkbox and
-execution-location dropdown in each table row. The live workflow overview fits on
-the right; use Fit or the zoom controls to inspect larger maps. Selecting a card
-opens its matching configuration tab and destination category.
+Configuration uses two resizable columns. The selected section's settings appear
+on the left. Platforms presents a platform checkbox and
+execution-location dropdown in each table row. The live workflow overview keeps
+cards at a readable scale on the right; scroll or drag to explore larger maps.
+Fit resets the view without shrinking below native text size. Selecting a card
+opens its matching configuration section and destination category.
 Changing selections adds and removes branches immediately; missing platform
 requirements stay visible as amber cards without selecting them on your behalf.
 
@@ -180,9 +186,17 @@ and approval counts visible. Expand a group with its arrow, double-click, or the
 Right arrow key, then select a step to inspect it. These are the individual
 execution steps supplied by the project adapter; a check step can contain many
 test cases. Grouping is for navigation and does not change scheduling.
+View blocking step opens the recorded failed prerequisite directly in Step
+details, including through intervening blocked steps. Card hover, focus outlines
+and chevrons indicate inspection; approval badges identify work needing review.
+Opening subtask details gives their list and evidence the summary's available
+space. During execution, the compact source/goal line replaces repeated captured
+choice columns; its tooltip retains source details.
 
 Dependency map switches to the exact graph. Section bands delimit its headings.
-Fit shows the full graph; zoom and drag to explore larger maps. Stages returns to
+Fit keeps readable cards, with scrolling for graphs larger than the viewport.
+Keyboard focus brings off-screen cards into view. Live updates preserve map pan
+and manual zoom. Stages returns to
 the readable hierarchy and retains the selected step. Arrows
 show prerequisites; branches can overlap when worker and shared-resource limits
 allow. Select a card to inspect prerequisites, outputs and approval requirements.

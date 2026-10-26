@@ -1,5 +1,5 @@
 """Non-executable workflow sketches from UI choices, without adapter calls or I/O."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -141,4 +141,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         messages.append('GitHub checks use committed source. Choose Latest commit or a specific revision to exclude local edits.')
     if revision == 'working-tree' and (source_requirements or any(backends.get(target) == 'GitHub' for target in platforms)):
         blockers.insert(0, ChoiceBlocker('source', 'Choose committed source…', 'source'))
+        nodes[0] = replace(nodes[0], issue=True)
+    if any(blocker.id.startswith('missing.') for blocker in blockers):
+        blockers = [blocker for blocker in blockers if blocker.id != 'platforms']
     return ProposedWorkflow(tuple(nodes), tuple(messages), blockers=tuple(blockers))
