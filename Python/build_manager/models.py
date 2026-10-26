@@ -24,8 +24,11 @@ class Phase:
     artifact_types: dict[str, str] = field(default_factory=dict)
     provider: str = ''
     stop_grace: float = 1
+    waits_for: tuple[str, ...] = ()
 
     def __post_init__(self):
+        if not isinstance(self.waits_for, (tuple, list)) or any(not isinstance(name, str) or not name for name in self.waits_for):
+            raise ValueError('Order prerequisites must be a list of step IDs.')
         from .providers import require_provider
         require_provider(self.provider)
         if self.effect not in {'inherit','inspect','test','build','deploy','upload','publish','dispatch'}:
@@ -69,7 +72,7 @@ class Plan:
             raise ValueError('Invalid operation plan.')
         seen = set()
         for phase in self.phases:
-            if phase.id in seen or any(dependency not in seen for dependency in phase.dependencies):
+            if phase.id in seen or any(dependency not in seen for dependency in (*phase.dependencies, *phase.waits_for)):
                 raise ValueError('Phase IDs must be unique and dependencies must precede their consumers.')
             if any(phase.environment.get(name) for name in self.secret_environment):
                 raise ValueError('Secret environment values must be inherited, not serialized in a plan.')
@@ -80,6 +83,10 @@ class Plan:
 
     def data(self):
         data = asdict(self)
+        # Keep legacy plan hashes stable when scheduling-only edges are absent.
+        for phase in data['phases']:
+            if not phase['waits_for']:
+                phase.pop('waits_for')
         # Preserve pre-journey plan hashes so retained legacy runs still resume.
         if not self.journey:
             data.pop('journey')
@@ -114,7 +121,9 @@ class Plan:
             for row in data['phases']:
                 if not isinstance(row,dict) or not isinstance(row.get('argv'),(list,tuple)):
                     raise ValueError('Plan commands must be argument lists, never shell strings.')
-                phases.append(Phase(**dict(row,argv=tuple(row['argv']),dependencies=tuple(row.get('dependencies',())))))
+                if not isinstance(row.get('waits_for', ()), (list, tuple)):
+                    raise ValueError('Order prerequisites must be a list of step IDs.')
+                phases.append(Phase(**dict(row,waits_for=tuple(row.get('waits_for', ())),argv=tuple(row['argv']),dependencies=tuple(row.get('dependencies',())))))
             data['phases']=tuple(phases)
             return cls(**data)
         except (TypeError,KeyError) as error:

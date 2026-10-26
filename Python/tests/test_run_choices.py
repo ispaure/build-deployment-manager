@@ -59,6 +59,9 @@ class RunChoicesTests(unittest.TestCase):
             try:
                 panel.platform_checks['ios'].setChecked(True)
                 panel.platform_backends['ios'].setCurrentText('GitHub')
+                self.assertEqual(panel.revision.text(),'working-tree')
+                self.assertIn('Choose Latest commit', panel.readiness.text())
+                panel.configuration.source_mode.setCurrentIndex(panel.configuration.source_mode.findData('HEAD'))
                 self.assertEqual(panel.revision.text(),'HEAD')
                 self.assertEqual(panel.choices()['platform_backends']['ios'],'GitHub')
                 self.assertIn('local edits are excluded',panel.configuration.source_summary.text())

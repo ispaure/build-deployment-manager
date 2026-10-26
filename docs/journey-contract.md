@@ -85,7 +85,7 @@ Add `journey` metadata to the plan, referencing its actual phase IDs:
 The manager checks exact goal/platform/destination agreement with intent. Each
 platform needs required, non-cleanup `kind=test` phases. Every delivery step must
 belong to exactly one selected destination, use an explicit upload/deploy/publish
-effect, be required, and depend transitively on every selected platform's gates.
+effect, be required, and depend transitively on its destination’s required platform gates.
 This version implements a common validation barrier; independent-platform release
 policy requires a future explicit contract. Unselected effects are rejected.
 
@@ -174,3 +174,45 @@ CLI examples add `--execution ios=GitHub` and
 `--run-value 'testflight.what_to_test=Try the updated editor'` to a journey request.
 Unspecified selected hosts use declared defaults. These commands prepare plans;
 they do not authorize dispatch or publication.
+
+## Independent destination gates and completion order
+
+Each destination evidence row can declare `platforms`, a nonempty subset of the
+selected platforms. Every external step must depend on all required gates for
+that destination, plus its prepared artifact. Intent also carries the descriptor's
+`destination_platforms`; returned evidence cannot narrow that declared requirement.
+Legacy rows without a scope conservatively require all selected platforms.
+Firebase requires Android, TestFlight iOS; a project's GitHub release can require
+multiple desktop platforms. Unrelated failure does not block a passing destination.
+
+Phase `waits_for` is optional completion order. These edges are included in the
+scheduler and dotted in the diagram, but do not count as successful validation or
+artifact ancestors. Use them for admission after another branch has released its
+resources; downstream tests must still be ordinary required success gates.
+Empty `waits_for` is omitted from serialization to preserve legacy plan identity.
+The diagram centers each depth row and orders children by their parents' positions.
+A shared resource may serialize native work even when delivery branches are
+independent. Prepared external actions retain the existing explicit review pause.
+
+Optional `unavailable_destinations` lists `{label, reason}` rows. Configuration
+shows these as explanations, never selectable executable destinations. Projects
+should explain absent artifact/review contracts without implying device discovery
+or delivery support.
+
+## Grouped destinations and explicit recipients
+
+Destination metadata may declare a display `category` and a `recipient_field`.
+The latter names a `run_fields` entry with kind `multiselect` applicable to that
+destination. Values remain text in the API: a JSON array of up to 50 distinct
+stable IDs. The GUI offers checkboxes and explicit ID entry, never automatic
+selection. Adapters validate IDs and capture the actual target mapping in their
+source/recipe evidence. IDs cannot become shell strings.
+
+Adapters declaring `dynamic_run_inputs: true` provide `run_defaults`; multiselect
+adapters provide `run_choices`, returning `{field_id: [{id, label}]}`. Both actions
+run asynchronously in the trusted project interpreter. They must be read-only;
+Logistics returns saved metadata without native discovery or device connections.
+Reload preserves selected IDs, including entered recipients absent from a refreshed
+list. Failures allow explicit ID entry and do not silently broaden recipients.
+External installation steps declare effect `deploy` and require ordinary exact-
+artifact review, destination validation gates and unknown-outcome reconciliation.

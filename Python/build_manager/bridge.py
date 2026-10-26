@@ -135,8 +135,15 @@ class ProjectBridge:
             options['run_overrides'] = validate_overrides(self.run_fields, options['run_overrides'])
 
     def run_defaults(self, *, cancelled=lambda: False):
+        if self.descriptor.get('dynamic_run_inputs') is True:
+            return self.call('run_defaults', cancelled=cancelled, timeout=30)
         rows = self.load_settings(cancelled=cancelled)
         return {field['id']:rows[field['id']]['value'] for field in self.run_fields if field['id'] in rows}
+
+    def run_choices(self, *, cancelled=lambda: False):
+        if not any(row.get('kind') == 'multiselect' for row in self.run_fields):
+            return {}
+        return self.call('run_choices', cancelled=cancelled, timeout=30)
 
     def save_settings(self, values):
         return self.store_settings(values)

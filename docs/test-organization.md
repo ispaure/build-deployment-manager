@@ -73,7 +73,7 @@ suite/case inventory, native host identity and allowed skip policy.
 
 One project preset may prepare source → run required suites → build → verify
 package → await destination review → upload/deploy/publish → cleanup. Every
-external phase must depend on all required gates and the exact artifact preparation.
+external phase must depend on its destination’s required platform gates and the exact artifact preparation.
 Declare effect per external phase and explicit harmless effects on preparation.
 Include source fingerprint, toolchain/runtime versions, actual package identity,
 version and destination in plan/source/settings and prepared evidence. Preserve
@@ -117,3 +117,11 @@ in isolated Blender directories and records its checksum. Full case inventories,
 no-skip policy and exact-source hosted evidence gate its reviewed GitHub draft.
 Source implementation and portable integration are present in both repositories;
 real native/hosted acceptance and committed dependency-pin rollout remain separate.
+
+## Declarative suite discovery
+
+[Project test manifests](test-manifests.md) define conventional roots, explicit
+pinned dependency suites, named project interpreters and success prerequisites.
+Logistics desktop and mobile host validation now require commonUtils before
+project host suites. Suite discovery does not execute tests or replace native
+acceptance.

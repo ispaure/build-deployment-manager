@@ -92,7 +92,9 @@ class OnboardingUITests(unittest.TestCase):
                     (Phase('portable-contracts',('python','-V'),folder,effect='test'),
                      Phase('send',('python','-V'),folder,effect='upload',dependencies=('portable-contracts',))),str(root/'work'))
                 panel.present_plan(plan);panel.stages.setCurrentIndex(1);panel.show();self.app.processEvents()
-                self.assertFalse(panel.review_board.isHidden())
+                self.assertFalse(panel.review_flow.isHidden())
+                self.assertEqual(len(panel.review_flow.canvas.cards), 2)
+                self.assertEqual(panel.review_flow.canvas.edges, [('portable-contracts', 'send')])
                 self.assertEqual(panel.review_board.topLevelItemCount(),2)
                 self.assertIn('separate approval',panel.review_board.topLevelItem(1).text(2))
                 self.assertIn('uncommitted changes',panel.review_summary.text())

@@ -15,6 +15,8 @@ Use Add project at the top of the window. Choose or paste the project folder,
 check its preview, then add it. The manager selects that project and explains the
 next setup step. Project settings contains categories and search; App settings
 controls the manager's appearance. Missing project environments have setup guidance.
+The **?** at the upper right opens the manager's searchable Markdown documentation,
+including this user guide and the developer guide. It stays available during runs.
 
 For command-line registration, use the manager environment:
 
@@ -50,6 +52,35 @@ If a backend is unavailable, fix the stated prerequisite or explicitly choose
 another declared backend. The manager does not silently substitute a hosted run.
 Projects can allow working-tree tests while requiring committed release sources.
 See [guided UI](../guided-ui.md) for each control and [host requirements](../hosts.md).
+
+## Remember choices and save run presets
+
+Each registered checkout remembers your last run choices automatically, including
+checked device IDs, source revision, platforms, destinations, execution hosts,
+run inputs, option toggles and build-number overrides. Project defaults remain
+owned by the project; remembered inputs override them for your next run.
+Saved device selections do not prove that a device is currently connected.
+
+Use **Save preset…** to name the current choices within the selected project.
+Choose a saved preset and **Load preset** to restore those choices, or
+**Delete preset** to remove it. Saving with an existing name replaces that preset.
+Presets belong to each registered checkout. Loading one invalidates the old plan;
+review a new plan before starting. It never restores execution approvals.
+
+The manager stores registrations, remembered choices and named presets in
+`registry.json` under its private application configuration directory:
+
+- macOS: `~/Library/Application Support/BuildDeploymentManager/`
+- Windows: `%APPDATA%/BuildDeploymentManager/`
+- Linux: `$XDG_CONFIG_HOME/BuildDeploymentManager/`, defaulting to `~/.config/BuildDeploymentManager/`
+
+Shared account references and manager settings use `settings.json`; appearance
+uses `appearance.json` in that directory. These files live outside your Git
+checkout and are not committed with it. The CLI/GUI `--registry` option can select
+a different directory; keep that directory outside source control as well.
+Project settings storage is defined by the project's adapter. Credentials remain
+protected references, and secret values are rejected from manager profiles.
+On POSIX systems, manager registry files are written with owner-only permissions.
 
 ## Read outcomes, not just the progress bar
 

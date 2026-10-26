@@ -31,6 +31,8 @@ def inspect(root):
     if not isinstance(data,dict):raise ValueError('Project descriptor must be a JSON object.')
     if data.get('schema') != 1 or data.get('adapter_api') != 1:
         raise ValueError('Unsupported project/adapter schema; API 1 is required.')
+    if type(data.get('dynamic_run_inputs', False)) is not bool:
+        raise ValueError('Dynamic run inputs must be explicitly enabled or disabled.')
     if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name', 'bridge')):
         raise ValueError('Project identity, interpreter and bridge must be declared.')
     interpreter = data.get('interpreter')
@@ -130,18 +132,43 @@ class Registry:
             data['selected'] = key
         self.mutate(update)
 
-    def selections(self, key, choices):
+    @staticmethod
+    def validate_selections(choices):
+        from .credentials import reject_secrets
         lists = {'selected_platforms', 'selected_destinations'}
-        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag', 'suite', 'goal', 'platform_backends'} | lists
+        mappings = {'platform_backends', 'run_overrides', 'run_options'}
+        allowed = {'operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag',
+                   'suite', 'goal', 'build_override'} | lists | mappings
         def valid(name, value):
-            if name == 'platform_backends':
-                return isinstance(value,dict) and all(isinstance(k,str) and isinstance(v,str) for k,v in value.items())
+            if name == 'build_override':
+                return type(value) is int and 0 <= value <= 2147483647
+            if name in mappings:
+                expected = bool if name == 'run_options' else str
+                return isinstance(value, dict) and all(isinstance(k, str) and type(v) is expected
+                                                       for k, v in value.items())
             return (isinstance(value, list) and all(isinstance(item, str) for item in value)
                     if name in lists else isinstance(value, str))
-        if set(choices) - allowed or not all(valid(name, value) for name, value in choices.items()):
+        if not isinstance(choices, dict) or set(choices) - allowed or not all(valid(name, value) for name, value in choices.items()):
             raise ValueError('Invalid project selections.')
+        reject_secrets(choices)
+
+    def selections(self, key, choices):
+        self.validate_selections(choices)
         def update(data):
             data['projects'][key]['selections'] = dict(choices)
+        self.mutate(update)
+
+    def save_preset(self, key, name, choices):
+        if not isinstance(name, str) or not name.strip() or len(name) > 100:
+            raise ValueError('Enter a preset name of 1–100 characters.')
+        self.validate_selections(choices)
+        def update(data):
+            data['projects'][key].setdefault('presets', {})[name.strip()] = dict(choices)
+        self.mutate(update)
+
+    def delete_preset(self, key, name):
+        def update(data):
+            data['projects'][key].setdefault('presets', {}).pop(name, None)
         self.mutate(update)
 
     def remove(self, key):

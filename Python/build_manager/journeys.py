@@ -46,8 +46,15 @@ def validate_capability(value, capabilities):
                 or not row['label'] or not isinstance(row.get('platforms'), list) or not row['platforms']
                 or any(target not in platforms for target in row['platforms'])
                 or len(set(row['platforms'])) != len(row['platforms'])
+                or not isinstance(row.get('category', 'Destinations'), str)
+                or not isinstance(row.get('recipient_field', ''), str)
                 or not isinstance(row.get('description', ''), str)):
             raise ValueError('Journey destinations need unique IDs, labels and declared platforms.')
+    unavailable = value.get('unavailable_destinations', [])
+    if not isinstance(unavailable, list) or any(not isinstance(row, dict)
+            or not isinstance(row.get('label'), str) or not row['label']
+            or not isinstance(row.get('reason'), str) or not row['reason'] for row in unavailable):
+        raise ValueError('Unavailable destinations need labels and an explanation.')
 
 
 def request(capability, goal, platforms, destinations, *, backends=None):
@@ -74,11 +81,13 @@ def request(capability, goal, platforms, destinations, *, backends=None):
                 or any(not isinstance(value, str) or not value for value in backends.values())):
             raise ValueError('Choose an execution location for every selected platform.')
         result['backends'] = dict(backends)
+    if destinations:
+        result['destination_platforms'] = {name: list(capability['destinations'][name]['platforms']) for name in destinations}
     return result
 
 
 def validate_plan(plan, intent=None):
-    """Reject undeclared effects, missing checks and bypassed common release gates."""
+    """Reject undeclared effects, missing checks and bypassed destination validation gates."""
     from .workflows import ancestors, EXTERNAL
     data = plan.journey
     if not isinstance(data, dict) or data.get('schema') != 1 or data.get('goal') not in {'validate', 'deliver'}:
@@ -129,14 +138,23 @@ def validate_plan(plan, intent=None):
         if (not _identifier(name) or not isinstance(row, dict) or not isinstance(row.get('identity'), str)
                 or not row['identity'].strip() or not isinstance(row.get('steps'), list) or not row['steps']):
             raise ValueError('Each destination needs its exact identity and external steps.')
+        required_platforms = row.get('platforms', list(platforms))
+        if (not isinstance(required_platforms, list) or not required_platforms
+                or any(not isinstance(target, str) or target not in platforms for target in required_platforms)
+                or len(set(required_platforms)) != len(required_platforms)):
+            raise ValueError('Destination platforms must name selected platforms without duplicates.')
+        expected = (intent or {}).get('destination_platforms', {}).get(name, [])
+        if not set(expected).issubset(required_platforms):
+            raise ValueError('Destination validation omits a platform required by its descriptor.')
+        required_gates = {gate for target in required_platforms for gate in platforms[target]}
         for step in row['steps']:
             if step not in external or step in declared:
                 raise ValueError('Delivery steps must belong to exactly one selected destination.')
             phase = phases[step]
             if phase.always or phase.effect not in EXTERNAL or not phase.required:
                 raise ValueError('Delivery requires explicit reviewed effects on required non-cleanup steps.')
-            if not gates.issubset(ancestors(plan, step)):
-                raise ValueError('Every delivery must depend on all selected platform validation gates.')
+            if not required_gates.issubset(ancestors(plan, step)):
+                raise ValueError('Every delivery must depend on its required platform validation gates.')
             declared.add(step)
     if external != declared or (data['goal'] == 'validate' and external) or (data['goal'] == 'deliver' and not destinations):
         raise ValueError('The plan contains unselected delivery actions or is missing selected deliveries.')

@@ -10,7 +10,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QTreeWidget,
-    QTreeWidgetItem, QTabWidget, QStackedWidget,
+    QTreeWidgetItem, QTabWidget, QStackedWidget, QSplitter,
 )
 from .settings_ui import SettingsDialog
 
@@ -112,7 +112,11 @@ class ManagerPanel(QWidget):
         self.review_timer.setInterval(25)
         self.review_timer.timeout.connect(self.continuation_verified)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         self.identity = QLabel(project.description)
+        self.identity.setText(getattr(project, 'descriptor', {}).get('name', project.description))
+        self.identity.setToolTip(project.description)
         self.identity.setWordWrap(True)
         layout.addWidget(self.identity)
         navigation = QHBoxLayout()
@@ -184,11 +188,12 @@ class ManagerPanel(QWidget):
         self.plan_feedback.setTextFormat(Qt.TextFormat.PlainText)
         self.plan_feedback.setAccessibleName('Plan preparation feedback')
         configuration_layout.addWidget(self.plan_feedback)
+        self.plan_feedback.hide()
         controls.addWidget(self.prepare)
         self.verify.hide()
         self.cleanup.hide()
         self.prepare.setDefault(True)
-        configuration_layout.addWidget(QLabel('Next checks your choices and prepares a plan. Tests start only after you review it.'))
+        self.prepare.setToolTip('Check choices and prepare the plan. Tests start after the next review.')
         configuration_layout.addLayout(controls)
         configuration_layout.addStretch()
         review = QWidget()
@@ -197,13 +202,30 @@ class ManagerPanel(QWidget):
         self.review_summary = QLabel()
         self.review_summary.setWordWrap(True)
         self.review_summary.setTextFormat(Qt.TextFormat.PlainText)
-        review_layout.addWidget(self.review_summary)
+        self.review_summary.hide()
+        self.review_context = QLabel()
+        self.review_context.setWordWrap(True)
+        self.review_context.setTextFormat(Qt.TextFormat.PlainText)
+        review_layout.addWidget(self.review_context)
         self.review_run_inputs = QPlainTextEdit()
         self.review_run_inputs.setReadOnly(True)
         self.review_run_inputs.setAccessibleName('Notes and recipients captured for this run')
         self.review_run_inputs.setMaximumHeight(135)
         self.review_run_inputs.hide()
         review_layout.addWidget(self.review_run_inputs)
+        from .workflow_ui import WorkflowFlow
+        self.review_flow = WorkflowFlow()
+        self.review_flow.phase_selected.connect(self.review_step)
+        self.review_inspector = QPlainTextEdit()
+        self.review_inspector.setReadOnly(True)
+        self.review_inspector.setAccessibleName('Selected planned step details')
+        self.review_inspector.setMinimumWidth(260)
+        self.review_splitter = QSplitter()
+        self.review_splitter.addWidget(self.review_flow)
+        self.review_splitter.addWidget(self.review_inspector)
+        self.review_splitter.setSizes([520, 400])
+        self.review_splitter.setChildrenCollapsible(False)
+        review_layout.addWidget(self.review_splitter, 1)
         details_toggle = QCheckBox('Show technical details and complete plan')
         review_layout.addWidget(details_toggle)
         self.review_board = QTreeWidget()
@@ -211,7 +233,7 @@ class ManagerPanel(QWidget):
         self.review_board.setAccessibleName('Validation, preparation and delivery dependencies')
         self.review_board.setColumnWidth(0, 260)
         self.review_board.setColumnWidth(1, 260)
-        review_layout.addWidget(self.review_board, 1)
+        self.review_board.hide()
         review_tabs = QTabWidget()
         self.overview = QPlainTextEdit()
         self.overview.setReadOnly(True)
@@ -219,12 +241,12 @@ class ManagerPanel(QWidget):
         self.plan_data = QPlainTextEdit()
         self.plan_data.setReadOnly(True)
         self.plan_data.setAccessibleName('Complete redacted plan data')
+        review_tabs.addTab(self.review_board, 'Dependency table')
         review_tabs.addTab(self.overview, 'Overview')
         review_tabs.addTab(self.plan_data, 'Complete plan')
         review_layout.addWidget(review_tabs, 1)
         review_tabs.hide()
         details_toggle.toggled.connect(review_tabs.setVisible)
-        review_layout.addStretch()
         review_help = QLabel('Start runs the selected checks. Delivery pauses for a separate approval of the prepared files and destinations.')
         review_help.setWordWrap(True)
         review_layout.addWidget(review_help)
@@ -351,6 +373,7 @@ class ManagerPanel(QWidget):
             self.status.setText(self.preset_error)
         finally:
             self.applying_preset = False
+            self.selection_changed.emit(self.choices())
 
     def refresh_operations(self, *_):
         factory=getattr(self.project,'operations_for',None)
@@ -402,10 +425,12 @@ class ManagerPanel(QWidget):
             self.preset_error = ''
             if self.preset.currentIndex():
                 self.preset_note.setText(self.preset.currentText() + ' · Modified. Review the updated plan before running.')
-        self.selection_changed.emit(self.choices())
+        if not self.applying_preset:
+            self.selection_changed.emit(self.choices())
         if hasattr(self, 'status'):
             self.status.setText('Selection changed. Inspect a fresh plan before running.')
             self.plan_feedback.setText('Choices changed. Choose Next: review plan to check them before starting.')
+            self.plan_feedback.hide()
         if not self.applying_preset and self.platform_checks and self.goal.currentData() != 'advanced':
             from .journeys import request
             try:
@@ -451,8 +476,17 @@ class ManagerPanel(QWidget):
             except (OSError, ValueError, KeyError) as error:
                 self.preparation_message('Could not open this project. ' + self.redact(str(error)))
                 return
+        if not self.revision.text().strip():
+            self.configuration.open_section('source')
+            self.preparation_message('Choose a source revision, or select Current files or Latest commit in Source. No plan has been prepared.')
+            return
         if self.preset_error:
             self.preparation_message(self.preset_error)
+            return
+        if self.run_fields.missing_selection():
+            row = self.run_fields.missing_selection_field()
+            self.configuration.open_section('delivery', next(iter(row.get('destinations', [])), ''))
+            self.preparation_message(self.run_fields.missing_selection())
             return
         from functools import partial
         operation, platform, backend = (control.currentText() for control in
@@ -509,6 +543,7 @@ class ManagerPanel(QWidget):
         self.preparation_timer.start()
 
     def preparation_message(self, text):
+        self.plan_feedback.show()
         self.status.setText(text)
         self.plan_feedback.setText(text)
         self.configuration.ensureWidgetVisible(self.plan_feedback)
@@ -523,6 +558,9 @@ class ManagerPanel(QWidget):
         self.set_busy(False)
         if error is not None:
             self.preparation_message('Could not prepare the plan. ' + self.redact(error))
+            if 'committed' in error.lower() and ('source' in error.lower() or 'revision' in error.lower()):
+                self.configuration.open_section('source')
+                self.configuration.proposal_detail.setText('Project policy requires committed source. Choose Latest commit to exclude local edits, or select a specific revision. Nothing is committed or pushed by this choice.')
             return
         if self.selection_revision != self.preparation_revision:
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
@@ -627,7 +665,7 @@ class ManagerPanel(QWidget):
             self.result = result
             self.start.setEnabled(False)
             self.open_results.setEnabled(True)
-            self.preview.setPlainText(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
+            self.run_view.set_output(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
             self.stages.setCurrentIndex(1)
             confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish', 'dispatch'})
             selected = self.confirm_continuation(plan, previous, steps) if confirmed else True
@@ -682,7 +720,7 @@ class ManagerPanel(QWidget):
 
     def set_busy(self, busy):
         self.session.set_busy(busy)
-        for control in (self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
+        for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
                         self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
                         self.refresh_history_button, self.view_history_button, self.history, self.continue_run,
                         self.goal, *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
@@ -713,10 +751,10 @@ class ManagerPanel(QWidget):
             try:
                 event = json.loads(line)
             except ValueError:
-                self.preview.appendPlainText(self.redact(line))
+                self.run_view.append_output(None, self.redact(line))
                 continue
             if event.get('type') == 'output':
-                self.preview.appendPlainText(self.redact('['+event.get('phase','step')+'] '+event['text'].rstrip()))
+                self.run_view.append_output(event.get('phase'), self.redact(event['text'].rstrip()))
             elif event.get('type') == 'waiting':
                 self.update_phase(dict(id=event['phase'],status=event['reason']))
             elif event.get('type') == 'phase':
@@ -761,7 +799,7 @@ class ManagerPanel(QWidget):
         self.plan_data.setPlainText(json.dumps(self.redacted_data(plan.data()), indent=2))
         journey = getattr(safe, 'journey', {})
         platforms = ', '.join(journey.get('platforms', ())) or str(safe.adapter.get('platform') or safe.settings.get('platform', safe.source.get('platform', 'Not specified by this project')))
-        destinations = '\n'.join('• ' + name + ': ' + row['identity'] for name, row in journey.get('destinations', {}).items())
+        destinations = '\n'.join('• ' + name + ': ' + row['identity'] + ' (requires: ' + ', '.join(row.get('platforms', list(journey.get('platforms', {})))) + ')' for name, row in journey.get('destinations', {}).items())
         captured = safe.source.get('commit') or safe.source.get('fingerprint')
         source = ('Commit ' if safe.source.get('commit') else 'Snapshot ') + str(captured)[:12] if captured else str(safe.source.get('revision', 'See technical details'))
         if safe.source.get('selection'):
@@ -775,7 +813,7 @@ class ManagerPanel(QWidget):
              ('upload', 'uploads requiring review'), ('deploy', 'deliveries requiring review'), ('publish', 'publication steps requiring review'), ('dispatch','GitHub test launches requiring review'))
             if counts.get(effect))
         self.review_summary.setText(f'Project: {safe.project}\nSource: {source}\nPlatforms: {platforms}\nRuns on: {safe.backend}\n\n'
-            + ('First: test every selected platform.\nThen: prepare files for delivery.\nFinally: pause for your approval of these destinations:\n' + destinations
+            + ('Each destination waits for its required platform checks.\nIndependent preparation branches can proceed as their checks pass.\nDelivery pauses for your approval:\n' + destinations
                if destinations else 'This plan will run the selected checks. No delivery is selected.' if safe.effect == 'test' and all(phase.effect not in {'upload', 'deploy', 'publish'} for phase in safe.phases)
                else f'Operation: {safe.operation}\nEffect: {safe.effect}. Review technical steps before starting.')
             + f'\n\n{len(safe.phases)} steps in total: {work}.')
@@ -802,10 +840,52 @@ class ManagerPanel(QWidget):
             row.setToolTip(0, phase.id)
             self.review_board.addTopLevelItem(row)
 
+        self.review_flow_plan = safe
+        self.review_context.setText(f'{safe.project} · {platforms} · {source}')
+        self.review_flow.reset(safe, preview=True)
+        self.review_step('')
+
+    def review_step(self, key):
+        plan = getattr(self, 'review_flow_plan', None)
+        if plan is None:
+            return
+        if not key:
+            self.review_inspector.setPlainText(self.review_summary.text() +
+                '\n\nSelect a card to inspect its prerequisites and approval requirements. '
+                'Arrows determine order; independent branches can overlap within worker and resource limits.')
+            return
+        from .workflow_ui import title, effect_label
+        phases = {phase.id: phase for phase in plan.phases}
+        phase = phases[key]
+        lines = [title(phase), effect_label(phase, plan), '',
+            'Starts after: ' + (', '.join(title(phases[name]) for name in phase.dependencies) or 'No prerequisites'),
+            'Required for success: ' + ('Yes' if phase.required else 'No'),
+            'Timeout: ' + str(phase.timeout) + ' seconds']
+        if getattr(phase, 'waits_for', ()):
+            lines += ['Scheduling only: waits for ' + ', '.join(phase.waits_for) + ' to finish; success is not required.']
+        if phase.always:
+            lines += ['This always-run step waits for running work to finish and still runs after a prerequisite fails.']
+            if not phase.dependencies and plan.max_workers > 1:
+                lines += ['This cleanup also waits for pending non-cleanup work.']
+        else:
+            lines += ['A failed prerequisite prevents this step from running.']
+        if phase.resources:
+            lines += ['Shared resources: ' + ', '.join(phase.resources),
+                      'Other work using these resources may need to finish first.']
+        for destination in getattr(plan, 'journey', {}).get('destinations', {}).values():
+            if key in destination['steps']:
+                lines += ['', 'Destination: ' + destination['identity'],
+                          'This action needs a separate approval before it can run.']
+        if phase.artifacts:
+            lines += ['', 'Declared outputs:', *phase.artifacts]
+        lines += ['', 'Step identity: ' + key, 'No commands are started by selecting this card.']
+        self.review_inspector.setPlainText('\n'.join(lines))
+
     def seed_run(self, plan, previous=()):
         safe = self.safe_plan(plan)
         self.run_view.reset(safe, self.redacted_data(previous))
         self.phase_rows = self.run_view.rows
+        self.run_view.phase_log_reader = self.read_phase_log
         self.view_run.setEnabled(True)
 
     def closeEvent(self, event):
@@ -887,7 +967,7 @@ class ManagerPanel(QWidget):
             self.present_plan(plan)
             self.seed_run(plan, report['phases'])
             self.run_view.complete(report)
-            self.preview.setPlainText(self.redact(json.dumps(report, indent=2)))
+            self.run_view.set_output(self.redact(json.dumps(report, indent=2)))
             self.resumable = report['status'] in {'awaiting_review', 'failed', 'cancelled'}
             self.continue_run.setEnabled(self.resumable)
             self.continue_run.setVisible(self.resumable)
@@ -900,9 +980,27 @@ class ManagerPanel(QWidget):
         except (OSError, ValueError, KeyError, TypeError) as error:
             self.status.setText('Cannot read retained run: ' + self.redact(str(error)))
 
+    def read_phase_log(self, key):
+        from pathlib import Path
+        if not self.result:
+            return ''
+        name = self.run_view.facts.get(key, {}).get('log')
+        if not name:
+            return ''
+        if not isinstance(name, str):
+            raise ValueError('Invalid step log reference.')
+        root = self.result.parent.resolve()
+        path = (root / name).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError('Log must stay inside the retained run directory.')
+        with path.open('rb') as stream:
+            raw = stream.read(262145)
+        text = self.redact(raw[:262144].decode('utf-8', errors='replace'))
+        return text + ('\nPreview truncated; open the results folder for the complete log.' if len(raw) > 262144 else '')
+
     def read_errors(self):
         text = bytes(self.process.readAllStandardError()).decode('utf-8', errors='replace')
-        self.preview.appendPlainText(self.redact(text))
+        self.run_view.append_output(None, self.redact(text))
 
     def cancel_operation(self):
         if self.reviewing:
@@ -932,7 +1030,7 @@ class ManagerPanel(QWidget):
         self.set_busy(False)
         status = 'failed'
         if self.session.buffer:
-            self.preview.appendPlainText(self.redact(self.session.buffer))
+            self.run_view.append_output(None, self.redact(self.session.buffer))
             self.session.buffer = ''
         try:
             if exit_status == QProcess.ExitStatus.CrashExit:
@@ -948,7 +1046,7 @@ class ManagerPanel(QWidget):
             status = report['status']
             if status not in {'passed', 'failed', 'cancelled', 'awaiting_review', 'unknown'} or not isinstance(report['phases'], list):
                 raise ValueError('The result report is incomplete or invalid.')
-            self.preview.appendPlainText(self.redact(json.dumps(report, indent=2)))
+            self.run_view.append_output(None, self.redact(json.dumps(report, indent=2)))
             for phase in report['phases']:
                 if not isinstance(phase, dict):
                     raise ValueError('Invalid result phase.')
@@ -956,14 +1054,14 @@ class ManagerPanel(QWidget):
                 for artifact in phase.get('artifacts', []):
                     evidence = self.artifact_preview(artifact['path'])
                     if evidence:
-                        self.preview.appendPlainText(evidence)
+                        self.run_view.append_output(None, evidence)
             self.run_view.complete(report)
             if code and status == 'passed':
                 raise ValueError('A passing report disagrees with the operation exit code.')
         except (OSError, ValueError, KeyError, TypeError) as error:
             status = 'failed'
             self.run_view.unverified(self.redact(str(error)))
-            self.preview.appendPlainText('Result/evidence could not be verified: ' + self.redact(str(error)))
+            self.run_view.append_output(None, 'Result/evidence could not be verified: ' + self.redact(str(error)))
         self.open_results.setEnabled(bool(self.result and self.result.parent.is_dir()))
         self.resumable = status in {'awaiting_review', 'failed', 'cancelled'} and bool(self.result and self.result.is_file())
         self.continue_run.setEnabled(self.resumable)

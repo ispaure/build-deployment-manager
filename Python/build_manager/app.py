@@ -27,7 +27,7 @@ def main(argv=None):
 
 # Qt imports are isolated in this GUI-only module.
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget, QMenu, QToolButton, QGroupBox, QScrollArea, QFrame)
+    QMessageBox, QPushButton, QVBoxLayout, QWidget, QMenu, QToolButton, QGroupBox, QScrollArea, QFrame, QInputDialog)
 from .bridge import ProjectBridge
 from .ui import ManagerPanel
 
@@ -41,6 +41,8 @@ class ManagerWindow(QWidget):
         self.setWindowTitle('Build Deployment Manager')
         self.resize(1200,850)
         self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(10, 8, 10, 8)
+        self.layout.setSpacing(6)
         self.controls = QHBoxLayout()
         self.projects = QComboBox()
         self.projects.setAccessibleName('Selected project checkout')
@@ -75,6 +77,13 @@ class ManagerWindow(QWidget):
         self.app_settings.clicked.connect(self.open_app_settings)
         self.controls.addWidget(self.app_settings)
         self.buttons.append(self.app_settings)
+        self.documentation_window = None
+        self.help_button = QToolButton()
+        self.help_button.setText('?')
+        self.help_button.setAccessibleName('Build Deployment Manager documentation')
+        self.help_button.setToolTip('Open user and developer documentation')
+        self.help_button.clicked.connect(self.open_documentation)
+        self.controls.addWidget(self.help_button)
         self.layout.addLayout(self.controls)
         self.status=QLabel('Add a project checkout to load its settings and prepare work.')
         self.status.setWordWrap(True);self.layout.addWidget(self.status)
@@ -86,6 +95,8 @@ class ManagerWindow(QWidget):
         self.layout.addWidget(self.scroll,1)
         self.root_layout = self.layout
         self.layout = QVBoxLayout(content)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(6)
         self.setup_card = QGroupBox('Project setup')
         setup_layout = QHBoxLayout(self.setup_card)
         self.setup_summary = QLabel()
@@ -105,6 +116,18 @@ class ManagerWindow(QWidget):
         self.layout.addWidget(self.empty, 1)
         self.projects.currentIndexChanged.connect(self.select)
         self.refresh()
+
+    def open_documentation(self):
+        from commonUtils.ui.document_host import show_document
+        from commonUtils.ui.markdown import open_markdown
+        if self.documentation_window is None:
+            directory = Path(__file__).resolve().parents[2] / 'docs'
+            self.documentation_window = open_markdown(directory / 'docs.md', parent=self,
+                                                       directory=directory)
+            self.documentation_window.destroyed.connect(
+                lambda: setattr(self, 'documentation_window', None))
+        else:
+            show_document(self.documentation_window)
 
     def open_app_settings(self):
         from .application_settings_ui import ApplicationSettingsDialog
@@ -154,30 +177,77 @@ class ManagerWindow(QWidget):
                 self.panel.identity.hide()
                 self.panel.settings.hide()
                 self.menu_actions['Clean up builds…'].setEnabled(hasattr(project, 'storage_inventory'))
-                for name,value in project.row.get('selections', {}).items():
-                    if name in ('selected_platforms', 'selected_destinations'):
-                        controls = self.panel.platform_checks if name == 'selected_platforms' else self.panel.destination_checks
-                        for identifier, control in controls.items():
-                            control.setChecked(identifier in value)
-                        continue
-                    if name == 'goal':
-                        self.panel.goal.setCurrentIndex(max(0, self.panel.goal.findData(value)))
-                        continue
-                    if name == 'platform_backends':
-                        for target,backend in value.items():
-                            if target in self.panel.platform_backends:
-                                self.panel.platform_backends[target].setCurrentText(backend)
-                        continue
-                    control=getattr(self.panel,name)
-                    if name == 'suite':control.setCurrentIndex(max(0,control.findData(value)))
-                    elif name in ('operation','platform','backend'):control.setCurrentText(value)
-                    else:control.setText(value)
-                self.panel.selection_changed.connect(lambda choices:self.registry.selections(key,choices))
+                self.panel.applying_preset = True
+                try:
+                    self.panel.configuration.restore_choices(project.row.get('selections', {}))
+                finally:
+                    self.panel.applying_preset = False
+                self.panel.selection_changed.connect(lambda choices: self.guarded(
+                    lambda: self.registry.selections(key, choices)))
+                self.install_presets(key)
                 self.panel.busy_changed.connect(self.set_active)
                 self.panel.settings_saved.connect(lambda: self.status.setText('Project settings saved. Review a fresh plan before running.'))
                 self.layout.addWidget(self.panel)
                 self.update_setup()
             self.guarded(change)
+
+    def install_presets(self, key):
+        panel = self.panel
+        row = QHBoxLayout()
+        self.saved_presets = QComboBox()
+        self.saved_presets.setAccessibleName('Saved project run presets')
+        self.saved_presets.setToolTip('Private presets for this project checkout. Loading only changes choices; review before running.')
+        self.saved_presets.addItem('Saved run presets…', None)
+        for name in self.registry.read()['projects'][key].get('presets', {}):
+            self.saved_presets.addItem(name, name)
+        row.addWidget(self.saved_presets, 1)
+        load = QPushButton('Load preset')
+        save = QPushButton('Save preset…')
+        delete = QPushButton('Delete preset')
+        for button in (load, save, delete):
+            row.addWidget(button)
+            panel.busy_changed.connect(lambda busy, control=button: control.setEnabled(not busy))
+        panel.busy_changed.connect(lambda busy: self.saved_presets.setEnabled(not busy))
+        panel.layout().insertLayout(1, row)
+        def load_selected():
+            name = self.saved_presets.currentData()
+            if name is None:
+                return
+            choices = self.registry.read()['projects'][key]['presets'][name]
+            panel.applying_preset = True
+            try:
+                panel.configuration.restore_choices(choices)
+            finally:
+                panel.applying_preset = False
+            panel.invalidate()
+            panel.stages.setCurrentIndex(0)
+            panel.status.setText('Loaded preset: ' + name + '. Review the plan before running.')
+        def save_selected():
+            if panel.run_fields.timer.isActive():
+                raise ValueError('Project defaults are still loading. Save the preset once they have loaded.')
+            name, accepted = QInputDialog.getText(self, 'Save run preset',
+                'Preset name (an existing name replaces that preset):', text=self.saved_presets.currentData() or '')
+            if not accepted:
+                return
+            choices = panel.choices()
+            # Capture current field values, including project defaults, in a named preset.
+            from PySide6.QtWidgets import QPlainTextEdit
+            choices['run_overrides'] = {name: field.toPlainText() if isinstance(field, QPlainTextEdit) else field.text()
+                                       for name, field in panel.run_fields.controls.items()}
+            self.registry.save_preset(key, name, choices)
+            name = name.strip()
+            if self.saved_presets.findData(name) < 0:
+                self.saved_presets.addItem(name, name)
+            self.saved_presets.setCurrentIndex(self.saved_presets.findData(name))
+            panel.status.setText('Saved private run preset: ' + name)
+        def delete_selected():
+            name = self.saved_presets.currentData()
+            if name is not None:
+                self.registry.delete_preset(key, name)
+                self.saved_presets.removeItem(self.saved_presets.currentIndex())
+        load.clicked.connect(lambda: self.guarded(load_selected))
+        save.clicked.connect(lambda: self.guarded(save_selected))
+        delete.clicked.connect(lambda: self.guarded(delete_selected))
 
     def update_setup(self):
         if self.panel is None:

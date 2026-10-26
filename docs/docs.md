@@ -3,6 +3,11 @@
 The manager supervises trusted project-owned plans from Git checkouts. Projects
 retain source policy, test suites, signing rules, destinations and build storage.
 
+Start with the [user guide](user/user.md) for first run, delivery and recovery,
+or the [developer guide](development/development.md) for architecture and changes.
+The **?** in the main window's upper-right corner opens this wiki in the Markdown
+viewer, with page navigation and search across both guides.
+
 - [Setup and launch](setup.md)
 - [Adapter contract and ownership](adapters.md)
 - [Integrated validation and delivery contract](journey-contract.md)
@@ -17,8 +22,5 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [UX redesign implementation audit and second pass](ux-redesign-audit.md)
 - [UX redesign brief: validation and coordinated delivery](ux-redesign-brief.md)
 - [Project test organization contract](test-organization.md)
+- [Discovering project and dependency tests](test-manifests.md)
 - [Testing and delivery in the guided UI](guided-ui.md)
-
-- [Using the manager: first run, delivery and recovery](user/user.md)
-
-- [Developing the manager and current refactoring priorities](development/development.md)

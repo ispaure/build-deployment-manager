@@ -14,10 +14,35 @@ actions and an explicit Start button. Past runs is separate history navigation.
 
 ## Choose work
 
+Configuration uses two resizable columns. Source, Testing, Delivery and Advanced
+tabs keep settings compact on the left. Testing presents a platform checkbox and
+execution-location dropdown in each table row. The live workflow overview fits on
+the right; use Fit or the zoom controls to inspect larger maps. Selecting a card
+opens its matching configuration tab and destination category.
+Changing selections adds and removes branches immediately; missing platform
+requirements stay visible as amber cards without selecting them on your behalf.
+
+The map is explicitly a high-level proposal, not a verified executable plan.
+It is built from the selected intent and descriptor metadata, without calling the
+project planner or inspecting source on each edit. Review resolves exact source,
+build/test substeps, dependencies, hosts and resource limits. Repeated proposal/planned badges are hidden in the overview; Run cards show
+actual execution status. Source choices never commit, push or deploy anything.
+
+Source is visible up front: Current files includes edits; Latest commit selects
+HEAD and excludes edits; Specific commit, branch or tag accepts an explicit Git
+revision. Changing execution hosts no longer silently switches source. Source
+policy is checked during Review, and committed-source failures reopen Source with
+an explanation. The integrated contract currently requires selected validation;
+the UI shows that requirement rather than offering unsupported bypass controls.
+
 Choose Validate for checks only, or Validate and deliver for checks, preparation
 and reviewed delivery. Projects declaring the [journey contract](journey-contract.md)
-offer platform checkboxes and independent destination choices. All selected
-platforms' required checks must pass before any delivery. Conflicting choices stay
+offer platform checkboxes and independent destination choices. Selecting a
+destination expands its description, notes and recipient inputs directly below
+its checkbox, before the next destination. Deselecting keeps typed text for later
+but excludes it from submitted run inputs. Fields shared by several destinations
+appear once in the shared run options. Advanced operations keep their own inputs. Each destination waits for its own required platforms. A failure on an unrelated
+platform does not block its delivery review. Conflicting choices stay
 selected with an explanation; add the required platform or remove the destination.
 
 Older projects retain single-platform validation and Advanced operation, where
@@ -28,9 +53,8 @@ values. No execution host is substituted silently. Applicable named test suites
 remain available for single-platform operations. Integrated journeys use the
 project's required validation groups rather than a hidden legacy suite selection.
 
-Expand Advanced options to choose a source revision, focused test pattern, build
-number override. Source is summarized at all times; release identifiers are visible
-in the main form. Open Project settings for persistent local values; run overrides apply
+Source selection is in its own section. Use Advanced for a focused
+test pattern, build number override or optional custom release identifier. Open Project settings for persistent local values; run overrides apply
 only to this inspection. Next: review plan prepares source and checks
 prerequisites asynchronously, then opens Review. It does not start the plan's
 commands. Trusted project preparation code remains responsible for its own source
@@ -71,13 +95,14 @@ never saves over project defaults. Review displays the captured run values.
 
 Projects supporting selectable execution locations show a location beside each
 platform: macOS can run on GitHub while iOS uses local simulators, for example.
-Choosing GitHub selects committed HEAD and explicitly excludes local edits.
+Choosing GitHub explains its committed-source requirement. Select Latest commit
+or a specific revision explicitly to exclude local edits.
 GitHub checks need no release identifier: launching checks is a separately reviewed
 external action, distinct from publishing. Native tester delivery can still require
 local native receipts; unsupported combinations explain that prerequisite.
 
-Step 1 is a flat page with one window scrollbar, so controls remain reachable in
-short windows. Advanced options contains an optional custom release identifier.
+Configuration settings and the proposed map scroll independently; the window
+can also scroll on shorter displays. Advanced options contains an optional custom release identifier.
 Leave it blank for the owning project's automatic naming policy. The suggested
 identifier is based on project version and local tags; publication rechecks remote
 availability. Preparing a suggestion does not create or reserve a remote tag.
@@ -85,7 +110,7 @@ availability. Preparing a suggestion does not create or reserve a remote tag.
 ## Review and results
 
 Review shows the captured source, selected platform, execution host and planned
-work before Start. The work list stays visible; commands and complete plan data
+work before Start. The exact dependency map stays visible; commands and complete plan data
 are optional technical details. Uploads and delivery actions are marked as needing
 separate approval. A working tree with uncommitted changes is identified explicitly.
 
@@ -107,8 +132,12 @@ responsible for obeying this rule in their own storage and artifact outputs.
 
 ## Review
 
-Read the source identity, selected platforms, delivery order and exact destination
-identities. Show technical steps and complete plan reveals the dependency board. Each step shows
+Read the source identity, selected platforms and exact destination identities.
+The dependency map shows cards on the left and an inspector on the right. Arrows
+show prerequisites; branches can overlap when worker and shared-resource limits
+allow. Select a card to inspect prerequisites, outputs and approval requirements.
+Whole workflow restores the overall review. Selecting cards executes no code.
+Show technical details and complete plan reveals the dependency table and commands. Each step shows
 its kind, effect, required/optional status, timeout and dependencies. Complete plan
 contains the redacted command configuration for detailed inspection. Changing any
 selection requires a fresh inspection. Start validation or Start validation and
@@ -116,6 +145,18 @@ preparation starts the retained plan;
 legacy whole-plan external operations still ask for explicit confirmation.
 
 ## Run and results
+
+The same dependency map stays visible during execution. Click a card to scope
+Results, Tests, Timing and Output to that step. Whole workflow restores combined
+totals. Switching cards preserves the open inspector tab. The splitter can be
+resized; larger maps scroll in both directions. Cards support Tab and Space.
+
+Card text and colored edges identify running, passed, failed and approval states.
+A failed prerequisite immediately mutes affected pending descendants and explains
+why they will not run. This is a display prediction, not a new execution result;
+the executor later records skipped steps. Muted cards remain selectable. Cleanup
+steps declared to run after failure remain eligible, and unrelated branches stay
+independent.
 
 Results shows reported test counts and guidance for the next action. Timing
 lists measured tests slowest first, with total, average and median durations.
@@ -136,7 +177,9 @@ Search case/suite/class names and messages, or filter by Problems, Passed or
 Skipped. Select a case to read its failure/skip detail and measured duration.
 Adapters without individual reports still show complete phase status and logs.
 Cases appear after report capture at phase completion; Live output streams during
-execution. Console text is never treated as proof that a case passed.
+execution. Output is scoped to the selected card; unassigned runner messages
+appear under Whole workflow. Saved runs can preview each step’s retained log
+within its own result directory. Console text is never treated as proof that a case passed.
 
 Cancel operation requests cancellation and owned cleanup. Closing the application
 during active work offers the same cancellation path. Open results and logs opens
@@ -185,3 +228,30 @@ adopting named suites and case reporting. Multi-platform selection requires proj
 adoption of journey schema 1; the manager never merges independently prepared
 plans or guesses shared source/version policy. A new UI does not establish native mobile,
 Blender or hosted publication acceptance; see [validation](validation.md).
+
+## Development devices and delivery groups
+
+Delivery groups project-declared destinations into tester platforms, development
+devices, stores and source releases where supported. Store submission is not
+implemented by Logistics and is explicitly labelled unavailable. Firebase and
+TestFlight share one tester message while retaining separate recipient groups.
+
+For Logistics, choose Delivery → Dev devices, enable Android test devices or
+iPhone / iPad, then check specific saved devices. Reload reads saved metadata;
+it does not scan, connect, wake or pair devices. Add ID accepts an already paired,
+connected Android serial or iOS UDID when the saved list lacks that device.
+Nothing is selected automatically. Availability is checked at installation.
+Selections remain when switching tabs and are omitted when their destination is
+deselected. Each selected device appears as a separate install card.
+
+The project captures one source snapshot, runs its required platform checks,
+prepares a development APK or signed device-app archive, then pauses for review
+before each installation. The reviewed package is installed in place, without
+uninstalling, clearing app data, automatic re-signing or silently switching devices.
+Signature, provisioning, version and connection failures stop that target.
+Unknown installation outcomes require reconciliation before retrying.
+Device-only Logistics delivery can use captured current files; GitHub/Firebase/
+TestFlight retain their committed-source and complete release-acceptance policies.
+Local device delivery currently requires the configured Mac build environment.
+Native builds and personal-device installation acceptance require separate runs;
+portable contract tests and offscreen layout checks do not establish those results.

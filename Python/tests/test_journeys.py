@@ -87,7 +87,7 @@ class JourneyTests(unittest.TestCase):
         plan = integrated(self.root)
         with self.assertRaisesRegex(ValueError, 'does not match'):
             validate_plan(plan, request(CAPABILITY, 'validate', ['ios'], []))
-        with self.assertRaisesRegex(ValueError, 'all selected'):
+        with self.assertRaisesRegex(ValueError, 'required platform'):
             replace(plan, phases=(*plan.phases[:-1], replace(plan.phases[-1], dependencies=('ios',))))
         evidence = dict(plan.journey, destinations={'firebase': plan.journey['destinations']['firebase']})
         with self.assertRaisesRegex(ValueError, 'unselected'):
@@ -109,6 +109,30 @@ class JourneyTests(unittest.TestCase):
         a, b = [json.loads((self.root / (name + '.json')).read_text()) for name in ('firebase', 'testflight')]
         self.assertLess(max(a[0], b[0]), min(a[1], b[1]))
         self.assertTrue(all(state == 'passed' for _, state in outcomes(plan, last['phases'])))
+
+    def test_platform_scoped_delivery_survives_unrelated_failure_and_order_only_wait(self):
+        plan = integrated(self.root)
+        android, ios = plan.phases[:2]
+        android = replace(android, argv=(sys.executable, '-c', 'raise SystemExit(1)'))
+        admit = Phase('ios.admit', (sys.executable, '-c', 'pass'), str(self.root), waits_for=('android',), always=True, kind='setup', effect='inspect')
+        ios = replace(ios, dependencies=('ios.admit',))
+        prepare = replace(plan.phases[2], dependencies=('ios',))
+        upload = plan.phases[-1]
+        evidence = dict(plan.journey, destinations={'testflight': dict(identity='testflight:fixture',
+            steps=['testflight'], platforms=['ios'])})
+        plan = replace(plan, phases=(android, admit, ios, prepare, upload), journey=evidence)
+        validate_plan(plan, request(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
+        executor = Executor(resource_directory=self.root / 'resources')
+        first = executor.run(plan, self.root / 'result')
+        self.assertEqual(first['status'], 'awaiting_review')
+        approval = approve(plan, 'testflight', first)
+        final = executor.run(plan, self.root / 'result', resume=True, approvals=(approval,))
+        self.assertEqual(final['phases'][-1]['status'], 'passed')
+        self.assertEqual(Plan.from_data(plan.data()).phases[1].waits_for, ('android',))
+        forged = dict(evidence, destinations={'testflight': dict(identity='testflight:fixture',
+            steps=['testflight'], platforms=['android'])})
+        with self.assertRaises(ValueError):
+            validate_plan(replace(plan, journey=forged), request(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
 
     def test_required_failure_blocks_every_delivery(self):
         plan = integrated(self.root, fail_gate=True)
@@ -161,6 +185,8 @@ class JourneyTests(unittest.TestCase):
     def test_legacy_plan_serialization_keeps_original_identity(self):
         plan = Plan('Fixture', 'Test', {}, (Phase('test', (sys.executable, '-c', 'pass'), str(self.root)),), str(self.root))
         original = asdict(plan); original.pop('journey')
+        for phase in original['phases']:
+            phase.pop('waits_for')
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
 
     def test_isolated_bridge_receives_one_intent_and_cli_writes_same_journey(self):
