@@ -1,5 +1,22 @@
 # Validation scope and remaining acceptance
 
+## October 25 refactoring follow-up
+
+Manager runtime commit `bb34d5f` passes all 158 contracts on macOS and on the
+dedicated Fedora 44 ARM64 and Windows 11 ARM64 guests. Windows uses x64 CPython
+3.12.2 under emulation and retains three explicit POSIX-only skips. These are
+native-platform process/Qt contracts with offscreen presentation; they do not
+certify physical UI interaction or accessibility-reader behavior.
+
+The guest plans also run Logistics' focused evidence-collection/cleanup fixtures,
+collect the original manager result and logs, then remove their owned guest
+workspaces. The existing public Windows tool cache is intentionally retained.
+Both real backend flows pass. Tests cover responsive background artifact checks,
+cancelled/stale review, changed files during the approval dialog and refusal to
+launch an external effect. Those fixtures use harmless processes, with no upload
+or publication. The exact reviewed manager/commonUtils pins are recorded by each
+retained run; owning project source can still be a labelled development snapshot.
+
 Generic contracts exercise real subprocess/GUI chains, failure, timeout,
 cancellation with descendants, cleanup, locking, redaction, isolated adapters,
 settings migration, workflow restart, exact artifact review, partial provider

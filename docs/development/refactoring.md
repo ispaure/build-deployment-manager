@@ -24,7 +24,9 @@ loader. Engine/plan/recovery checks remain in their owners. Additive
 `--approval-identity STEP=SHA256` binds GUI review to verified prerequisites;
 manual CLI approval retains its existing explicit flags. Structured CLI failures
 remain visible when an older awaiting-review report exists. All 158 local
-portable/offscreen contracts pass. The numbered findings retain starting evidence.
+portable/offscreen contracts pass, as do native-platform runs on the dedicated
+Fedora and Windows guests (three explicit POSIX-only Windows skips). See
+[validation scope](../validation.md). The numbered findings retain starting evidence.
 
 The generic/project boundary is sound: registration, isolated adapter execution,
 Plan/Phase contracts, scheduling, review/recovery and retention mechanics are
