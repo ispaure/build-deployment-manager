@@ -223,6 +223,11 @@ class GuidedUITests(unittest.TestCase):
                          phases=[dict(id='example', status='unknown')])))
         with patch.object(panel, 'confirm_continuation') as approval:
             panel.resume_workflow(result)
+            deadline = time.monotonic() + 5
+            while panel.reviewing:
+                self.app.processEvents()
+                time.sleep(.005)
+                self.assertLess(time.monotonic(), deadline)
         approval.assert_not_called()
         self.assertIn('reconciliation', panel.status.text())
         self.assertEqual(panel.process.state(), panel.process.ProcessState.NotRunning)

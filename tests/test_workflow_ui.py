@@ -38,10 +38,14 @@ class WorkflowUITests(unittest.TestCase):
             self.assertTrue(panel.continue_run.isEnabled())
             with patch.object(panel,'confirm_continuation',return_value=False):
                 panel.continue_run.click()
+                while panel.reviewing:
+                    app.processEvents();time.sleep(.005);self.assertLess(time.monotonic(),deadline)
             self.assertFalse(effect.exists())
             artifact.write_text('changed after preparation')
             with patch.object(panel, 'confirm_continuation', return_value=True) as approval:
                 panel.continue_run.click()
+                while panel.reviewing:
+                    app.processEvents();time.sleep(.005);self.assertLess(time.monotonic(),deadline)
             approval.assert_not_called()
             self.assertIn('missing or changed', panel.status.text())
             self.assertFalse(effect.exists())
@@ -49,6 +53,8 @@ class WorkflowUITests(unittest.TestCase):
             original_result = panel.result
             with patch.object(QFileDialog,'getOpenFileName',side_effect=AssertionError('direct continuation must not browse')),patch.object(panel,'confirm_continuation',return_value=True):
                 panel.continue_run.click()
+                while panel.reviewing:
+                    app.processEvents();time.sleep(.005);self.assertLess(time.monotonic(),deadline)
             last = finish()
             self.assertEqual(last['status'],'passed');self.assertTrue(effect.exists())
             self.assertEqual(panel.result, original_result)

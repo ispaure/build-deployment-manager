@@ -1,7 +1,6 @@
 """Sequential phase execution, dependency gates, bounded waits and process cleanup."""
 from contextlib import ExitStack
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,6 +12,7 @@ from threading import Event, Thread
 from uuid import uuid4
 import time
 
+from commonUtils.runtime.streams import file_sha256
 from .locking import workspace_lock
 from .redaction import Redactor
 
@@ -75,7 +75,8 @@ class Executor:
             raise ValueError('Execution requires an identifiable manager Git checkout and initialized commonUtils; install it explicitly with pip install --no-deps -e PATH.')
         output = Path(output)
         if resume:
-            report = json.loads((output/'result.json').read_text())
+            from .history import read_report
+            report = read_report(output/'result.json')
         else:
             output.mkdir(parents=True, exist_ok=False, mode=0o700)
             report = dict(schema=1, engine=engine, project=plan.project, operation=plan.operation,
@@ -289,7 +290,7 @@ class Executor:
                     destination = directory / f'{phase.id}-{index}{source.suffix}'
                     shutil.copyfile(source, destination)
                     row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=phase.artifact_types.get(value, 'file'),
-                                                   sha256=hashlib.sha256(destination.read_bytes()).hexdigest()))
+                                                   sha256=file_sha256(destination, cancelled=self.cancelled.is_set if not phase.always else lambda: False)))
                     if kind == 'junit':
                         from .test_results import read_junit
                         cases = read_junit(destination)

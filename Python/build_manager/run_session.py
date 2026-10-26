@@ -1,0 +1,45 @@
+"""One Qt-owned execution process, cancellation marker and output/timing state."""
+from uuid import uuid4
+from PySide6.QtCore import QObject, QElapsedTimer, QProcess, QTimer
+
+
+class RunSession(QObject):
+    def __init__(self, directory, parent=None):
+        super().__init__(parent)
+        self.process = QProcess(self)
+        self.process.setWorkingDirectory(str(directory))
+        self.elapsed, self.phase_elapsed = QElapsedTimer(), QElapsedTimer()
+        self.clock = QTimer(self)
+        self.clock.setInterval(1000)
+        self.buffer, self.current_phase = '', 'queued'
+        self.cancel_file = None
+        self.failure = None
+
+    def set_busy(self, busy):
+        if busy:
+            self.phase_elapsed.invalidate()
+            self.elapsed.start()
+            self.current_phase = 'queued'
+            self.clock.start()
+        else:
+            self.clock.stop()
+
+    def launch(self, interpreter, plan_path, output, *, resume=False, confirmed=False, approvals=()):
+        suffix = '.resume-' + uuid4().hex + '.cancel' if resume else '.cancel'
+        self.cancel_file = output.with_suffix(suffix)
+        self.buffer = ''
+        self.failure = None
+        arguments = ['-m', 'build_manager', str(plan_path), '--output', str(output),
+                     '--cancel-file', str(self.cancel_file)]
+        if resume:
+            arguments.append('--resume')
+        if confirmed:
+            arguments.append('--confirm')
+        for approval in approvals:
+            arguments += ['--approve-step', approval.step,
+                          '--approval-identity', approval.step + '=' + approval.identity]
+        self.process.start(str(interpreter), arguments)
+
+    def cancel(self):
+        if self.process.state() != QProcess.ProcessState.NotRunning and self.cancel_file is not None:
+            self.cancel_file.touch()

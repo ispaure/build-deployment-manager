@@ -15,3 +15,7 @@ retain source policy, test suites, signing rules, destinations and build storage
 - [Guided testing and delivery implementation plan](ui-improvement-plan.md)
 - [Project test organization contract](test-organization.md)
 - [Testing and delivery in the guided UI](guided-ui.md)
+
+- [Using the manager: first run, delivery and recovery](user/user.md)
+
+- [Developing the manager and current refactoring priorities](development/development.md)

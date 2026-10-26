@@ -235,21 +235,22 @@ class ManagerPanel(QWidget):
         self.preparation_timer = QTimer(self)
         self.preparation_timer.setInterval(25)
         self.preparation_timer.timeout.connect(self.plan_prepared)
-        self.process = QProcess(self)
-        self.process.setWorkingDirectory(str(project.runner_directory))
+        from .run_session import RunSession
+        self.session = RunSession(project.runner_directory, self)
+        self.process = self.session.process
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.readyReadStandardError.connect(self.read_errors)
         self.process.finished.connect(self.finished)
         self.process.errorOccurred.connect(self.process_error)
-        self.buffer = ''
+        self.session.clock.timeout.connect(self.show_elapsed)
         from .redaction import Redactor
         self.redact = Redactor(os.environ.get(name) for name in getattr(project, 'secret_environment', ()))
-        self.elapsed = QElapsedTimer()
-        self.phase_elapsed = QElapsedTimer()
-        self.clock = QTimer(self)
-        self.clock.setInterval(1000)
-        self.clock.timeout.connect(self.show_elapsed)
-        self.current_phase = 'queued'
+        self.reviewing = False
+        self.review_job = None
+        self.review_results = Queue()
+        self.review_timer = QTimer(self)
+        self.review_timer.setInterval(25)
+        self.review_timer.timeout.connect(self.continuation_verified)
         layout = QVBoxLayout(self)
         self.identity = QLabel(project.description)
         self.identity.setWordWrap(True)
@@ -257,77 +258,21 @@ class ManagerPanel(QWidget):
         self.stages = QTabWidget()
         self.stages.setAccessibleName('Testing and delivery stages')
         layout.addWidget(self.stages, 1)
-        configure = QScrollArea()
-        configure.setWidgetResizable(True)
-        configuration = QWidget()
-        configure.setWidget(configuration)
-        configuration_layout = QVBoxLayout(configuration)
-        guidance = QLabel('1. Choose a workflow or operation.  2. Inspect its source, gates and destination.  '
-                          '3. Run preparation and tests.  4. Review and continue any delivery steps.')
-        guidance.setWordWrap(True)
-        configuration_layout.addWidget(guidance)
-        self.stages.addTab(configure, '1 · Configure')
-        form = QFormLayout()
-        advanced_form = QFormLayout()
-        self.preset = QComboBox()
-        self.preset.addItem('Custom operation')
-        self.preset.addItems(getattr(project, 'workflow_presets', {}))
+        from .configuration_ui import ConfigurationView
+        self.configuration = ConfigurationView(project, self)
+        for name in ConfigurationView.names:
+            setattr(self, name, getattr(self.configuration, name))
+        configuration_layout = self.configuration.body_layout
+        self.stages.addTab(self.configuration, '1 · Configure')
         self.preset.currentTextChanged.connect(self.select_preset)
-        form.addRow('Workflow preset', self.preset)
-        self.operation = QComboBox()
-        self.operation.addItems(project.operations)
-        self.platform = QComboBox()
-        self.platform.addItems(project.platforms)
-        self.backend = QComboBox()
         self.platform.currentTextChanged.connect(self.refresh_operations)
         self.platform.currentTextChanged.connect(self.refresh_backends)
         self.operation.currentTextChanged.connect(self.refresh_backends)
-        self.suite = QComboBox()
-        self.suite.setAccessibleName('Test suite')
         self.suite.currentIndexChanged.connect(self.invalidate)
         self.platform.currentTextChanged.connect(self.refresh_suites)
         self.operation.currentTextChanged.connect(self.refresh_suites)
-        self.revision = QLineEdit('working-tree')
-        self.pattern = QLineEdit()
-        self.pattern.setPlaceholderText('Blank: full declared suite; filename glob: focused contracts')
-        self.build_override = QSpinBox()
-        self.build_override.setRange(0, 2147483647)
-        self.build_override.setSpecialValueText('Automatic')
-        self.build_override.setToolTip('Zero selects automatic allocation. A positive number overrides this run only; existing build numbers cannot be reused.')
-        self.release_tag = QLineEdit()
-        self.release_tag.setPlaceholderText('Explicit release identifier supplied by the project policy')
-        for label, control in [('Platform', self.platform), ('Operation', self.operation),
-                               ('Backend', self.backend), ('Source revision', self.revision),
-                               ('Focused test pattern', self.pattern), ('Build number override', self.build_override),
-                               ('GitHub release tag', self.release_tag)]:
-            control.setAccessibleName(label)
-            if control is not self.build_override:
-                control.setToolTip({
-                    'Operation': 'Choose tests, an artifact build, tester preparation or a GitHub release. Inspect the plan before running.',
-                    'Platform': 'Operating system to build or test.',
-                    'Backend': 'Where the operation runs. VM backends require an explicitly configured authorized test VM.',
-                    'Source revision': 'working-tree includes current edits; a Git revision selects that committed source.',
-                    'Focused test pattern': 'Optional test filename glob for desktop contracts. Blank runs the full declared suite.',
-                    'GitHub release tag': 'Explicit unused release tag for a Release operation, such as v0.1.15-alpha.39.',
-                }[label])
-            (form if control in (self.operation, self.platform, self.backend) else advanced_form).addRow(label, control)
-        form.addRow('Test suite', self.suite)
-        self.run_controls = {}
-        for name, entry in getattr(project, 'run_options', {}).items():
-            control = QCheckBox(entry['label'])
-            control.setChecked(entry.get('default', False))
+        for control in self.run_controls.values():
             control.toggled.connect(self.invalidate)
-            self.run_controls[name] = control
-            form.addRow(control)
-        configuration_layout.addLayout(form)
-        self.advanced_toggle = QCheckBox('Advanced options: source, focused tests and release identifiers')
-        advanced = QWidget()
-        advanced.setLayout(advanced_form)
-        advanced.setVisible(False)
-        self.advanced_toggle.toggled.connect(advanced.setVisible)
-        configuration_layout.addWidget(self.advanced_toggle)
-        configuration_layout.addWidget(advanced)
-        configuration_layout.addStretch()
         controls = QHBoxLayout()
         self.prepare = QPushButton('Inspect plan', self)
         self.prepare.clicked.connect(self.inspect_plan)
@@ -476,9 +421,7 @@ class ManagerPanel(QWidget):
         self.suite.blockSignals(False)
 
     def choices(self):
-        return dict(suite=self.suite.currentData() or '', **{name: getattr(self, name).currentText() if name in ('operation', 'platform', 'backend')
-                else getattr(self, name).text()
-                for name in ('operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag')})
+        return self.configuration.choices()
 
     def invalidate(self, *_, preserve_preset=False):
         self.selection_revision += 1
@@ -506,7 +449,7 @@ class ManagerPanel(QWidget):
         StorageDialog(self.project, self).exec()
 
     def inspect_plan(self):
-        if self.preparing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         if self.preset_error:
             self.status.setText(self.preset_error)
@@ -523,8 +466,8 @@ class ManagerPanel(QWidget):
         self.preparation_revision = self.selection_revision
         self.preparing = True
         self.set_busy(True)
-        self.current_phase = 'Inspecting source and prerequisites'
-        self.phase_elapsed.start()
+        self.session.current_phase = 'Inspecting source and prerequisites'
+        self.session.phase_elapsed.start()
         self.show_elapsed()
         QThreadPool.globalInstance().start(PreparePlan(
             partial(self.project.make_plan, operation, platform, backend, **choices), self.prepared))
@@ -553,7 +496,7 @@ class ManagerPanel(QWidget):
         self.status.setText('Plan ready. Review the source, ordered steps and destinations, then run.')
 
     def verify_settings(self):
-        if self.preparing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         try:
             self.plan = self.project.verification_plan()
@@ -566,7 +509,7 @@ class ManagerPanel(QWidget):
         self.run_plan()
 
     def run_plan(self):
-        if self.plan is None or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.plan is None or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         confirmed = self.plan.effect in {'deploy', 'upload', 'publish'}
         if confirmed and QMessageBox.question(self, 'Confirm reviewed operation',
@@ -585,22 +528,17 @@ class ManagerPanel(QWidget):
         self.resumable = False
         self.result = run / 'result.json'
         self.active_plan = self.plan
-        self.cancel_file = run.with_suffix('.cancel')
-        self.buffer = ''
         self.seed_run(self.plan)
         self.open_results.setEnabled(False)
         self.continue_run.setEnabled(False)
         self.stages.setCurrentIndex(2)
-        arguments = ['-m', 'build_manager', str(path), '--output', str(run), '--cancel-file', str(self.cancel_file)]
-        if confirmed:
-            arguments.append('--confirm')
         self.set_busy(True)
         self.status.setText('Queued…')
-        self.process.start(str(self.project.interpreter), arguments)
+        self.session.launch(self.project.interpreter, path, run, confirmed=confirmed)
 
     def resume_workflow(self, retained=None):
         from pathlib import Path
-        if self.preparing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         if retained and not isinstance(retained, bool):
             path = str(retained)
@@ -608,44 +546,54 @@ class ManagerPanel(QWidget):
             path, _ = QFileDialog.getOpenFileName(self, 'Select retained result.json', str(self.project.results_directory), 'JSON (*.json)')
         if not path:
             return
+        from .review import VerifyContinuation
+        descriptor = getattr(self.project, 'descriptor', {})
+        self.review_job = VerifyContinuation(path, descriptor, getattr(self.project, 'root', ''),
+                                              self.selection_revision, self.review_results)
+        self.reviewing = True
+        self.set_busy(True)
+        self.status.setText('Verifying retained results and artifact checksums…')
+        self.review_timer.start()
+        QThreadPool.globalInstance().start(self.review_job)
+
+    def continuation_verified(self):
         try:
-            result = Path(path)
-            from .history import load_run
-            plan, previous = load_run(result)
-            plan_path = result.parent/'plan.json'
-            descriptor = getattr(self.project, 'descriptor', {})
-            if descriptor and plan.project != descriptor['name']:
-                raise ValueError('This run belongs to a different selected project.')
-            if descriptor and plan.adapter and (plan.adapter.get('project_id') != descriptor['project_id']
-                    or plan.adapter.get('checkout') != str(self.project.root)):
-                raise ValueError('This run belongs to a different registered checkout.')
-            from .workflows import recover, approve
-            recover(plan, previous) # Unknown remote effects must be reconciled separately.
+            revision, continuation, error = self.review_results.get_nowait()
+        except Empty:
+            return
+        self.review_timer.stop()
+        self.reviewing = False
+        self.set_busy(False)
+        if self.closing or self.review_job.cancelled.is_set() or revision != self.selection_revision:
+            self.status.setText('Review cancelled or selection changed; inspect the intended run again.')
+            return
+        if error is not None:
+            self.status.setText(self.redact(error))
+            return
+        result, plan, previous, steps = (continuation.path, continuation.plan,
+                                         continuation.report, continuation.steps)
+        try:
             self.present_plan(plan)
             self.seed_run(plan, previous['phases'])
             self.plan = None
             self.result = result
             self.start.setEnabled(False)
             self.open_results.setEnabled(True)
-            self.preview.setPlainText(self.redact(json.dumps(dict(plan=plan.data(),previous=previous),indent=2)))
+            self.preview.setPlainText(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
             self.stages.setCurrentIndex(1)
-            steps = [row['id'] for row in previous['phases'] if row['status']=='awaiting_review']
-            if (steps or plan.effect in {'deploy', 'upload', 'publish'}) and not self.confirm_continuation(plan, previous, steps):
+            confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish'})
+            if confirmed and not self.confirm_continuation(plan, previous, steps):
                 return
-            for step in steps:approve(plan,step,previous)
-            self.plan, self.result = plan,result
+            # The CLI verifies these exact identities again, after the dialog.
+            self.plan, self.result = plan, result
             self.active_plan = plan
             self.seed_run(plan, [row for row in previous['phases'] if row['status'] == 'passed'])
-            self.cancel_file = result.parent.with_suffix('.resume-'+uuid4().hex+'.cancel')
-            arguments=['-m','build_manager',str(plan_path),'--output',str(result.parent),'--resume','--cancel-file',str(self.cancel_file)]
-            if steps or plan.effect in {'deploy','upload','publish'}:arguments.append('--confirm')
-            for step in steps:arguments+=['--approve-step',step]
-            self.buffer = ''
             self.continue_run.setEnabled(False)
             self.stages.setCurrentIndex(2)
             self.set_busy(True)
-            self.process.start(str(self.project.interpreter),arguments)
-        except (OSError,ValueError,RuntimeError,KeyError,TypeError) as error:
+            self.session.launch(self.project.interpreter, result.parent / 'plan.json', result.parent,
+                                resume=True, confirmed=confirmed, approvals=continuation.approvals)
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
             self.status.setText(self.redact(str(error)))
 
     def confirm_continuation(self, plan, previous, steps):
@@ -678,13 +626,7 @@ class ManagerPanel(QWidget):
             return 'Cannot preview retained JSON evidence: ' + self.redact(str(error))
 
     def set_busy(self, busy):
-        if busy:
-            self.phase_elapsed.invalidate()
-            self.elapsed.start()
-            self.current_phase = 'queued'
-            self.clock.start()
-        else:
-            self.clock.stop()
+        self.session.set_busy(busy)
         for control in (self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
                         self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
                         self.refresh_history_button, self.view_history_button, self.history, self.continue_run,
@@ -698,13 +640,13 @@ class ManagerPanel(QWidget):
 
     def show_elapsed(self):
         self.run_view.tick()
-        phase = self.phase_elapsed.elapsed()/1000 if self.phase_elapsed.isValid() else 0
-        self.status.setText(f'{self.current_phase}; phase {phase:.0f}s; total {self.elapsed.elapsed()/1000:.0f}s')
+        phase = self.session.phase_elapsed.elapsed()/1000 if self.session.phase_elapsed.isValid() else 0
+        self.status.setText(f'{self.session.current_phase}; phase {phase:.0f}s; total {self.session.elapsed.elapsed()/1000:.0f}s')
 
     def read_output(self):
-        self.buffer += bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
-        while '\n' in self.buffer:
-            line, self.buffer = self.buffer.split('\n', 1)
+        self.session.buffer += bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        while '\n' in self.session.buffer:
+            line, self.session.buffer = self.session.buffer.split('\n', 1)
             try:
                 event = json.loads(line)
             except ValueError:
@@ -717,10 +659,11 @@ class ManagerPanel(QWidget):
             elif event.get('type') == 'phase':
                 self.update_phase(event)
                 if event['status'] == 'running':
-                    self.phase_elapsed.start()
-                self.current_phase = event['id'] + ': ' + event['status']
+                    self.session.phase_elapsed.start()
+                self.session.current_phase = event['id'] + ': ' + event['status']
                 self.show_elapsed()
             elif event.get('type') == 'error':
+                self.session.failure = self.redact(event['error'])
                 self.status.setText(self.redact(event['error']))
 
     def update_phase(self, event):
@@ -761,7 +704,14 @@ class ManagerPanel(QWidget):
     def closeEvent(self, event):
         self.closing = True
         self.history_timer.stop()
+        self.review_timer.stop()
         self.history_refresh_pending = False
+        if self.review_job is not None:
+            self.review_job.cancelled.set()
+            if not self.review_job.done.wait(1):
+                event.ignore()
+                QTimer.singleShot(50, self.close)
+                return
         if self.history_job is not None:
             self.history_job.cancelled.set()
             # Release report handles before the panel's project can be removed.
@@ -838,13 +788,17 @@ class ManagerPanel(QWidget):
         self.preview.appendPlainText(self.redact(text))
 
     def cancel_operation(self):
+        if self.reviewing:
+            self.review_job.cancelled.set()
+            self.status.setText('Cancelling artifact verification…')
+            return
         if self.process.state() != QProcess.ProcessState.NotRunning:
-            self.current_phase = 'Cancelling active work and running owned cleanup…'
+            self.session.current_phase = 'Cancelling active work and running owned cleanup…'
             self.show_elapsed()
             # Windows console processes do not reliably receive QProcess's
             # WM_CLOSE. The CLI observes this owned marker and retains its
             # structured cancelled result while it stops the phase's job/tree.
-            self.cancel_file.touch()
+            self.session.cancel()
 
     def process_error(self, *_):
         if self.process.state() == QProcess.ProcessState.NotRunning:
@@ -860,12 +814,14 @@ class ManagerPanel(QWidget):
         self.read_output()
         self.set_busy(False)
         status = 'failed'
-        if self.buffer:
-            self.preview.appendPlainText(self.redact(self.buffer))
-            self.buffer = ''
+        if self.session.buffer:
+            self.preview.appendPlainText(self.redact(self.session.buffer))
+            self.session.buffer = ''
         try:
             if exit_status == QProcess.ExitStatus.CrashExit:
                 raise ValueError('The operation process crashed.')
+            if self.session.failure is not None:
+                raise ValueError(self.session.failure)
             if not self.result or not self.result.is_file():
                 raise ValueError('The operation did not produce a result report.')
             from .history import read_report
