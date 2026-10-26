@@ -5,8 +5,8 @@ from collections import deque
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QSplitter, QVBoxLayout, QWidget, QFrame)
-from .ui_components import style_button
+    QSplitter, QVBoxLayout, QWidget, QFrame, QSizePolicy)
+from .ui_components import style_button, ActionStrip, search_shortcut
 
 
 def duration(seconds):
@@ -109,9 +109,7 @@ class RunView(QWidget):
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
         layout.addWidget(self.progress)
-        self.activity = QWidget()
-        activity_layout = QHBoxLayout(self.activity)
-        activity_layout.setContentsMargins(0, 0, 0, 0)
+        self.activity = ActionStrip()
         self.activity_buttons = {}
         for state, color in (('running', '#245db5'), ('queued', '#727272'),
                              ('waiting_resource', '#727272'), ('awaiting_review', '#b37c12')):
@@ -119,7 +117,6 @@ class RunView(QWidget):
             button.setAutoDefault(False)
             button.setStyleSheet(button.styleSheet() + f' QPushButton {{ border-left: 4px solid {color}; }}')
             button.clicked.connect(lambda checked=False, state=state: self.inspect_activity(state))
-            activity_layout.addWidget(button)
             self.activity_buttons[state] = button
         layout.addWidget(self.activity)
         self.overall_tests = QLabel('No individual case reports available yet.')
@@ -157,6 +154,7 @@ class RunView(QWidget):
         self.run_choices.phase_selected.connect(self.inspect_summary_phase)
         self.run_choices.blocker_selected.connect(self.inspect_blocking_phase)
         self.pages = QTabWidget()
+        self.pages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.pages.setAccessibleName('Run summary and detailed results')
         self.pages.addTab(self.run_choices, 'Run summary')
         self.pages.addTab(self.splitter, 'Results and exact steps')
@@ -231,6 +229,8 @@ class RunView(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText('Find a test, suite or failure message…')
         self.search.setAccessibleName('Search individual tests')
+        self.find_tests = search_shortcut(tests, self.search)
+        self.search.setClearButtonEnabled(True)
         self.filter = QComboBox()
         self.filter.addItems(['All tests', 'Problems', 'Passed', 'Skipped'])
         self.filter.setAccessibleName('Test outcome filter')
@@ -568,11 +568,18 @@ class RunView(QWidget):
         self.summary.setText(prefix + text + self.run_timing)
         activity_names = {'running': 'Running', 'queued': 'Queued',
             'waiting_resource': 'Waiting for capacity', 'awaiting_review': 'Needs approval'}
+        for button in self.activity_buttons.values():
+            self.activity.grid.removeWidget(button)
+        active = []
         for state, button in self.activity_buttons.items():
             count = visible_counts.get(state, 0)
             button.setText(activity_names[state] + ' · ' + str(count))
             button.setVisible(bool(count) and not self.outcome)
             button.setEnabled(not self.cancelling)
+            if count and not self.outcome:
+                active.append(button)
+        self.activity.buttons, self.activity.columns = active, 0
+        self.activity.reflow()
         self.activity.setVisible(not self.outcome and any(visible_counts.get(state) for state in activity_names))
         if self.cancelling:
             self.summary.setText('Stopping… · ' + text + self.run_timing)

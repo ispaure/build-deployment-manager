@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
     QStyle, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .run_ui import duration
+from .ui_components import search_shortcut
 
 
 class RunHistoryView(QWidget):
@@ -16,6 +17,8 @@ class RunHistoryView(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText('Find a saved run…')
         self.search.setAccessibleName('Search saved runs')
+        self.search.setClearButtonEnabled(True)
+        self.find = search_shortcut(self, self.search)
         self.filter = QComboBox()
         self.filter.setAccessibleName('Saved run status filter')
         for label, key in [('All runs', 'all'), ('Needs attention', 'attention'), ('Completed', 'completed')]:

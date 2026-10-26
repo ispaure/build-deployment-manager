@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .redaction import Redactor
-from .ui_components import style_button, style_dialog_buttons
+from .ui_components import style_button, style_dialog_buttons, search_shortcut
 
 
 class SettingsTask(QRunnable):
@@ -45,6 +45,7 @@ class SettingsDialog(QDialog):
         self.search.setPlaceholderText('Find a setting, tool or destination…')
         self.search.setAccessibleName('Search project settings')
         self.search.setClearButtonEnabled(True)
+        self.find = search_shortcut(self, self.search)
         self.search.textChanged.connect(self.filter_fields)
         self.show_origins = QCheckBox('Show value sources')
         self.show_origins.setToolTip('Show whether a value comes from project defaults, a profile or the environment.')

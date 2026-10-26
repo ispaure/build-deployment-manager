@@ -53,6 +53,9 @@ class EffectReviewDialog(QDialog):
             title = QHBoxLayout()
             control = QCheckBox('Authorize')
             control.setAccessibleName('Authorize ' + card['title'] + ' · ' + step)
+            control.setAccessibleDescription('\n'.join(card['destinations'] +
+                [name + ': ' + str(value) for name, value in card['recipients'] + card['choices']] +
+                [build['name'] + ' · SHA-256 ' + build['sha256'] for build in card['builds']]))
             title.addWidget(control)
             badge = QLabel('Approval required')
             badge.setStyleSheet('border: 1px solid #b37c12; border-radius: 4px; padding: 2px 5px;')

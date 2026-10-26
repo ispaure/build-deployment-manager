@@ -1,5 +1,6 @@
 """Shared action hierarchy for the optional Qt presentation."""
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialogButtonBox, QPushButton, QSizePolicy, QWidget, QGridLayout, QStackedWidget
 
 
@@ -79,6 +80,7 @@ class ActionStrip(QWidget):
 
 def style_button(button, role='secondary'):
     """Emphasize an action without changing keyboard defaults or authorization."""
+    button.setAutoDefault(False)
     if button.property('actionRole') == role:
         return button
     button.setProperty('actionRole', role)
@@ -88,7 +90,7 @@ def style_button(button, role='secondary'):
             background: #245db5; color: white; border: 2px solid #245db5; font-weight: 600; }
             QPushButton:hover { background: #194c9b; border-color: #194c9b; }
             QPushButton:pressed { background: #123c80; }
-            QPushButton:focus { border: 2px solid palette(text); }
+            QPushButton:focus { border: 2px dashed white; }
             QPushButton:disabled { background: palette(midlight); color: palette(mid);
                 border-color: palette(midlight); }
         ''')
@@ -100,6 +102,15 @@ def style_button(button, role='secondary'):
             QPushButton:disabled { color: palette(mid); }
         ''')
     return button
+
+
+def search_shortcut(parent, field):
+    """Use the platform's Find key only inside the owning panel or dialog."""
+    shortcut = QShortcut(QKeySequence.StandardKey.Find, parent)
+    shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+    shortcut.activated.connect(field.setFocus)
+    shortcut.activated.connect(field.selectAll)
+    return shortcut
 
 
 def style_dialog_buttons(buttons):
