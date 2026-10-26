@@ -1,5 +1,5 @@
 """Shared action hierarchy for the optional Qt presentation."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialogButtonBox, QPushButton, QSizePolicy, QWidget, QGridLayout, QStackedWidget
 
@@ -11,6 +11,29 @@ class ViewportStack(QStackedWidget):
 
     def heightForWidth(self, width):
         return -1
+
+
+class CurrentPageStack(QStackedWidget):
+    """Size a docked action area from its visible page, including native minima."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(self.updateGeometry)
+
+    def _page_hint(self, minimum):
+        page = self.currentWidget()
+        if page is None:
+            return QSize(0, 0)
+        hint = page.minimumSizeHint() if minimum else page.sizeHint()
+        hint = hint.expandedTo(page.minimumSize()).expandedTo(QSize(0, 0))
+        margins = self.contentsMargins()
+        return hint + QSize(margins.left() + margins.right(),
+                            margins.top() + margins.bottom())
+
+    def minimumSizeHint(self):
+        return self._page_hint(True)
+
+    def sizeHint(self):
+        return self._page_hint(False)
 
 
 class SelectionSummary(QPushButton):

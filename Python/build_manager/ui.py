@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from .settings_ui import SettingsDialog
 from .approval_ui import EffectReviewDialog
-from .ui_components import style_button, style_dialog_buttons, ViewportStack
+from .ui_components import style_button, style_dialog_buttons, ViewportStack, CurrentPageStack
 
 
 class PreparePlan(QRunnable):
@@ -270,7 +270,7 @@ class ManagerPanel(QWidget):
         self.action_footer.setStyleSheet('QFrame#actionFooter { border-top: 1px solid palette(mid); }')
         footer_layout = QVBoxLayout(self.action_footer)
         footer_layout.setContentsMargins(8, 8, 8, 4)
-        self.footer_pages = QStackedWidget()
+        self.footer_pages = CurrentPageStack()
         footer_layout.addWidget(self.footer_pages)
         for left, right in (
                 ((), (self.prepare,)),
