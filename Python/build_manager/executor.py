@@ -13,6 +13,7 @@ from uuid import uuid4
 import time
 
 from commonUtils.runtime.streams import file_sha256
+from commonUtils.runtime.operations import OperationCancelled
 from .locking import workspace_lock
 from .redaction import Redactor
 
@@ -300,6 +301,8 @@ class Executor:
                         row.setdefault('tests', []).extend(cases)
                         if any(case['status'] in {'failed', 'error'} for case in cases):
                             row.update(status='failed', error='JUnit report contains failing tests.')
+        except OperationCancelled as error:
+            row.update(status='cancelled', error=redact(str(error)))
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             row.update(status='failed', error=redact(str(error)))
         finally:

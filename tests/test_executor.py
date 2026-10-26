@@ -116,6 +116,25 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(missing['status'], 'failed')
         self.assertIn('Expected prepared artifact', missing['phases'][0]['error'])
 
+    def test_cancellation_during_artifact_hash_still_records_result_and_runs_cleanup(self):
+        from unittest.mock import patch
+        from commonUtils.runtime.streams import file_sha256
+        cancelled = Event()
+        artifact, cleaned = self.root / 'artifact.bin', self.root / 'cleaned'
+        prepare = self.phase('prepare', f'from pathlib import Path; Path({str(artifact)!r}).write_bytes(b"output")',
+                             artifacts=(str(artifact),))
+        cleanup = self.phase('cleanup', f'from pathlib import Path; Path({str(cleaned)!r}).touch()', always=True)
+        def cancel_hash(path, **options):
+            cancelled.set()
+            return file_sha256(path, **options)
+        with patch('build_manager.executor.file_sha256', side_effect=cancel_hash):
+            result = self.run_plan(self.plan(prepare, cleanup), cancelled=cancelled)
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual(result['phases'][0]['status'], 'cancelled')
+        self.assertEqual(result['phases'][1]['status'], 'passed')
+        self.assertTrue(cleaned.exists())
+        self.assertEqual(json.loads((self.root / 'result/result.json').read_text())['status'], 'cancelled')
+
     def test_workspace_conflict_is_a_structured_failure(self):
         plan = self.plan(self.phase('blocked', 'raise AssertionError("never")'))
         with workspace_lock(self.root / 'workspace/operation.lock'):
