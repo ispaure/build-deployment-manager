@@ -251,16 +251,11 @@ class ManagerPanel(QWidget):
         self.stages.addWidget(run_page)
         history_page = QWidget()
         history_layout = QVBoxLayout(history_page)
-        history_layout.addWidget(QLabel('Retained runs for this project. Select a run to view its steps and test results.'))
-        self.history_hint = QLabel('Loading saved runs…')
-        self.history_hint.setWordWrap(True)
-        history_layout.addWidget(self.history_hint)
-        self.history = QTreeWidget()
-        self.history.setHeaderLabels(['Started', 'Operation', 'Outcome', 'Active time'])
-        self.history.setAccessibleName('Project run history')
-        self.history.setColumnWidth(0, 220)
+        from .history_ui import RunHistoryView
+        self.history_view = RunHistoryView()
+        self.history, self.history_hint = self.history_view.tree, self.history_view.hint
         self.history.itemActivated.connect(self.open_history)
-        history_layout.addWidget(self.history, 1)
+        history_layout.addWidget(self.history_view, 1)
         self.refresh_history_button = QPushButton('Refresh history', self)
         self.refresh_history_button.clicked.connect(self.refresh_history)
         self.view_history_button = QPushButton('View selected run', self)
@@ -751,7 +746,7 @@ class ManagerPanel(QWidget):
         self.session.set_busy(busy)
         for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
                         self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
-                        self.refresh_history_button, self.view_history_button, self.history, self.continue_run,
+                        self.refresh_history_button, self.view_history_button, self.history, self.history_view.search, self.history_view.filter, self.continue_run,
                         self.goal, self.configuration.blocker_strip, *self.configuration.goal_buttons.values(), *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
             control.setEnabled(not busy)
         if not busy:
@@ -999,22 +994,7 @@ class ManagerPanel(QWidget):
             self.history_refresh_pending = False
             self.refresh_history()
             return
-        from .run_ui import duration
-        from PySide6.QtCore import Qt
-        from datetime import datetime
-        self.history_hint.setText('Choose a saved run to inspect it. Viewing never starts or repeats work.'
-            if rows else 'No saved runs yet. Review and start a plan, then return here for its results.')
-        self.history.clear()
-        for row in rows:
-            started = row.get('started_at', '')
-            try:
-                started = datetime.fromisoformat(started).astimezone().strftime('%Y-%m-%d %H:%M:%S %Z')
-            except ValueError:
-                pass
-            item = QTreeWidgetItem([started, self.redacted_data(row.get('operation', '')),
-                                    row['status'], duration(row.get('seconds'))])
-            item.setData(0, Qt.ItemDataRole.UserRole, row['path'])
-            self.history.addTopLevelItem(item)
+        self.history_view.set_rows(self.redacted_data(rows))
 
     def history_selection_changed(self, *_):
         self.view_history_button.setEnabled(self.history.currentItem() is not None and not self.preparing
