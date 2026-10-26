@@ -5,7 +5,7 @@ from collections import deque
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QSplitter, QVBoxLayout, QWidget, QFrame, QSizePolicy)
+    QSplitter, QVBoxLayout, QWidget, QFrame, QSizePolicy, QStyle)
 from .ui_components import style_button, ActionStrip, search_shortcut
 
 
@@ -481,6 +481,7 @@ class RunView(QWidget):
         self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal)
         self.pages.setCurrentIndex(0)
         self.delivered.clear()
+        self.delivery_signature = None
         self.pages.setTabVisible(2, False)
         self.output_lines.clear()
         self.flow.reset(plan)
@@ -583,6 +584,7 @@ class RunView(QWidget):
         self.activity.setVisible(not self.outcome and any(visible_counts.get(state) for state in activity_names))
         if self.cancelling:
             self.summary.setText('Stopping… · ' + text + self.run_timing)
+        self.progress.setAccessibleDescription(self.summary.text())
         self.run_choices.set_facts(self.facts)
         cases = [case for fact in self.facts.values() for case in fact.get('tests', ())]
         problems = sum(case['status'] in {'failed', 'error'} for case in cases)
@@ -599,6 +601,15 @@ class RunView(QWidget):
                 else 'Eligible actions need approval. Use the review action below to inspect prepared files, exact source and destinations. Independent blocked branches remain separate.')
         elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
             action = 'This run did not finish successfully. Open Results and exact steps, then Tests → Problems or Step details for the reason.'
+        elif self.outcome == 'passed':
+            destinations = getattr(self.plan, 'journey', {}).get('destinations', {}) if self.plan else {}
+            delivered = sum(all(self.facts.get(key, {}).get('status') == 'passed' for key in row['steps'])
+                for row in destinations.values())
+            files = len({(a['path'], a.get('sha256', '')) for fact in self.facts.values()
+                         for a in fact.get('artifacts', ())})
+            action = f'{delivered} of {len(destinations)} destinations delivered' if destinations else 'Completed'
+            if files:
+                action += f' · {files} retained file' + ('s' if files != 1 else '')
         elif self.outcome:
             action = 'Run finished. Check Tests for individual outcomes and Timing for the slowest tests. Start another run from New run.'
         else:
@@ -628,11 +639,19 @@ class RunView(QWidget):
     def refresh_delivered(self):
         from .journeys import outcomes
         from pathlib import PurePath
-        selected = self.delivered.currentItem()
-        identity = selected.data(0, Qt.ItemDataRole.UserRole) if selected else None
-        self.delivered.clear()
         if not self.plan:
             return
+        signature = tuple((key, fact['status'], tuple((a['path'], a.get('sha256', ''))
+            for a in fact.get('artifacts', ()))) for key, fact in self.facts.items())
+        if getattr(self, 'delivery_signature', None) == signature:
+            return
+        self.delivery_signature = signature
+        selected = self.delivered.currentItem()
+        identity = selected.data(0, Qt.ItemDataRole.UserRole + 1) if selected else None
+        expanded = {self.delivered.topLevelItem(i).data(0, Qt.ItemDataRole.UserRole + 1)
+            for i in range(self.delivered.topLevelItemCount()) if self.delivered.topLevelItem(i).isExpanded()}
+        scroll = self.delivered.verticalScrollBar().value()
+        self.delivered.clear()
         journey = getattr(self.plan, 'journey', {})
         states = dict(outcomes(self.plan, self.facts.values())) if journey else {}
         labels = {'passed': 'Delivered', 'awaiting_review': 'Needs approval', 'unknown': 'Unknown outcome',
@@ -640,28 +659,42 @@ class RunView(QWidget):
         for destination in journey.get('destinations', {}).values():
             state = states[destination['identity']]
             row = QTreeWidgetItem([destination['identity'], labels.get(state, state.replace('_', ' ').capitalize()), ''])
-            row.setData(0, Qt.ItemDataRole.UserRole, destination['steps'][0])
+            row.setToolTip(0, destination['identity'])
+            icon = (QStyle.StandardPixmap.SP_DialogApplyButton if state == 'passed' else
+                QStyle.StandardPixmap.SP_MessageBoxCritical if state in {'unknown', 'failed', 'error', 'timeout'}
+                else QStyle.StandardPixmap.SP_MessageBoxWarning)
+            row.setIcon(1, self.style().standardIcon(icon))
+            priority = ('unknown', 'failed', 'error', 'timeout', 'interrupted', 'cancelled', 'awaiting_review', 'running')
+            key = next((key for state in priority for key in destination['steps']
+                if self.facts.get(key, {}).get('status') == state), destination['steps'][0])
+            row.setData(0, Qt.ItemDataRole.UserRole, key)
+            row.setData(0, Qt.ItemDataRole.UserRole + 1, ('destination', destination['identity']))
             for key in destination['steps']:
                 child = QTreeWidgetItem([getattr(self.phases[key], 'label', '') or key,
                     self.facts.get(key, {}).get('status', 'queued').replace('_', ' '), ''])
                 child.setData(0, Qt.ItemDataRole.UserRole, key)
+                child.setData(0, Qt.ItemDataRole.UserRole + 1, ('step', key))
                 row.addChild(child)
             self.delivered.addTopLevelItem(row)
         for key, fact in self.facts.items():
             for artifact in fact.get('artifacts', ()):
                 path = artifact['path']
-                row = QTreeWidgetItem([PurePath(path).name, 'Retained file', path])
+                name = PurePath(artifact.get('original_path') or path).name
+                row = QTreeWidgetItem([name, 'Retained file', path])
+                row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
                 row.setToolTip(0, 'SHA-256: ' + artifact.get('sha256', 'Not recorded'))
                 row.setToolTip(2, path)
                 row.setData(0, Qt.ItemDataRole.UserRole, key)
+                row.setData(0, Qt.ItemDataRole.UserRole + 1, ('artifact', key, path))
                 self.delivered.addTopLevelItem(row)
         self.pages.setTabVisible(2, bool(self.delivered.topLevelItemCount()))
-        if identity:
-            for index in range(self.delivered.topLevelItemCount()):
-                row = self.delivered.topLevelItem(index)
-                if row.data(0, Qt.ItemDataRole.UserRole) == identity:
-                    self.delivered.setCurrentItem(row)
-                    break
+        for index in range(self.delivered.topLevelItemCount()):
+            row = self.delivered.topLevelItem(index)
+            row.setExpanded(row.data(0, Qt.ItemDataRole.UserRole + 1) in expanded)
+            for item in (row, *(row.child(i) for i in range(row.childCount()))):
+                if identity and item.data(0, Qt.ItemDataRole.UserRole + 1) == identity:
+                    self.delivered.setCurrentItem(item)
+        self.delivered.verticalScrollBar().setValue(scroll)
 
     def inspect_delivered(self, item, column=0):
         if item:

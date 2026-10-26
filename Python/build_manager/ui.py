@@ -679,7 +679,8 @@ class ManagerPanel(QWidget):
             self.start.setEnabled(False)
             self.open_results.setEnabled(True)
             self.run_view.set_output(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
-            self.stages.setCurrentIndex(1)
+            self.run_view.complete(previous)
+            self.stages.setCurrentIndex(2)
             confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish', 'dispatch'})
             selected = self.confirm_continuation(plan, previous, steps) if confirmed else True
             if not selected:

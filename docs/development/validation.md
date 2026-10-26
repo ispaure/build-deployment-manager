@@ -1,5 +1,37 @@
 # Validation scope and remaining acceptance
 
+## October 26 completion, activity, history and journey passes
+
+Five separately committed passes cover completion/results, active execution,
+saved-run navigation, keyboard/layout accessibility and a synthetic first-use
+walkthrough. Deliveries and files preserves partial and unknown outcomes, shows
+original prepared file names beside retained locations, and opens exact step
+evidence. Successful runs select that view without interrupting step inspection.
+Activity controls distinguish running, queued, capacity waits and approval; a
+cancel request remains Stopping until the process returns its retained outcome.
+Searchable history preserves selection and exposes next actions without starting
+work. Focus styling, scoped Find shortcuts, descriptive approval controls and
+wrapping layouts cover keyboard use and long identities in small windows.
+
+The walkthrough uses a synthetic adapter with harmless temporary-file commands
+through the real Qt/CLI path. It covers platform repair, review, preparation,
+cancelling approval, independent destination approvals, retained preparation reuse,
+completion and history reopening. A separate failed-gate journey opens the actual
+failure evidence without executing either delivery. This exposed and repaired a
+cancelled-approval dead end, unstable output selection and clipped history states.
+Completion uses counts rather than additional guidance text.
+
+The final full portable suite passes 335 tests. Native macOS Cocoa checks cover the
+complete walkthrough and failure route plus results, history, running states,
+keyboard selection and disclosure at 1024×700 and smaller fixture sizes. Native
+captures and logs remain in ignored test-results/five-ux-passes. An initial full
+attempt caught a cancellation test helper relying on button enablement rather
+than process completion, and an identity guard firing during concurrent source
+edits; the helper now waits for QProcess completion and final checks run against
+stable source. This is a synthetic novice-oriented walkthrough, not testing with
+an actual novice participant or screen reader. No real provider dispatch,
+deployment, held VM or personal device was used.
+
 ## October 26 delivery approval cards
 
 Delivery approval now presents only the exact eligible actions as unchecked cards,

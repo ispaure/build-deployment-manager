@@ -153,6 +153,11 @@ The platform Find shortcut focuses search in Past runs, Project settings and the
 individual Tests tab. Approval choices support Space and Escape; highlighted
 buttons retain visible keyboard focus. Activity controls wrap in narrow windows.
 
+Cancelling delivery approval returns to the retained run with its review action
+available. Selecting one destination leaves other approvals pending. Completed
+delivery summaries show destination and retained-file counts; output selections
+and expanded groups remain stable while other work updates.
+
 Review opens on Run summary. Captured source, platforms and execution hosts
 appear across the top. The workflow preserves the same Source, platform, preparation
 and destination cards and arrows captured from Choose work. Execution substeps

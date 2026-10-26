@@ -28,6 +28,7 @@ class ResultsOverviewTests(unittest.TestCase):
         self.view.complete(dict(status='unknown'))
         first, second = [self.view.delivered.topLevelItem(i) for i in range(2)]
         self.assertEqual(first.text(1), 'Delivered')
+        self.assertFalse(first.icon(1).isNull())
         self.assertEqual(second.text(1), 'Unknown outcome')
         self.view.inspect_delivered(second)
         self.assertEqual(self.view.selected, 'testflight')
@@ -42,9 +43,22 @@ class ResultsOverviewTests(unittest.TestCase):
 
     def test_prepared_files_keep_path_and_full_identity_in_evidence(self):
         self.view.update_phase(dict(id='prepare', status='passed', artifacts=[dict(
-            path='/retained/App.zip', sha256='a'*64)]))
+            path='/retained/App.zip', original_path='/workspace/ReleaseApp.zip', sha256='a'*64)]))
         item = self.view.delivered.topLevelItem(2)
-        self.assertEqual(item.text(0), 'App.zip')
+        self.assertEqual(item.text(0), 'ReleaseApp.zip')
         self.assertEqual(item.text(2), '/retained/App.zip')
         self.view.inspect_delivered(item)
         self.assertIn('a'*64, self.view.detail.toPlainText())
+
+    def test_live_updates_preserve_expansion_and_exact_selected_file(self):
+        self.view.update_phase(dict(id='prepare', status='passed', artifacts=[
+            dict(path='/retained/one.zip', sha256='a'*64),
+            dict(path='/retained/two.zip', sha256='b'*64)]))
+        self.view.delivered.topLevelItem(0).setExpanded(True)
+        self.view.delivered.setCurrentItem(self.view.delivered.topLevelItem(3))
+        self.view.update_phase(dict(id='firebase', status='running'))
+        self.assertEqual(self.view.delivered.currentItem().text(0), 'two.zip')
+        self.assertTrue(self.view.delivered.topLevelItem(0).isExpanded())
+        current = self.view.delivered.currentItem()
+        self.view.refresh_summary()
+        self.assertIs(self.view.delivered.currentItem(), current)

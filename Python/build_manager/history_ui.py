@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import PurePath
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
-    QStyle, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+    QStyle, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QHeaderView)
 from .run_ui import duration
 from .ui_components import search_shortcut
 
@@ -33,6 +33,9 @@ class RunHistoryView(QWidget):
         self.tree.setHeaderLabels(['Started', 'Operation', 'Outcome', 'Active time', 'Next step'])
         self.tree.setAccessibleName('Project run history')
         self.tree.setColumnWidth(0, 200)
+        self.tree.setColumnWidth(1, 200)
+        self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.header().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.setAlternatingRowColors(True)
         layout.addWidget(self.tree, 1)
         self.search.textChanged.connect(self.apply_filter)
@@ -58,6 +61,8 @@ class RunHistoryView(QWidget):
             item.setData(0, Qt.ItemDataRole.UserRole, row['path'])
             item.setData(0, Qt.ItemDataRole.UserRole + 1, state)
             item.setToolTip(0, row['path'])
+            item.setToolTip(1, row.get('operation', ''))
+            item.setToolTip(2, labels.get(state, state))
             icon = (QStyle.StandardPixmap.SP_DialogApplyButton if state == 'passed' else
                 QStyle.StandardPixmap.SP_MessageBoxCritical if state in {'failed', 'unknown', 'unreadable'}
                 else QStyle.StandardPixmap.SP_MessageBoxWarning)

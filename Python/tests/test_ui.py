@@ -75,7 +75,8 @@ with TemporaryDirectory() as folder:
 
     def finish(self, panel):
         deadline = time.monotonic() + 10
-        while not (panel.result and panel.result.is_file() and panel.cancel.isEnabled() is False):
+        while not (panel.result and panel.result.is_file()
+                   and panel.process.state() == panel.process.ProcessState.NotRunning):
             self.app.processEvents()
             if time.monotonic() > deadline:
                 panel.process.kill()
