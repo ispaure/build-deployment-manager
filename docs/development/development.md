@@ -16,6 +16,7 @@ the project being built. Keep each project's interpreter and dependency pins.
 | Keep and resume evidence | `history.py`, `workflows.py`, `retention.py` | Checksums, original plan, unknown outcomes and durable holds |
 | Present it | `configuration_ui.py`, `ui.py`, `run_ui.py`, `settings.py` | Selection values, Qt-thread ownership and explicit review |
 | Retain a GUI run/review | `run_session.py`, `review.py` | Parented process/timers and cancellable verification; stale selections cannot approve work |
+| Retain interactive deployment launchers | `deployment_commands.py`, `deployment_commands_ui.py` | Project commands/policy; explicit input, target retention and sequential compatibility execution |
 | Reach another host | `parallels.py`, `windows_guest.py`, `guest.py` and platform adapters | Owned guest work, durable outcomes and actual native acceptance |
 
 The engine does not decide which Logistics tests, signing identities or release

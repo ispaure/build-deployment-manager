@@ -92,3 +92,43 @@ stage, with its own interpreter and machine-creation lifecycle. Portable tests
 execute Linux bootstrap commands through a mocked subprocess boundary and check
 Windows parameters/guards; they do not establish native PowerShell execution or
 successful downloads in a real guest.
+
+
+## Interactive deployment compatibility commands
+
+`deployment_commands.Command` carries explicit argv, cwd and optional environment
+values. `CommandStep` adds a display label. `run_sequence(steps, starting=...,
+continue_after_failure=...)` runs them in order with inherited terminal input.
+The default stops at the first failed child; a caller may ask the operator
+whether to continue. Its returned failed steps remain failed even if later
+commands succeed. Launch errors, input errors and interruption propagate; no
+command is automatically retried. `confirmation_input(prompt, marker=...)`
+retains the caller's newline-delimited JSON prompt protocol and returns its
+literal answer.
+
+This small compatibility path supports existing interactive launchers. It is
+separate from the evidence-producing executor, which deliberately uses closed
+stdin. It does not grant release acceptance, approve uploads or merge legacy
+commands into reviewed plans. Keep artifact verification, signing, devices and
+provider eligibility in the project or its declared plan.
+
+The optional Qt module `deployment_commands_ui` supplies `CommandPanel`.
+Its policy supplies a fixed set of `CommandAction` keys, `command(action, target)`,
+`inventory(text)`, `logs(action)`, `hint`, `confirmation_marker` and
+`confirmation_title`. Inventory returns `CommandInventory` with generic
+`CommandTarget` labels/values, summary and errors. The panel retains a selected
+unavailable target rather than silently choosing a replacement, rebuilds process
+environment overrides for each start, decodes streamed UTF-8 across chunk
+boundaries and asks before sending a confirmation answer. Malformed requests
+are declined and mark the operation failed. Discovery errors remain failures.
+
+Connect `busy_changed` to the surrounding manager controls and call
+`set_external_busy` for manager activity. The containing window must refuse to
+close while either path is busy. Policy label changes can use `refresh_labels`;
+no interpreter, module, platform, group, signing choice or automatic discovery
+command is inferred by the panel. Headless imports do not load Qt or a consumer.
+
+Portable second-project fixtures use real harmless subprocesses for ordering,
+terminal input, split UTF-8 prompts, Yes/No decisions, malformed prompts, failed
+starts and target retention. Native macOS Qt checks exercise the same process
+contracts. Neither establishes physical installation or provider acceptance.
