@@ -2,6 +2,10 @@
 from dataclasses import dataclass
 
 
+class ProviderOutcomeUnknown(RuntimeError):
+    """Reconcile the provider outcome before any manual retry; never auto-replay."""
+
+
 @dataclass(frozen=True)
 class ProviderCapability:
     id: str
