@@ -13,11 +13,9 @@ def workspace_lock(path, *, timeout=0):
     with path.open('a+b') as stream:
         if os.name == 'nt':
             import msvcrt
-            # Reading an already locked byte fails before the second locking
-            # call on Windows. Size inspection does not enter that byte range.
-            if os.fstat(stream.fileno()).st_size == 0:
-                stream.write(b'0')
-                stream.flush()
+            # Windows permits locking beyond EOF. Do not initialize a byte:
+            # a concurrent first opener can acquire its lock after our size
+            # check, making our buffered write/flush fail with PermissionError.
             stream.seek(0)
             while True:
                 try:
