@@ -132,6 +132,12 @@ def style_button(button, role='secondary'):
     return button
 
 
+def style_tabs(tabs):
+    """Use the application theme's tabs, or native Qt tabs without a theme."""
+    tabs.setDocumentMode(False)
+    tabs.setStyleSheet('')
+
+
 def search_shortcut(parent, field):
     """Use the platform's Find key only inside the owning panel or dialog."""
     shortcut = QShortcut(QKeySequence.StandardKey.Find, parent)
