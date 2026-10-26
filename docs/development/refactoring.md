@@ -23,7 +23,7 @@ CLI approval, executor resume and history now use the bounded `read_report`
 loader. Engine/plan/recovery checks remain in their owners. Additive
 `--approval-identity STEP=SHA256` binds GUI review to verified prerequisites;
 manual CLI approval retains its existing explicit flags. Structured CLI failures
-remain visible when an older awaiting-review report exists. All 158 local
+remain visible when an older awaiting-review report exists. All 159 local
 portable/offscreen contracts pass, as do native-platform runs on the dedicated
 Fedora and Windows guests (three explicit POSIX-only Windows skips). See
 [validation scope](../validation.md). The numbered findings retain starting evidence.
@@ -118,3 +118,12 @@ passing retained result in a disposable directory. All 16 manager wiki pages
 pass H1, relative-link/heading and explicit landing/child-link checks. Generic
 contracts and controlled transport fixtures do not establish a new Windows,
 Fedora, device or hosted-publication acceptance run.
+
+## Final cancellation-safe runtime
+
+Runtime `9225924` adds structured cancellation during captured-artifact hashing,
+so a cancelled stream still records its outcome and runs owned cleanup. All 159
+contracts pass on macOS, dedicated Fedora and dedicated Windows; Windows retains
+three explicit POSIX-only skips. Both guest workspaces are removed after report
+collection. The preceding `bb34d5f` evidence remains the original owner-refactor
+checkpoint.

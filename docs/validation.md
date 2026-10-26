@@ -132,3 +132,12 @@ per-case timings and cleanup proofs stay under ignored `test-results/logistics-n
 Later source changes retain their own acceptance requirements. Android x64 and
 post-GitHub integration remain separate follow-ups; no push or hosted dispatch
 was used for this local acceptance.
+
+## Final artifact-hash cancellation check
+
+Runtime `9225924` passes 159 contracts on macOS and both dedicated guests.
+Fedora completes the suite without skips; Windows retains its three POSIX-only
+skips. The additional case cancels while hashing a prepared artifact and requires
+a serialized cancelled result plus successful owned cleanup. The real guest
+plans also pass their focused Logistics result-lifecycle checks, retrieve evidence
+and remove their owned workspaces. No upload or personal-device action occurs.
