@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QPointF, Signal, QTimer
 from PySide6.QtGui import QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (QGridLayout, QLabel, QPushButton,
     QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget)
+from .workflow_icons import NAMES, WorkflowIcons, step_icons
 
 FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', 'skipped'}
 PENDING = {'queued', 'pending', 'planned'}
@@ -155,12 +156,24 @@ class FlowCanvas(QWidget):
             heading.setText(title(phase))
             heading.setStyleSheet('font-weight: 600;')
             kind.setText(effect_label(phase, plan))
+            icons = step_icons(phase, plan)
+            card.setProperty('workflowContext', ' · '.join(NAMES[name] for name in icons))
+            inline_icons = 0 < len(icons) <= 2
+            if inline_icons:
+                badges = QHBoxLayout()
+                badges.setSpacing(6)
+                badges.addWidget(heading, 1)
+                badges.addWidget(WorkflowIcons(icons, card), 0, Qt.AlignmentFlag.AlignTop)
+                body.addLayout(badges)
+            elif icons:
+                body.addWidget(WorkflowIcons(icons, card), 0, Qt.AlignmentFlag.AlignRight)
             for label in (heading, kind, status, counts):
                 label.setProperty('workflowHeading', label is heading)
                 label.setWordWrap(True)
                 label.setTextFormat(Qt.TextFormat.PlainText)
                 label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-                body.addWidget(label)
+                if label is not heading or not inline_icons:
+                    body.addWidget(label)
             card.clicked.connect(lambda checked=False, key=phase.id: self.selected.emit(key))
             level, lane = self.positions[phase.id]
             self.grid.addWidget(card, lane + 1, level, 2, 1)
@@ -200,9 +213,10 @@ class FlowCanvas(QWidget):
                     ('color: ' + text_color + ';' if muted else ''))
             card.setMinimumHeight(max(64 if getattr(plan, 'proposed', False) else 100,
                 card.layout().totalHeightForWidth(card.width())))
-            card.setToolTip(title(phase) + '\n' + effect_label(phase, plan) + '\n' + reason + '\n' + phase.id)
+            context = card.property('workflowContext')
+            card.setToolTip('\n'.join(filter(None, (title(phase), context, effect_label(phase, plan), reason, phase.id))))
             card.setAccessibleName(title(phase) + ': ' + label)
-            card.setAccessibleDescription(reason)
+            card.setAccessibleDescription('\n'.join(filter(None, (context, reason))))
         self.update()
 
     def paintEvent(self, event):

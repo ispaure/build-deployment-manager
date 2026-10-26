@@ -102,7 +102,8 @@ class Parallels:
         return json.loads(subprocess.check_output([self.executable, 'list', '--all', '--json'], timeout=30))
 
     def selected(self, selector):
-        matches = [item for item in self.inventory() if selector and selector in (item['uuid'], item['name'])]
+        matches = [item for item in self.inventory() if selector and
+                   (selector == item['name'] or selector.strip('{}') == item['uuid'].strip('{}'))]
         if len(matches) != 1:
             raise ValueError('Select exactly one existing guest from the Parallels inventory.')
         return matches[0]

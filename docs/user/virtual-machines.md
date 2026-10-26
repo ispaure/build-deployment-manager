@@ -86,6 +86,15 @@ guest or a reused installation.
 
 ## Readiness and testing
 
+Projects that support automatic dedicated-machine selection can fill empty Fedora
+and Windows settings from this checkout's ownership records and Parallels
+registration. Discovery verifies the bundle location without starting the guest
+or checking its OS. Save in Project settings remembers the detected UUID in the
+project's private manager profile. Existing explicit selections take precedence.
+If detection is unavailable, use Create or recover here, then reopen Project settings.
+Advanced Fedora container testing uses a separate explicitly configured Ubuntu host;
+it is unnecessary for direct Fedora guest testing.
+
 Start the guest and finish its OS/tool setup, then choose **Check readiness**.
 **Open console** shows only the selected owned machine in Parallels for normal
 installation and desktop interaction.

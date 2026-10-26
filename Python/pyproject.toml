@@ -22,3 +22,6 @@ build-manager-gui = "build_manager.app:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["build_manager*"]
+
+[tool.setuptools.package-data]
+build_manager = ["assets/icons/*.svg", "assets/icons/*.txt"]

@@ -12,6 +12,16 @@ from build_manager.vm_bootstrap import windows_answer
 
 
 class DedicatedVMTests(unittest.TestCase):
+    def test_discovery_checks_owned_bundle_without_power_or_guest_commands(self):
+        from build_manager.vm import dedicated_guest
+        with self.owned(), patch('build_manager.vm.Parallels', return_value=self.client), patch.object(LinuxVM, 'run', return_value=json.dumps([dict(Home=self.record['bundle'])])) as run:
+            self.assertEqual(dedicated_guest('linux', self.folder.name), self.record['uuid'])
+            self.assertEqual(run.call_args.args[:3], ('list', self.record['uuid'], '--info'))
+            self.client.start.assert_not_called()
+            self.client.execute.assert_not_called()
+        with patch('build_manager.vm.Parallels', return_value=self.client):
+            self.assertEqual(dedicated_guest('windows', self.folder.name), '')
+
     def setUp(self):
         self.folder = TemporaryDirectory(); self.addCleanup(self.folder.cleanup)
         self.client = Mock(executable='prlctl')

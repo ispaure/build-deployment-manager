@@ -16,6 +16,22 @@ from test_journeys import CAPABILITY
 
 
 class SettingsPlanUsabilityTests(unittest.TestCase):
+    def test_conditional_host_fields_follow_unsaved_mode_and_preserve_values(self):
+        project = SimpleNamespace(settings_view=lambda: {
+            'mode': dict(value='guest', section='VM', choices=['guest', 'container']),
+            'host': dict(value='saved host', section='VM', visible_when={'mode': 'container'})})
+        dialog = SettingsDialog(project)
+        self.addCleanup(lambda: (setattr(dialog, 'dirty', False), dialog.reject()))
+        self.wait(lambda: dialog.busy)
+        dialog.show()
+        self.app.processEvents()
+        self.assertFalse(dialog.controls['host'].isVisible())
+        dialog.controls['mode'].setCurrentText('container')
+        self.app.processEvents()
+        self.assertTrue(dialog.controls['host'].isVisible())
+        self.assertEqual(dialog.controls['host'].text(), 'saved host')
+        self.assertTrue(dialog.dirty)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

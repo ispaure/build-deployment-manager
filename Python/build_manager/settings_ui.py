@@ -282,6 +282,7 @@ class SettingsDialog(QDialog):
                       control.valueChanged if isinstance(control, QSpinBox) else
                       control.currentTextChanged if isinstance(control, QComboBox) else control.textChanged)
             signal.connect(self.mark_dirty)
+            signal.connect(self.filter_fields)
         self.filter_fields()
 
     def toggle_origins(self, visible):
@@ -295,6 +296,10 @@ class SettingsDialog(QDialog):
             entry = self.rows[name]
             text = ' '.join((name, group, entry.get('label', ''), entry.get('description', ''))).casefold()
             visible = all(word in text for word in query.split())
+            for dependency, expected in entry.get('visible_when', {}).items():
+                control = self.controls.get(dependency)
+                actual = control.currentText() if isinstance(control, QComboBox) else control.text() if isinstance(control, QLineEdit) else None
+                visible = visible and actual == expected
             self.forms[group].setRowVisible(heading, visible)
             if visible:
                 groups.add(group)

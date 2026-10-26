@@ -33,6 +33,17 @@ exchange schema-1 JSON over stdin/stdout. The manager never imports project modu
 or replaces a project's commonUtils pin. The bridge exposes plan/settings/save/
 verification actions explicitly. Missing interpreter and API errors are repairable.
 
+Requests also include `settings_profile`, a private per-registration path under
+the manager configuration directory, and `manager_checkout`, the active manager
+source root. Adapters may use the profile path for local persistence and the
+checkout for dedicated-machine discovery. Adapters own legacy-profile migration
+and must preserve explicit overrides. These optional context fields do not change
+the API-1 action values or authorize VM mutation.
+
+Settings rows may declare `visible_when` as a mapping from field names to expected
+text values. The editor evaluates these conditions against unsaved inputs and
+combines them with search filtering. Hidden values are retained when saving.
+
 Use `build-manager add PATH`, `list`, `inspect REGISTRATION`,
 `select REGISTRATION`, `locate REGISTRATION PATH` and `remove REGISTRATION`.
 `trust REGISTRATION` remains a compatibility command; it is no longer required.

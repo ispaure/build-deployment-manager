@@ -12,6 +12,14 @@ from build_manager.bridge import ProjectBridge
 
 
 class RegistryTests(unittest.TestCase):
+    def test_bridge_supplies_checkout_specific_private_profile_and_manager_context(self):
+        root = self.fixture('context')
+        (root / 'bridge.py').write_text('import json,sys; r=json.load(sys.stdin); print(json.dumps(dict(schema=1,result=r)))')
+        key = self.registry.add(root)
+        result = ProjectBridge(self.registry).call('settings')
+        self.assertEqual(result['settings_profile'], str(self.registry.directory / 'projects' / key / 'profile.json'))
+        self.assertEqual(result['manager_checkout'], str(Path(__file__).resolve().parents[2]))
+
     def setUp(self):
         self.temp=TemporaryDirectory(prefix='projects café ');self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name);self.registry=Registry(self.root/'private')

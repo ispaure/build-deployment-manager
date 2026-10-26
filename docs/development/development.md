@@ -74,6 +74,14 @@ clear inputs/events rather than let a new mixin read all panel attributes.
 Run focused UI lifecycle checks after changing ownership, including closing during
 preparation/history reads and normal process completion.
 
+Workflow card icons live in `Python/build_manager/assets/icons/` and are included
+as package data. These six unmodified Font Awesome Free 6.7.2 SVGs are licensed
+under CC BY 4.0, with upstream comments, `LICENSE.txt` and `ATTRIBUTION.txt`
+preserved alongside them. Use brand marks only to identify their corresponding
+platform or service. `workflow_icons.py` uses declared proposal targets, journey
+platform/execution/destination mappings and providers; it does not infer platforms
+from executable commands or prerequisite steps. Unknown targets have no badge.
+
 ## Select validation by behavior
 
 From this checkout, with its locked environment:

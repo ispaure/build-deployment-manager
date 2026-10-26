@@ -12,6 +12,8 @@ class ProposedStep:
     target: str = ''
     issue: bool = False
     always: bool = False
+    platforms: tuple[str, ...] = ()
+    backend: str = ''
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,8 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         messages.append('Choose a commit, branch or tag in Source.')
     if goal == 'advanced' or not capability:
         nodes.append(ProposedStep('operation', operation or 'Choose an operation',
-            ' · '.join(filter(None, (platform, backend))), ('source',), 'platforms'))
+            ' · '.join(filter(None, (platform, backend))), ('source',), 'platforms',
+            platforms=(platform,), backend=backend))
         messages.append('This project defines the operation’s internal steps and effects during Review.')
         return ProposedWorkflow(tuple(nodes), tuple(messages))
     checks = []
@@ -42,7 +45,8 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         row = capability['platforms'][target]
         key = 'platform.' + target
         nodes.append(ProposedStep(key, row.get('label', target).split(' (')[0],
-            'Required checks · ' + backends.get(target, row['backend']), ('source',), 'platforms', target))
+            'Required checks · ' + backends.get(target, row['backend']), ('source',), 'platforms', target,
+            platforms=(target,), backend=backends.get(target, row['backend'])))
         checks.append(key)
     if not checks:
         nodes.append(ProposedStep('choose-platforms', 'Choose platforms', 'Select at least one platform to test.',
@@ -55,7 +59,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             if target not in platforms and not any(node.id == key for node in nodes):
                 label = capability['platforms'][target].get('label', target).split(' (')[0]
                 nodes.append(ProposedStep(key, 'Select ' + label, 'Required by the selected delivery.',
-                                          ('source',), 'platforms', target, True))
+                                          ('source',), 'platforms', target, True, platforms=(target,)))
             required.append(key)
         return tuple(required)
 
@@ -73,7 +77,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         required = platform_requirements([target for target in row['platforms'] if target not in covered])
         nodes.append(ProposedStep(node_id, row['label'], row.get('description', ''),
             tuple(dict.fromkeys((*required, *parents))), 'delivery', destination,
-            bool(set(row['platforms']) - set(platforms))))
+            bool(set(row['platforms']) - set(platforms)), platforms=tuple(row['platforms'])))
         return node_id
 
     if goal == 'deliver':
@@ -93,17 +97,17 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             else:
                 prepare = 'prepare.' + name
                 nodes.append(ProposedStep(prepare, 'Prepare package', label + ' package · project resolves build steps during Review',
-                    required or ('choose-platforms',), 'delivery', name, bool(missing)))
+                    required or ('choose-platforms',), 'delivery', name, bool(missing), platforms=tuple(row['platforms'])))
             people = (recipients or {}).get(row.get('recipient_field'), [])
             if row.get('recipient_field') and people:
                 for index, person in enumerate(people):
                     nodes.append(ProposedStep('deliver.' + name + '.' + str(index), person,
-                        'Review & install on this device', (prepare,), 'delivery', name, bool(missing)))
+                        'Review & install on this device', (prepare,), 'delivery', name, bool(missing), platforms=tuple(row['platforms'])))
             else:
                 issue = bool(missing) or bool(row.get('recipient_field'))
                 nodes.append(ProposedStep('deliver.' + name, label,
                     'Choose devices in Delivery' if row.get('recipient_field') else 'Review & approve before delivery',
-                    (prepare,), 'delivery', name, issue))
+                    (prepare,), 'delivery', name, issue, platforms=tuple(row['platforms'])))
         if not destinations:
             nodes.append(ProposedStep('choose-delivery', 'Choose destinations', 'Select where successful builds should go.',
                                       tuple(checks) or ('choose-platforms',), 'delivery', issue=True))

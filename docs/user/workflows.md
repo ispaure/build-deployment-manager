@@ -26,6 +26,12 @@ dialog. Step clocks, declared JUnit cases and failure details remain attached to
 their original run. Active duration accumulates across resume attempts; time spent
 waiting between attempts for human approval is excluded.
 
+Workflow cards show small Windows, Linux, Apple, Android, GitHub and Docker icons
+when their declared platform or execution location is known. A card can show both
+the target platform and its execution service. Hover for the icon names; the same
+context is available to screen readers. Icons describe the affected platform or
+service, while the card's status and border describe progress and outcome.
+
 Interrupted harmless work is retryable. A running/failed/timeout external effect
 has an unknown outcome until its provider reconciles the recorded operation.
 The recovery API accepts a project reconciler that returns a verified receipt or

@@ -18,6 +18,15 @@ VM = '00000000-0000-0000-0000-000000000001'
 
 
 class ParallelsTransportTests(unittest.TestCase):
+    def test_saved_uuid_matches_braced_inventory_and_ambiguous_names_fail(self):
+        client = Parallels('/fixture/prlctl')
+        row = dict(uuid='{' + VM + '}', name='Dedicated test', status='stopped')
+        with patch.object(client, 'inventory', return_value=[row]):
+            self.assertEqual(client.selected(VM), row)
+        with patch.object(client, 'inventory', return_value=[row, dict(row, uuid='other')]):
+            with self.assertRaisesRegex(ValueError, 'exactly one'):
+                client.selected('Dedicated test')
+
     def test_windows_parameters_are_encoded_data_and_use_existing_interactive_user(self):
         client = Parallels('/fixture/prlctl')
         value = "a'; Stop-Process -Id 123; 'Unicode—value"

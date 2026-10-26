@@ -12,8 +12,8 @@ from .redaction import Redactor
 
 class ProjectBridge:
     def __init__(self, registry, key=None):
-        self.registry, self.key = registry, key
-        self.row, self.descriptor = registry.resolve(key)
+        self.registry, self.key = registry, key or registry.read().get('selected')
+        self.row, self.descriptor = registry.resolve(self.key)
         self.root = Path(self.row['root'])
         capabilities = self.descriptor['capabilities']
         self.platforms = tuple(capabilities['platforms'])
@@ -60,7 +60,9 @@ class ProjectBridge:
         from .settings import SettingsStore
         account_defaults = SettingsStore(self.registry.directory).account_defaults(
             descriptor['project_id'], descriptor.get('account_fields', {}))
-        payload = json.dumps(dict(schema=1, action=action, values=values, account_defaults=account_defaults))
+        payload = json.dumps(dict(schema=1, action=action, values=values, account_defaults=account_defaults,
+            settings_profile=str(self.registry.directory / 'projects' / self.key / 'profile.json'),
+            manager_checkout=str(self.runner_directory)))
         from .credentials import reject_secrets
         reject_secrets(values)
         if cancelled():

@@ -1,0 +1,12 @@
+Font Awesome Free 6.7.2 by Fonticons, Inc. (https://fontawesome.com).
+Icons: windows, linux, apple, android, github, docker.
+Source: https://github.com/FortAwesome/Font-Awesome/tree/6.7.2/svgs/brands
+Copyright 2024 Fonticons, Inc.
+SVG icons licensed under CC BY 4.0:
+https://creativecommons.org/licenses/by/4.0/
+See the bundled LICENSE.txt for the upstream license and trademark notice.
+
+The SVG files are unmodified, including their attribution comments. The UI
+renders them in the current text color and scales them to fit an 18px badge.
+Brand icons identify only their corresponding platform, product or service;
+they do not imply endorsement. No fonts or third-party runtime are bundled.

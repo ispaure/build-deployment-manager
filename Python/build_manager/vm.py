@@ -16,6 +16,19 @@ from .profiles import save_json
 from .redaction import Redactor
 
 
+def dedicated_guest(kind, checkout=None):
+    """Read the owned registration without starting or probing the guest OS."""
+    classes = {'linux': LinuxVM, 'windows': WindowsVM}
+    if kind not in classes:
+        raise ValueError('Choose linux or windows for a dedicated test machine.')
+    checkout = checkout or Path(__file__).resolve().parents[2]
+    vm = classes[kind](checkout)
+    if not vm.receipt():
+        return ''
+    record, row = vm.selected()
+    return record['uuid'] if record and row else ''
+
+
 class VM:
     """Reuse our recorded guest, register its relocated bundle, or create it missing.
 
