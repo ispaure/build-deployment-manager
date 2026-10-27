@@ -39,7 +39,17 @@ class AppleSimulators:
     def boot(self, device):
         UUID(device)
         self.invoke('boot', device)
-        self.invoke('bootstatus', device, '-b', timeout=180)
+        try:
+            self.invoke('bootstatus', device, '-b', timeout=180)
+        except subprocess.TimeoutExpired:
+            rows = [row for items in self.devices()['devices'].values()
+                    for row in items if row['udid'] == device]
+            if len(rows) != 1 or rows[0]['state'] != 'Booted':
+                raise
+            # simctl can hang after completing boot. Recheck the exact booted
+            # device once, requiring a real successful exit; never reboot it or
+            # infer readiness from partial stdout/the inventory state alone.
+            self.invoke('bootstatus', device, '-b', timeout=30)
 
     def matching(self, device, name):
         UUID(device)

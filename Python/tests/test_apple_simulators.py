@@ -9,6 +9,33 @@ DEVICE = '00000000-0000-0000-0000-000000000001'
 
 
 class SimulatorLeaseTests(unittest.TestCase):
+    def test_timed_out_completion_is_rechecked_only_for_exact_booted_device(self):
+        import subprocess
+        from unittest.mock import patch
+        for state in ('Booted', 'Booting', 'Shutdown'):
+            with self.subTest(state=state):
+                client = AppleSimulators(runner=lambda *a, **k: None)
+                timeout = subprocess.TimeoutExpired('bootstatus', 180, output='already booted')
+                with patch.object(client, 'devices', return_value={'devices': {'runtime': [dict(udid=DEVICE, state=state)]}}), \
+                     patch.object(client, 'invoke', side_effect=['', timeout, '']) as invoke:
+                    if state == 'Booted':
+                        client.boot(DEVICE)
+                        self.assertEqual([call.kwargs for call in invoke.call_args_list], [{}, {'timeout': 180}, {'timeout': 30}])
+                    else:
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            client.boot(DEVICE)
+                    self.assertEqual(sum(call.args[0] == 'boot' for call in invoke.call_args_list), 1)
+
+    def test_repeated_completion_timeout_never_implies_readiness(self):
+        import subprocess
+        from unittest.mock import patch
+        client = AppleSimulators(runner=lambda *a, **k: None)
+        timeout = subprocess.TimeoutExpired('bootstatus', 180)
+        with patch.object(client, 'devices', return_value={'devices': {'runtime': [dict(udid=DEVICE, state='Booted')]}}), \
+             patch.object(client, 'invoke', side_effect=['', timeout, timeout]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                client.boot(DEVICE)
+
     def test_different_ownership_label_never_shuts_down_or_deletes_device(self):
         calls = []
         def runner(command, **kwargs):

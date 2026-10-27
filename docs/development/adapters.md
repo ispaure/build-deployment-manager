@@ -198,3 +198,10 @@ evidence. Portable tiny-archive/fake-compiler/testbed fixtures cover cold/reused
 preparation, invalid hashes, changed artifacts/toolchains, cancellation and
 caller-selected arguments. Consumer tests must verify retained acceptance and
 owned cleanup; real native runtime acceptance remains a separate check.
+
+`AppleSimulators.boot` starts the supplied UUID once and waits up to 180 seconds
+for `simctl bootstatus`. If that inspection times out, it rechecks inventory and
+repeats only `bootstatus`, once with a 30-second limit, for the same uniquely
+identified device in `Booted` state. Readiness requires a successful command
+exit; partial output or inventory alone cannot satisfy it. A second timeout or
+any other state remains a failure. Caller-owned leases and cleanup are unchanged.
