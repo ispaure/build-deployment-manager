@@ -2,6 +2,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -65,3 +66,33 @@ class EvidenceTests(unittest.TestCase):
         for changes in ({'effect': 'deploy'}, {'kind': 'build'}, {'always': True}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(phase, **changes)
+
+    def test_execution_probe_rejects_changed_inputs_and_does_not_certify_stale_key(self):
+        self.execute('first')
+        output = self.root / 'probe'
+        output.mkdir()
+        phase = Phase('probe', ('python', 'tests.py'), str(self.root), effect='test',
+            reuse_key='a' * 64, reuse_probe=(sys.executable, '-c', 'print("changed")'))
+        calls = []
+        row = self.cache.execute(phase, output, lambda: calls.append('fresh') or dict(status='passed'))
+        self.assertEqual(calls, ['fresh'])
+        self.assertNotIn('reused', row)
+
+    def test_equivalent_pending_suite_does_not_occupy_independent_worker(self):
+        from build_manager import Executor, Plan
+        marker, artifact, count = self.root/'independent', self.root/'report', self.root/'calls'
+        code = ('from pathlib import Path;import time;'
+            f'Path({str(count)!r}).write_text("executed");'
+            'deadline=time.monotonic()+3\n'
+            f'while not Path({str(marker)!r}).exists() and time.monotonic()<deadline: time.sleep(.01)\n'
+            f'assert Path({str(marker)!r}).exists(), "equivalent suite blocked independent worker"\n'
+            f'Path({str(artifact)!r}).write_text("verified")')
+        first = Phase('first', (sys.executable, '-c', code), str(self.root), effect='test',
+                      reuse_key='a'*64, artifacts=(str(artifact),))
+        independent = Phase('independent', (sys.executable, '-c',
+            f'from pathlib import Path;Path({str(marker)!r}).touch()'), str(self.root), effect='test')
+        plan = Plan('Fixture', 'equivalent suites', {}, (first, replace(first, id='equivalent'), independent),
+                    str(self.root/'workspace'), max_workers=2)
+        report = Executor(evidence_directory=self.root/'cache').run(plan, self.root/'result')
+        self.assertEqual(report['status'], 'passed', report)
+        self.assertTrue(report['phases'][1]['reused'])

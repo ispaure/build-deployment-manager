@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import subprocess
 import time
 from contextlib import contextmanager
 
@@ -77,6 +78,17 @@ class EvidenceCache:
     def execute(self, phase, output, action, *, cancelled=lambda: False):
         if not phase.reuse_key:
             return action()
+        if phase.reuse_probe:
+            # The project rechecks source/toolchain inputs at execution time.
+            # A stale plan must neither reuse nor certify the old input key.
+            try:
+                probe = subprocess.run(phase.reuse_probe, cwd=phase.cwd,
+                    env=dict(os.environ, **phase.environment), capture_output=True,
+                    timeout=min(30, phase.timeout), check=True)
+                if probe.stdout.decode().strip() != phase.reuse_key or cancelled():
+                    return action()
+            except (OSError, ValueError, subprocess.SubprocessError):
+                return action()
         key = self.key()
         with self.locked(self.directory / (phase.reuse_key + '.lock'), cancelled) as acquired:
             if not acquired:

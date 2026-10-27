@@ -181,6 +181,10 @@ class Executor:
                         changed = False
                         for phase in list(pending):
                             if len(running)>=plan.max_workers:break
+                            if phase.reuse_key and any(active.reuse_key == phase.reuse_key for active, _ in running.values()):
+                                # Let the first equivalent suite produce its receipt without
+                                # occupying another worker waiting on the same evidence lock.
+                                continue
                             if not self.cancelled.is_set() and time.monotonic() < retry_after.get(phase.id, 0):continue
                             if any(name not in rows or rows[name]['status'] in {'running', 'retrying'} for name in (*phase.dependencies, *phase.waits_for)):continue
                             if phase.always and running and not phase.dependencies and not phase.waits_for:continue

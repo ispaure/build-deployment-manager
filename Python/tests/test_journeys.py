@@ -215,6 +215,7 @@ class JourneyTests(unittest.TestCase):
             phase.pop('retry_delay')
             phase.pop('reuse_key')
             phase.pop('approval_required')
+            phase.pop('reuse_probe')
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
 
     def test_step_display_metadata_round_trips_and_changes_review_identity(self):

@@ -68,3 +68,9 @@ contracts cover these paths, not general acceptance of every live provider.
 
 POSIX cancellation retains the declared process-group grace even if its wrapper
 exits first, allowing descendants to finish owned cleanup before escalation.
+
+A project may add a structured `reuse_probe` command to recheck its key immediately
+before receipt lookup. A failed or differing probe executes tests afresh without
+certifying the stale key. Equivalent keyed phases in one plan wait in the pending
+queue while the first runs; they do not consume workers blocked on the same
+evidence lock. Other independent branches can use those workers.

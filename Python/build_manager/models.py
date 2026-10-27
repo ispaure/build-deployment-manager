@@ -33,10 +33,15 @@ class Phase:
     retry_delay: float = 30
     reuse_key: str = ''
     approval_required: bool = True
+    reuse_probe: tuple[str, ...] = ()
 
     def __post_init__(self):
         if type(self.approval_required) is not bool or not self.approval_required and self.effect != 'deploy':
             raise ValueError('Only explicit device deployment may omit a separate approval.')
+        if (not isinstance(self.reuse_probe, (list, tuple)) or
+                any(not isinstance(arg, str) or not arg or '\x00' in arg for arg in self.reuse_probe)
+                or self.reuse_probe and not self.reuse_key):
+            raise ValueError('An evidence probe needs an explicit reuse key and structured arguments.')
         if (not isinstance(self.reuse_key, str) or self.reuse_key and
                 (not re.fullmatch(r'[0-9a-f]{64}', self.reuse_key) or self.always
                  or self.effect != 'test' or self.kind != 'test')):
@@ -113,6 +118,8 @@ class Plan:
         for phase in data['phases']:
             if phase['approval_required']:
                 phase.pop('approval_required')
+            if not phase['reuse_probe']:
+                phase.pop('reuse_probe')
             if not phase['retry_exit_codes']:
                 phase.pop('retry_exit_codes')
                 phase.pop('retry_delay')
