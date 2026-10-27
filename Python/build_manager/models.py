@@ -36,8 +36,10 @@ class Phase:
     reuse_probe: tuple[str, ...] = ()
 
     def __post_init__(self):
-        if type(self.approval_required) is not bool or not self.approval_required and self.effect != 'deploy':
-            raise ValueError('Only explicit device deployment may omit a separate approval.')
+        if type(self.approval_required) is not bool or not self.approval_required and not (
+                self.effect == 'deploy' or self.effect == 'upload' and self.provider in {'firebase', 'testflight'}
+                or self.effect in {'upload', 'publish', 'dispatch'} and self.provider == 'github'):
+            raise ValueError('Only explicit device deployment, tester upload or GitHub action may omit a separate approval.')
         if (not isinstance(self.reuse_probe, (list, tuple)) or
                 any(not isinstance(arg, str) or not arg or '\x00' in arg for arg in self.reuse_probe)
                 or self.reuse_probe and not self.reuse_key):

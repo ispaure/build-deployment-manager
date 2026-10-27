@@ -159,7 +159,7 @@ class RunView(QWidget):
         inspector_layout.addWidget(self.selection_heading)
         inspector_layout.addWidget(self.selection_info)
         self.substeps = QTreeWidget()
-        self.substeps.setHeaderLabels(['Task / test', 'State', 'Time / share'])
+        self.substeps.setHeaderLabels(['Task / test', 'State', 'Time'])
         self.substeps.setAccessibleName('Expand the selected execution step to inspect reported tests')
         self.substeps.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.substeps.header().setStretchLastSection(False)
@@ -513,11 +513,13 @@ class RunView(QWidget):
                 phase = self.phases[key]
                 row.setText(0, getattr(phase, 'label', '') or key.rsplit('.', 1)[-1].replace('_', ' ').replace('-', ' ').capitalize())
                 row.setToolTip(0, title(phase))
-                row.setText(1, fact.get('status', 'planned').capitalize())
+                row.setText(1, 'Reused' if fact.get('reused') else fact.get('status', 'planned').capitalize())
                 row.setToolTip(1, f'{len(cases)} reported tests')
                 row.setText(2, duration(fact.get('seconds')))
                 update_test_children(row, key, fact, self.phases[key], force=force)
-                time_share(self.substeps, row, fact.get('seconds'), sum(info.get('seconds') or 0 for info in live.values()))
+                time_share(self.substeps, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
+                           sum(live.get(name, {}).get('seconds') or 0 for name in keys if not live.get(name, {}).get('reused')),
+                           reused=fact.get('reused', False))
                 count += visible_tree_rows(row)
             self.substeps.setFixedHeight(min(240, max(150,
                 self.substeps.header().height() + (self.substeps.fontMetrics().height() + 12) * count + 4)))

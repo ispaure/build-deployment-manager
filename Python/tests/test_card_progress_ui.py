@@ -25,9 +25,10 @@ class CardProgressTests(unittest.TestCase):
             canvas.reset(Plan('Fixture', 'device', {}, (phase,), directory))
             self.assertIsNone(canvas.cards['install'][0].findChild(QLabel, 'approvalBadge'))
 
-    def test_time_share_text_remains_above_bar_at_larger_font_sizes(self):
+    def test_time_share_paints_duration_in_cell_at_larger_font_sizes(self):
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
-        from build_manager.workflow_ui import time_share
+        from build_manager.workflow_ui import time_share, TimeShareDelegate, timing_duration
         tree = QTreeWidget()
         self.addCleanup(tree.close)
         tree.setColumnCount(3)
@@ -41,12 +42,22 @@ class CardProgressTests(unittest.TestCase):
             time_share(tree, row, 16.37, 40)
             tree.show()
             self.app.processEvents()
-            cell = tree.itemWidget(row, 2)
-            self.assertEqual(cell.label.text(), '16.37s · 41%')
-            self.assertFalse(cell.bar.isTextVisible())
-            self.assertGreaterEqual(cell.label.height(), cell.label.fontMetrics().height())
-            self.assertGreater(cell.bar.y(), cell.label.geometry().bottom())
-            self.assertGreaterEqual(tree.visualItemRect(row).height(), cell.sizeHint().height())
+            self.assertEqual(row.text(2), '16.37s')
+            self.assertAlmostEqual(row.data(2, Qt.ItemDataRole.UserRole), 16.37 / 40)
+            self.assertIn('40.9%', row.data(2, Qt.ItemDataRole.AccessibleTextRole))
+            self.assertIsNone(tree.itemWidget(row, 2))
+            self.assertIsInstance(tree.itemDelegateForColumn(2), TimeShareDelegate)
+            self.assertGreaterEqual(tree.visualItemRect(row).height(), tree.fontMetrics().height())
+            self.assertFalse(tree.grab().isNull())
+        for seconds, expected in ((None, '—'), (0, '0s'), (.000125, '0.12ms'),
+                                  (.0125, '12.5ms'), (.999, '999ms'), (1, '1s'), (120, '120s')):
+            self.assertEqual(timing_duration(seconds), expected)
+        time_share(tree, row, None, 40)
+        self.assertIsNone(row.data(2, Qt.ItemDataRole.UserRole))
+        self.assertEqual(row.text(2), '—')
+        time_share(tree, row, 0, 0)
+        self.assertIsNone(row.data(2, Qt.ItemDataRole.UserRole))
+        self.assertEqual(row.text(2), '0s')
 
     def test_group_progress_tracks_completed_subtasks_and_resets(self):
         with TemporaryDirectory() as directory:

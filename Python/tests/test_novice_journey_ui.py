@@ -54,7 +54,7 @@ class NoviceJourneyTests(unittest.TestCase):
             self.panel.continue_run.click()
             self.wait_idle()
 
-    def test_choose_review_cancel_approve_independently_and_return_from_history(self):
+    def test_choose_review_start_delivers_and_return_from_history(self):
         fixture = fixtures.ToolbarGoalTests()
         fixture.app = self.app
         fixture.setUp()
@@ -82,22 +82,16 @@ class NoviceJourneyTests(unittest.TestCase):
         self.wait_idle()
         original = panel.result
         first = json.loads(original.read_text())
-        self.assertEqual(first['status'], 'awaiting_review')
-        self.capture('03-needs-approval')
-        self.review()
+        self.assertEqual(first['status'], 'passed')
+        self.capture('03-delivered')
         self.assertEqual(panel.stages.currentIndex(), 2)
-        self.assertEqual(panel.run_view.outcome, 'awaiting_review')
-        self.assertTrue(panel.continue_run.isEnabled())
-        self.assertFalse((fixture.root / 'firebase.json').exists())
-        self.review('firebase')
-        partial = json.loads(original.read_text())
-        self.assertEqual(partial['status'], 'awaiting_review')
+        self.assertEqual(panel.run_view.outcome, 'passed')
+        self.assertFalse(panel.continue_run.isEnabled())
         self.assertTrue((fixture.root / 'firebase.json').exists())
-        self.assertFalse((fixture.root / 'testflight.json').exists())
+        self.assertTrue((fixture.root / 'testflight.json').exists())
         panel.run_view.inspect_summary_phase('firebase')
         panel.run_view.tabs.setCurrentWidget(panel.run_view.delivery_page)
-        self.capture('04-partial-delivery')
-        self.review('testflight')
+        self.capture('04-delivery-evidence')
         report = json.loads(original.read_text())
         self.assertEqual(report['status'], 'passed')
         self.assertEqual(panel.run_view.workflow_action.text(), '2 of 2 destinations delivered · 1 retained file')

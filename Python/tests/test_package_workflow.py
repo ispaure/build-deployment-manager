@@ -19,6 +19,37 @@ FIELD = dict(id='variant', label='Device package', kind='choice', default='debug
 
 
 class PackageWorkflowTests(unittest.TestCase):
+    def test_optional_builds_use_only_their_platform_checks_and_inherit_package_gates(self):
+        capability = deepcopy(CAPABILITY)
+        capability['platforms']['windows'] = dict(operation='Test', backend='VM')
+        capability['destinations']['devices']['testing_optional'] = True
+        for selected, expected in ((['windows'], ('source',)),
+                                   (['windows', 'ios'], ('platform.ios',))):
+            proposal = propose(capability=capability, goal='deliver', revision='HEAD', platforms=selected,
+                destinations=['devices'], backends={})
+            nodes = {p.id: p for p in proposal.phases}
+            self.assertEqual(nodes['package.debug'].dependencies, expected)
+            self.assertEqual(nodes['platform.windows'].dependencies, ('source',))
+            self.assertFalse(proposal.blockers)
+        proposal = propose(capability=capability, goal='deliver', revision='HEAD', platforms=['ios', 'windows'],
+            destinations=['devices'], backends={}, values={'variant': 'release'})
+        nodes = {p.id: p for p in proposal.phases}
+        self.assertEqual(nodes['package.release'].dependencies, ('platform.ios',))
+        self.assertEqual(nodes['package.device'].dependencies, ('package.release',))
+
+    def test_shared_package_keeps_required_gates_in_both_destination_orders(self):
+        capability = deepcopy(CAPABILITY)
+        capability['destinations']['devices'].update(testing_optional=True, package='store')
+        capability['destinations']['devices'].pop('package_variants')
+        for destinations in (['devices', 'testflight'], ['testflight', 'devices']):
+            proposal = propose(capability=capability, goal='deliver', revision='HEAD', platforms=[],
+                destinations=destinations, backends={})
+            nodes = {p.id: p for p in proposal.phases}
+            self.assertEqual(nodes['package.release'].dependencies, ('missing.ios',))
+            self.assertEqual(nodes['package.store'].dependencies, ('package.release',))
+            self.assertTrue(nodes['package.release'].issue)
+            self.assertEqual(sum(p.id == 'package.release' for p in proposal.phases), 1)
+
     def proposal(self, **kwargs):
         return propose(capability=CAPABILITY, goal='deliver', revision='HEAD', platforms=['ios'],
                        destinations=['testflight','devices'], backends={}, **kwargs)
@@ -75,6 +106,17 @@ class PackageWorkflowTests(unittest.TestCase):
         positions = layout_positions(steps)
         self.assertEqual(positions['upload'][1], positions['export'][1])
         self.assertLess(positions['upload'][1], positions['devices'][1])
+
+    def test_captured_release_packages_stay_unblocked_and_hosted_execution_requires_commit(self):
+        for backend in ('Local', 'GitHub'):
+            capability = deepcopy(CAPABILITY)
+            capability['platforms']['ios']['backend'] = backend
+            proposal = propose(capability=capability, goal='deliver', revision='working-tree',
+                platforms=['ios'], destinations=['testflight','devices'], backends={}, values={'variant':'release'})
+            self.assertEqual('source' in {b.id for b in proposal.blockers}, backend == 'GitHub')
+            self.assertFalse(any('Delivery policy may require' in m for m in proposal.messages))
+            if backend == 'Local':
+                self.assertEqual(proposal.messages, ())
 
     def test_headings_group_delivery_columns_and_source_rules_explain_selected_destinations(self):
         import os

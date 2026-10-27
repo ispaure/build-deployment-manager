@@ -90,7 +90,11 @@ class GroupedWorkflowTests(unittest.TestCase):
             proposal = propose(capability=capability, goal='deliver', revision='HEAD', platforms=['android', 'ios'],
                 destinations=['firebase', 'testflight'], backends={}, recipients={'people': ['Tablet', 'Phone']})
             overview = group_workflow(plan, capability, proposal)
-            self.assertEqual(overview.phases, proposal.phases)
+            self.assertEqual([(node.id, node.label, node.dependencies) for node in overview.phases],
+                             [(node.id, node.label, node.dependencies) for node in proposal.phases])
+            # This captured plan keeps its original approval policy even though
+            # fresh configuration previews now authorize TestFlight through Start.
+            self.assertTrue(next(node for node in overview.phases if node.id == 'deliver.testflight').approval_required)
             self.assertEqual(overview.members['deliver.firebase.0'], ('firebase',))
             self.assertEqual(overview.references['deliver.firebase.1'], ('firebase',))
             self.assertIn('did not declare', overview.notes['deliver.firebase.1'])

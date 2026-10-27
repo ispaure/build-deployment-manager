@@ -96,7 +96,9 @@ destination identity must identify recipients, assets and device IDs sufficientl
 for approval. Never include credential contents. Keep source/artifact policy in
 the owning project, not in manager-specific commands.
 
-Ready external steps pause for review. Grouped review creates distinct approvals
+Ready external steps with `approval_required=True` pause for review. Fresh GUI
+plans authorize selected Firebase, TestFlight and GitHub actions through Start,
+as described below. Grouped review creates distinct approvals
 for selected eligible steps; unselected steps remain pending. Later-dependent
 effects need review after their prerequisites exist. Approvals stay session-only
 and artifact-bound. Passed preparation is reused after checksum checks. Unknown
@@ -237,7 +239,11 @@ Debug and Release package IDs prevent the overview from implying false reuse.
 Destinations and packages may declare `source_policy`: `captured` (default),
 `committed`, or `clean-checkout`. The overview explains selected requirements
 before preparation. The project adapter remains responsible for enforcement;
-metadata neither commits changes nor authorizes publication.
+metadata neither commits changes nor authorizes publication. Use `captured` for
+local builds and Firebase/TestFlight delivery; reserve committed-source
+requirements for execution or publication that needs a Git revision, such as
+GitHub-hosted workflows. Release signing and test gates still apply to captured
+current files.
 
 Executable phases can provide optional `label`, `description`, and `section`
 (`source`, `platforms`, `delivery`) for readable cards and grouped headings.
@@ -253,13 +259,28 @@ are selected, their required gates remain prerequisites of dependent delivery.
 Projects retain package policy: Logistics permits explicit Debug device builds
 without tests, while Release device packages retain native acceptance.
 
+The non-executable preview limits optional package inputs to selected checks for
+that package's declared platforms, excluding platforms covered by parent packages.
+Required destinations still expose missing platform gates, including when they
+share a package with an optional destination. This sketch does not change the
+executable destination validation above or infer sharing between host checks:
+the project planner owns exact validation steps, dependencies and reuse policy.
+
 An explicit `deploy` phase may set `approval_required=False` for an already
-selected device. The flag is rejected for uploads, publication, dispatch and
-other effects; omission preserves the existing review boundary and legacy plan
-identity. Artifact verification and durable operation intent still precede the
-installation. Unknown outcomes still require reconciliation; disabling the prompt
-does not permit repeating an uncertain effect. Captured older plans retain their
-original review requirement.
+selected device. An explicit `upload` phase may also set it for the `firebase` or
+`testflight` provider. GitHub `upload`, `publish` and `dispatch` phases can also
+omit separate approval. Fresh GUI plans bind these actions to Start before
+displaying Review: the provider comes from the phase, its unique declared
+destination mapping, or a dispatch declared under a `GitHub` execution backend, never from command
+arguments. Inherited effects are made explicit when bound. Review displays that
+Start authorizes the actions after prerequisites pass. GitHub release delivery
+still requires its test gates; a hosted test launch runs before the tests whose
+results it supplies. Other providers retain their separate approval gates. Omission preserves the existing
+review boundary and legacy plan identity. Artifact verification and durable
+operation intent still precede each effect. Unknown outcomes still require
+reconciliation; disabling the prompt does not permit repeating an uncertain
+effect. Captured older plans retain their original review requirement; loading
+history never applies the fresh-plan authorization policy.
 
 Single-task and empty overview cards select their inspector without opening an
 empty nested page. Connection tasks belong with their recipient, rather than the

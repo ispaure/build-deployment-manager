@@ -84,7 +84,6 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
 
     def add_package(key, destination):
         node_id = 'package.' + key
-        if any(node.id == node_id for node in nodes):return node_id
         row = capability['packages'][key]
         if row.get('source_policy', 'captured') != 'captured':
             label = capability['destinations'][destination]['label'].split(' · ')[0]
@@ -94,11 +93,21 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
         covered = {target for parent in row.get('dependencies', [])
                    for target in capability['packages'][parent]['platforms']}
         optional = capability['destinations'][destination].get('testing_optional')
-        required = (tuple(checks) if optional else
-                    platform_requirements([target for target in row['platforms'] if target not in covered]))
+        targets = [target for target in row['platforms'] if target not in covered]
+        required = platform_requirements([target for target in targets if target in platforms] if optional else targets)
+        dependencies = tuple(dict.fromkeys((*required, *parents))) or ('source',)
+        issue = bool(set(row['platforms']) - set(platforms)) and not optional
+        # A package shared by optional and required destinations must retain the
+        # union of their requirements, regardless of destination selection order.
+        for index, node in enumerate(nodes):
+            if node.id == node_id:
+                dependencies = tuple(dict.fromkeys((*node.dependencies, *dependencies)))
+                if len(dependencies) > 1:
+                    dependencies = tuple(parent for parent in dependencies if parent != 'source')
+                nodes[index] = replace(node, dependencies=dependencies, issue=node.issue or issue)
+                return node_id
         nodes.append(ProposedStep(node_id, row['label'], row.get('description', ''),
-            tuple(dict.fromkeys((*required, *parents))) or ('source',), 'delivery', destination,
-            bool(set(row['platforms']) - set(platforms)) and not optional, platforms=tuple(row['platforms'])))
+            dependencies, 'delivery', destination, issue, platforms=tuple(row['platforms'])))
         return node_id
 
     if goal == 'deliver':
@@ -107,7 +116,8 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             if row.get('source_policy', 'captured') != 'captured':
                 source_requirements[row['label'].split(' · ')[0]] = row['source_policy']
             from .journeys import destination_package
-            required = tuple(checks) if row.get('testing_optional') else platform_requirements(row['platforms'])
+            required = platform_requirements([target for target in row['platforms'] if target in platforms]
+                if row.get('testing_optional') else row['platforms'])
             missing = set() if row.get('testing_optional') else set(row['platforms']) - set(platforms)
             if missing:
                 messages.append(row['label'] + ' needs: ' + ', '.join(sorted(missing)) + '.')
@@ -137,9 +147,12 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                         recipient=recipient, approval_required=row.get('approval_required', True)))
             else:
                 issue = bool(missing) or bool(row.get('recipient_field'))
+                start_upload = (name in {'firebase', 'testflight', 'github'} and not row.get('recipient_field')
+                                and not row.get('approval_required', False))
                 nodes.append(ProposedStep('deliver.' + name, label,
-                    'Choose devices in Delivery' if row.get('recipient_field') else 'Review & approve before delivery',
-                    (prepare,), 'delivery', name, issue, platforms=tuple(row['platforms'])))
+                    'Choose devices in Delivery' if row.get('recipient_field') else
+                    'Start authorizes delivery after prerequisites pass' if start_upload else 'Review & approve before delivery',
+                    (prepare,), 'delivery', name, issue, platforms=tuple(row['platforms']), approval_required=not start_upload))
         if not destinations:
             nodes.append(ProposedStep('choose-delivery', 'Choose destinations', 'Select where successful builds should go.',
                                       tuple(checks) or ('choose-platforms',), 'delivery', issue=True))
@@ -150,11 +163,9 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
             if names and (revision == 'working-tree' or policy == 'clean-checkout'):
                 messages.append(', '.join(names) + (' requires committed source and a clean checkout. Commit your intended edits or set them aside before release.'
                     if policy == 'clean-checkout' else ' requires committed source. Choose Latest commit to exclude edits, or commit the edits you want to deliver.'))
-        if revision == 'working-tree' and not source_requirements:
-            messages.append('Delivery policy may require committed source. Latest commit excludes your uncommitted edits.')
-    if revision == 'working-tree' and any(backends.get(target) == 'GitHub' for target in platforms):
+    if revision == 'working-tree' and any(backends.get(target, capability['platforms'][target]['backend']) == 'GitHub' for target in platforms):
         messages.append('GitHub checks use committed source. Choose Latest commit or a specific revision to exclude local edits.')
-    if revision == 'working-tree' and (source_requirements or any(backends.get(target) == 'GitHub' for target in platforms)):
+    if revision == 'working-tree' and (source_requirements or any(backends.get(target, capability['platforms'][target]['backend']) == 'GitHub' for target in platforms)):
         blockers.insert(0, ChoiceBlocker('source', 'Choose committed source…', 'source'))
         nodes[0] = replace(nodes[0], issue=True)
     if any(blocker.id.startswith('missing.') for blocker in blockers):

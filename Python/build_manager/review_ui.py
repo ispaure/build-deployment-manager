@@ -91,7 +91,7 @@ class ReviewPlanView(QWidget):
         self.task_heading.setStyleSheet('font-weight: 600;')
         side.addWidget(self.task_heading)
         self.tasks = QTreeWidget()
-        self.tasks.setHeaderLabels(['Workflow card / task', 'State', 'Time / share'])
+        self.tasks.setHeaderLabels(['Workflow card / task', 'State', 'Time'])
         self.tasks.setAccessibleName('Tasks in the selected workflow card and its prerequisites')
         self.tasks.setRootIsDecorated(True)
         self.tasks.setWordWrap(False)
@@ -381,22 +381,24 @@ class ReviewPlanView(QWidget):
 
     def refresh_rows(self, *, force_tests=False):
         self.tasks.blockSignals(True)
-        total = sum(fact.get('seconds') or 0 for fact in self.facts.values())
+        total = sum(fact.get('seconds') or 0 for fact in self.facts.values() if not fact.get('reused'))
         card_totals = {group: sum(self.facts.get(key, {}).get('seconds') or 0 for key in self.rows
-                      if self.task_owners.get(key, '__unassigned__') == group) for group in self.card_rows}
+                      if self.task_owners.get(key, '__unassigned__') == group and not self.facts.get(key, {}).get('reused')) for group in self.card_rows}
         states = display_states(self.plan, self.facts, preview=not bool(self.facts))
         for key, row in self.rows.items():
             state, reason = states[key]
-            row.setText(1, {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
+            fact = self.facts.get(key, {})
+            row.setText(1, 'Reused' if fact.get('reused') else {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
             elapsed = step_time(self.facts.get(key, {}), state) or 'Not recorded'
             row.setText(2, '—' if elapsed in {'Not started', 'Not recorded'} else elapsed)
-            row.setToolTip(2, elapsed)
             row.setToolTip(1, reason)
             row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
                 if self.is_problem(key) else self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
-            fact = self.facts.get(key, {})
             update_test_children(row, key, fact, self.phases[key], force=force_tests)
-            time_share(self.tasks, row, fact.get('seconds'), card_totals.get(self.task_owners.get(key, '__unassigned__')))
+            time_share(self.tasks, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
+                       card_totals.get(self.task_owners.get(key, '__unassigned__')), reused=fact.get('reused', False))
+            if fact.get('seconds') is None and not fact.get('reused'):
+                row.setToolTip(2, elapsed)
             cases = fact.get('tests') or fact.get('live_tests', ())
             if cases:
                 row.setToolTip(1, row.text(1) + f' · {len(cases)} reported tests')
@@ -404,7 +406,7 @@ class ReviewPlanView(QWidget):
                 row.setToolTip(1, 'Running: ' + fact['current_test']['name'])
         for group, card in self.card_rows.items():
             keys = [key for key in self.rows if self.task_owners.get(key, '__unassigned__') == group]
-            seconds = [self.facts[key]['seconds'] for key in keys if self.facts.get(key, {}).get('seconds') is not None]
+            seconds = [self.facts[key]['seconds'] for key in keys if self.facts.get(key, {}).get('seconds') is not None and not self.facts[key].get('reused')]
             time_share(self.tasks, card, sum(seconds) if seconds else None, total)
             statuses = {states[key][0] for key in keys}
             state = next((value for value in ('failed', 'error', 'running', 'awaiting_review', 'blocked', 'queued', 'planned') if value in statuses), next(iter(statuses), 'planned'))
@@ -489,7 +491,7 @@ class ReviewPlanView(QWidget):
             count = sum(len(getattr(phase, 'test_files', ())) for phase in self.phases.values())
             self.context_info.setText(f'{len(self.phases)} execution steps across {len(self.flow.grouped.phases)} workflow cards.\n'
                 + (f'{count} declared test files are available in the tree.\n' if count else '')
-                + 'Select a card, task or test to inspect its details. Time bars show each item’s share of its parent’s reported time.')
+                + 'Select a card, task or test to inspect its details. Time bars show each item’s share of measured time at its level; expanded children total 100%.')
             self.context_info.show()
             if self.flow.selected == 'source':
                 self.selection_heading.setText('Captured source')

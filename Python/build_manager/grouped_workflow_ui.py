@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QSplitter, QVBoxLayout, QWidget, QSizePolicy)
 from .grouped_workflow import group_workflow
 from .plan_summary import captured_choices, phase_title, summary_rows
-from .workflow_ui import FlowCanvas, FitMapView, WorkflowFlow, display_states, effect_label, blocking_prerequisite, orientation_picker
+from .workflow_ui import FlowCanvas, FitMapView, WorkflowFlow, display_states, effect_label, blocking_prerequisite, orientation_picker, pointer_follow_picker
 from .ui_components import style_button, ViewportStack
 
 
@@ -43,6 +43,9 @@ class GroupedFlowView(QWidget):
         self.map = FitMapView(self.canvas)
         self.orientation = orientation_picker(self.map)
         toolbar.addWidget(self.orientation)
+        if not nested_navigation:
+            self.follow_mouse = pointer_follow_picker(self.map)
+            toolbar.addWidget(self.follow_mouse)
         self.map.setMinimumHeight(180)
         for title, callback in [('Fit', self.fit), ('+', lambda: self.map.zoom(1.2)), ('−', lambda: self.map.zoom(1 / 1.2))]:
             button = QPushButton(title)
@@ -146,6 +149,7 @@ class GroupedFlowView(QWidget):
         self.timer.start(0)
 
     def fit(self):
+        self.map._end_pointer_follow()
         self.map.fit_mode = True
         self.map.fit_map(force=True)
 

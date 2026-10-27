@@ -1,13 +1,31 @@
 """Read-only, keyboard-selectable dependency cards shared by review and execution."""
 from PySide6.QtCore import Qt, QPointF, Signal, QTimer, QRectF, QEvent
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF, QTransform, QTextLayout, QTextOption
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen, QPolygonF, QTransform, QTextLayout, QTextOption
 from PySide6.QtWidgets import (QGridLayout, QLabel, QPushButton,
     QGraphicsScene, QGraphicsView, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget,
-    QComboBox, QHeaderView, QProgressBar, QStackedWidget, QTreeWidget, QTreeWidgetItem)
+    QComboBox, QHeaderView, QProgressBar, QStackedWidget, QToolTip, QTreeWidget, QTreeWidgetItem,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
+from .profiles import load_profile, save_profile
+from .registry import config_directory
 
 FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', 'skipped'}
 PENDING = {'queued', 'pending', 'planned'}
+SECTION_COLORS = {'Source': '#7296ca', 'Testing': '#71ab8b',
+                  'Delivery': '#d6aa64', 'Build / package': '#aa8ac4'}
+
+
+def section_tint(heading, palette):
+    color = QColor(SECTION_COLORS.get(heading, '#8998ac'))
+    color.setAlpha(30 if palette.window().color().lightness() >= 128 else 42)
+    return color
+
+
+def connection_color(palette, *, muted=False):
+    dark = palette.window().color().lightness() < 128
+    if muted:
+        return QColor('#777777' if dark else '#999999')
+    return QColor(Qt.GlobalColor.white) if dark else palette.text().color()
 
 
 def title(phase):
@@ -24,6 +42,10 @@ def effect_label(phase, plan):
     effect = phase.effect if phase.effect != 'inherit' else plan.effect
     if effect == 'deploy' and not getattr(phase, 'approval_required', True):
         return 'Deliver to selected device'
+    if effect == 'upload' and not getattr(phase, 'approval_required', True):
+        return 'Upload · authorized by Start'
+    if effect in {'publish', 'dispatch'} and not getattr(phase, 'approval_required', True):
+        return ('Publish' if effect == 'publish' else 'Launch checks') + ' · authorized by Start'
     return {'test': 'Run checks', 'inspect': 'Inspect files', 'build': 'Build / package',
             'upload': 'Upload · approval required', 'deploy': 'Deliver · approval required',
             'publish': 'Publish · approval required', 'dispatch': 'Launch checks · approval required'}[effect]
@@ -267,10 +289,35 @@ def step_time(fact, status):
 
 class FlowCard(QPushButton):
     focused = Signal()
+    hovered = Signal(bool)
+    keyboard_trace = Signal(bool)
+
+    def event(self, event):
+        # Floating help windows can steal hover from a graphics proxy. Card
+        # details remain available through selection and accessibility text.
+        if event.type() == QEvent.Type.ToolTip:
+            QToolTip.hideText()
+            return True
+        return super().event(event)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.hovered.emit(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.hovered.emit(False)
 
     def focusInEvent(self, event):
         super().focusInEvent(event)
         self.focused.emit()
+        if event.reason() in {Qt.FocusReason.TabFocusReason, Qt.FocusReason.BacktabFocusReason,
+                              Qt.FocusReason.ShortcutFocusReason}:
+            self.keyboard_trace.emit(True)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.keyboard_trace.emit(False)
 
     def sizeHint(self):
         hint = super().sizeHint()
@@ -330,51 +377,67 @@ class CardActivityLabel(QLabel):
         layout.endLayout()
 
 
-class TimeShare(QWidget):
-    """Keep timing text outside the native progress groove, at any font size."""
-
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 1, 4, 3)
-        layout.setSpacing(2)
-        self.label = QLabel()
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 1000)
-        self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(4)
-        layout.addWidget(self.label)
-        layout.addWidget(self.bar)
-        self.setAutoFillBackground(True)
+def timing_duration(seconds):
+    """Compact timing labels retain subsecond precision and comparable units."""
+    if seconds is None:
+        return '—'
+    value, unit = (seconds * 1000, 'ms') if 0 < seconds < 1 else (seconds, 's')
+    return f'{value:.2f}'.rstrip('0').rstrip('.') + unit
 
 
-def time_share(tree, row, seconds, total):
-    from .run_ui import duration
-    if seconds is None or not total or total <= 0:
-        tree.removeItemWidget(row, 2)
-        row.setText(2, duration(seconds))
+class TimeShareDelegate(QStyledItemDelegate):
+    """Paint only visible timing cells; large test trees need no cell widgets."""
+
+    def paint(self, painter, option, index):
+        share = index.data(Qt.ItemDataRole.UserRole)
+        if share is None:
+            return super().paint(painter, option, index)
+        background = QStyleOptionViewItem(option)
+        self.initStyleOption(background, index)
+        background.text = ''
+        option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem,
+                                           background, painter, option.widget)
+        painter.save()
+        rect = QRectF(option.rect.adjusted(4, 2, -4, -2))
+        groove = QPainterPath()
+        groove.addRoundedRect(rect, 3, 3)
+        painter.setClipPath(groove)
+        tint = QColor(option.palette.mid().color())
+        tint.setAlpha(35)
+        painter.fillRect(rect, tint)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        tint = QColor(option.palette.highlightedText().color() if selected else option.palette.highlight().color())
+        tint.setAlpha(90)
+        fill = QRectF(rect)
+        fill.setWidth(rect.width() * max(0, min(1, share)))
+        painter.fillRect(fill, tint)
+        painter.setClipping(False)
+        role = QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
+        painter.setPen(option.palette.color(role))
+        painter.setFont(option.font)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, index.data(Qt.ItemDataRole.DisplayRole))
+        painter.restore()
+
+
+def time_share(tree, row, seconds, total, *, reused=False):
+    if not isinstance(tree.itemDelegateForColumn(2), TimeShareDelegate):
+        tree.setItemDelegateForColumn(2, TimeShareDelegate(tree))
+    share = seconds / total if not reused and seconds is not None and total and total > 0 else None
+    label = '—' if reused else timing_duration(seconds)
+    row.setText(2, label)
+    row.setData(2, Qt.ItemDataRole.UserRole, share)
+    description = (f'{label}, {share:.1%} of measured sibling time' if share is not None else label)
+    if reused:
+        description = 'Reused result; no test execution in this run.'
+        if seconds is not None:
+            description += f' Previous run: {timing_duration(seconds)}.'
+        row.setData(2, Qt.ItemDataRole.AccessibleTextRole, description)
+        row.setToolTip(2, description)
         return
-    ancestor = row.parent()
-    while ancestor is not None:
-        if not ancestor.isExpanded():
-            tree.removeItemWidget(row, 2)
-            row.setText(2, f'{duration(seconds)} · {seconds / total:.0%}')
-            return
-        ancestor = ancestor.parent()
-    cell = tree.itemWidget(row, 2)
-    if not isinstance(cell, TimeShare):
-        cell = TimeShare()
-        tree.setItemWidget(row, 2, cell)
-    bar = cell.bar
-    share = seconds / total
-    bar.setValue(min(1000, round(share * 1000)))
-    bar.setFormat(f'{duration(seconds)} · {share:.0%}')
-    cell.label.setText(bar.format())
-    cell.setAccessibleName(f'{row.text(0)}: {duration(seconds)}, {share:.1%} of parent reported time')
-    cell.setToolTip('Share of parent reported time. Includes measured running time; parallel work may overlap. Not an estimate of completion.')
-    hint = cell.sizeHint()
-    if row.sizeHint(2) != hint:
-        row.setSizeHint(2, hint)
+    row.setData(2, Qt.ItemDataRole.AccessibleTextRole, description)
+    row.setToolTip(2, description + '\nFill shows the share of measured time at this level. '
+                   'Expanded children total 100% independently. Parallel work may overlap. '
+                   'Not an estimate of completion.')
 
 
 def current_test_seconds(case):
@@ -391,7 +454,6 @@ def visible_tree_rows(row):
 
 def update_test_children(row, key, fact, phase=None, *, force=False):
     """Render task → declared file → observed test, retaining item identities."""
-    from .run_ui import duration
     files = {name: dict(name=name, kind='file', status='planned', seconds=None,
                        message='Individual tests are discovered when this file starts.')
              for name in getattr(phase, 'test_files', ())}
@@ -431,9 +493,10 @@ def update_test_children(row, key, fact, phase=None, *, force=False):
     def summarize(nodes):
         for info, nested in nodes:
             summarize(nested)
-            if info.get('kind') == 'folder':
+            if info.get('kind') == 'folder' or (info.get('seconds') is None and nested):
                 measured = [child['seconds'] for child, _ in nested if child.get('seconds') is not None]
                 info['seconds'] = sum(measured) if measured else None
+            if info.get('kind') == 'folder':
                 statuses = {child.get('status') for child, _ in nested}
                 info['status'] = next((state for state in ('running', 'failed', 'error', 'timeout', 'crashed', 'cancelled', 'interrupted', 'reported', 'planned', 'pending')
                                        if state in statuses), 'passed')
@@ -442,14 +505,15 @@ def update_test_children(row, key, fact, phase=None, *, force=False):
         roots.append((dict(name='Test list not declared by this project', kind='info', status='pending',
             message='Individual tests appear when the runner reports them.'), []))
     # Tick only the current test's elapsed display; completed rows remain stable.
-    signature = repr((roots, bool(fact.get('tests_provisional')), round(fact.get('seconds') or 0)))
+    signature = repr((roots, bool(fact.get('tests_provisional')), bool(fact.get('reused')), round(fact.get('seconds') or 0)))
     if not force and getattr(row, '_test_signature', None) == signature:
         return
     row._test_signature = signature
     tree = row.treeWidget()
     selected = tree.currentItem()
 
-    def sync(parent, nodes, total):
+    def sync(parent, nodes):
+        total = sum(case.get('seconds') or 0 for case, _ in nodes)
         existing = {getattr(parent.child(i), '_test_identity', None): parent.child(i) for i in range(parent.childCount())}
         keep = set()
         for index, (case, nested) in enumerate(nodes):
@@ -466,17 +530,16 @@ def update_test_children(row, key, fact, phase=None, *, force=False):
             keep.add(id(child))
             child.setText(0, case['name'])
             child.setText(1, case['status'].capitalize())
-            child.setText(2, duration(case.get('seconds')))
             child.setData(0, Qt.ItemDataRole.UserRole, key)
             child.setData(0, Qt.ItemDataRole.UserRole + 1, case)
             child.setToolTip(0, '\n'.join(filter(None, (case.get('path'), case.get('file'), case.get('classname'), case.get('suite'), case.get('message')))))
-            time_share(tree, child, case.get('seconds'), total)
-            sync(child, nested, case.get('seconds'))
+            time_share(tree, child, case.get('seconds'), total, reused=fact.get('reused', False))
+            sync(child, nested)
         for index in range(parent.childCount() - 1, -1, -1):
             if id(parent.child(index)) not in keep:
                 parent.takeChild(index)
 
-    sync(row, roots, fact.get('seconds'))
+    sync(row, roots)
     if selected is not None and selected.treeWidget() is tree:
         tree.setCurrentItem(selected)
 
@@ -484,6 +547,7 @@ def update_test_children(row, key, fact, phase=None, *, force=False):
 class FlowCanvas(QWidget):
     selected = Signal(str)
     focused = Signal(str)
+    sections_changed = Signal()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -494,9 +558,14 @@ class FlowCanvas(QWidget):
     def __init__(self):
         super().__init__()
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setToolTip('Hover a card to trace its prerequisites and downstream steps. '
+                        'Other cards and lines stay visible in gray. Move away to restore the full map. '
+                        'Tab focus also traces the flow; selection stays unchanged.')
         self.cards, self.edges, self.states = {}, [], {}
         self.headers, self.order_edges, self.positions = [], set(), {}
         self.completion_targets = set()
+        self.hover_key = self.keyboard_key = ''
+        self.trace_keys = set()
         self.vertical = False
         self.adaptive = False
         self.header_positions = []
@@ -535,6 +604,10 @@ class FlowCanvas(QWidget):
             'muted': ('#eceef1', '#626262', '#a0a6ae'),
         }).get(kind)
         background, text, border = colors or ('palette(base)', 'palette(text)', 'palette(mid)')
+        muted = bool(card.property('traceMuted'))
+        if muted:
+            background, text, border = (('#343434', '#aaaaaa', '#777777') if dark else
+                                        ('#e4e4e4', '#777777', '#999999'))
         stylesheet = f'''
             QPushButton#workflowCard {{ background: {background}; color: {text};
                 border: 2px solid {border}; border-radius: 8px; text-align: left; }}
@@ -542,10 +615,14 @@ class FlowCanvas(QWidget):
             QPushButton#workflowCard:focus {{ border: 2px solid palette(highlight); }}
             QPushButton#workflowCard QLabel {{ color: {text}; background: transparent; }}
         '''
+        if muted:
+            stylesheet += f'QProgressBar::chunk {{ background: {border}; }}'
         if card.styleSheet() != stylesheet:
             card.setStyleSheet(stylesheet)
         for child in card.findChildren(QLabel):
             if child.objectName() == 'approvalBadge':
+                child.setStyleSheet('border: 1px solid ' + (border if muted else '#b37c12') +
+                                   '; border-radius: 4px; padding: 2px 5px;')
                 continue
             style = 'font-weight: 600;' if child.property('workflowHeading') else ''
             if child.styleSheet() != style:
@@ -559,6 +636,8 @@ class FlowCanvas(QWidget):
             self.update()
 
     def reset(self, plan, keys=None, *, reserve_activity=None):
+        self.hover_key = self.keyboard_key = ''
+        self.trace_keys = set()
         while self.grid.count():
             item = self.grid.takeAt(0)
             if item.widget():
@@ -574,6 +653,13 @@ class FlowCanvas(QWidget):
         # Filter only the drawing. Statuses, inspection and execution keep the
         # original plan, including prerequisites outside this card.
         phases = tuple(phase for phase in plan.phases if phase.id in keys)
+        by_id = {phase.id: phase for phase in plan.phases}
+        self.trace_parents = {phase.id: (*phase.dependencies, *getattr(phase, 'waits_for', ()))
+                              for phase in plan.phases}
+        self.trace_children = {}
+        for child, parents in self.trace_parents.items():
+            for parent in parents:
+                self.trace_children.setdefault(parent, []).append(child)
         self.positions = layout_positions(phases)
         for column in range(self.grid.columnCount()):
             self.grid.setColumnMinimumWidth(column, 0)
@@ -615,6 +701,8 @@ class FlowCanvas(QWidget):
             card.setCheckable(True)
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             card.focused.connect(lambda key=phase.id: self.focused.emit(key))
+            card.hovered.connect(lambda active, key=phase.id: self.trace_card(key, active))
+            card.keyboard_trace.connect(lambda active, key=phase.id: self.trace_card(key, active, keyboard=True))
             card.setFixedWidth(width)
             card.setMinimumHeight(64 if compact else 100)
             card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
@@ -645,6 +733,14 @@ class FlowCanvas(QWidget):
                 label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 if label is not heading:
                     body.addWidget(label)
+            if getattr(plan, 'proposed', False) and phase.dependencies:
+                prerequisites = QLabel('Requires: ' + ', '.join(
+                    title(by_id[key]) for key in phase.dependencies if key in by_id))
+                prerequisites.setObjectName('workflowPrerequisites')
+                prerequisites.setWordWrap(True)
+                prerequisites.setTextFormat(Qt.TextFormat.PlainText)
+                prerequisites.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                body.addWidget(prerequisites)
             external = phase.id.startswith('deliver.') if compact else (
                 phase.effect if phase.effect != 'inherit' else plan.effect) in {'upload', 'deploy', 'publish', 'dispatch'}
             external = external and getattr(phase, 'approval_required', True)
@@ -671,9 +767,40 @@ class FlowCanvas(QWidget):
             level, lane = self.positions[phase.id]
             self.grid.addWidget(card, lane + 1, level, 2, 1)
             self.cards[phase.id] = (card, status, counts)
+            if compact:
+                card.setMinimumHeight(max(self.base_card_height, body.totalHeightForWidth(width)))
         self.arrange(self.vertical)
         self.adjustSize()
         self.updateGeometry()
+        self.update()
+        self.sections_changed.emit()
+
+    def trace_card(self, key, active, *, keyboard=False):
+        attribute = 'keyboard_key' if keyboard else 'hover_key'
+        if active:
+            setattr(self, attribute, key)
+        elif getattr(self, attribute) == key:
+            setattr(self, attribute, '')
+        root = self.hover_key or self.keyboard_key
+        traced = set()
+        # Traverse each direction from the hovered node separately. Walking
+        # back down from its ancestors would incorrectly include sibling branches.
+        for links in (self.trace_parents, self.trace_children):
+            pending = [root] if root else []
+            seen = set()
+            while pending:
+                current = pending.pop()
+                if current not in seen:
+                    seen.add(current)
+                    pending.extend(links.get(current, ()))
+            traced.update(seen)
+        self.trace_keys = traced
+        for card_key, (card, _, _) in self.cards.items():
+            dim = bool(traced) and card_key not in traced
+            card.setProperty('traceMuted', dim)
+            self.style_card(card, card.property('state') or '')
+            for icons in card.findChildren(WorkflowIcons):
+                icons.update()
         self.update()
 
     def arrange(self, vertical):
@@ -807,28 +934,42 @@ class FlowCanvas(QWidget):
                 counts_label.text() if not counts_label.isHidden() else ''))))
         self.update()
 
+    def section_rect(self, header):
+        rect = header.geometry().adjusted(-4, -16, 0, 16) if self.vertical else header.geometry().adjusted(-16, -4, 16, 0)
+        if self.vertical:
+            rect.setRight(self.width() - 2)
+            if header.isHidden():
+                rect.setLeft(0)
+        else:
+            rect.setBottom(self.height() - 2)
+            if header.isHidden():
+                rect.setTop(0)
+        return rect.intersected(self.rect())
+
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Tinted section bands stay distinct from dependency connectors.
-        for index, header in enumerate(self.headers):
-            rect = header.geometry().adjusted(-4, -16, 0, 16) if self.vertical else header.geometry().adjusted(-16, -4, 16, 0)
-            if self.vertical:
-                rect.setRight(self.width() - 2)
-            else:
-                rect.setBottom(self.height() - 2)
-            color = QColor({'Source': '#7296ca', 'Testing': '#71ab8b',
-                            'Delivery': '#d6aa64', 'Build / package': '#aa8ac4'}.get(header.text(), '#8998ac'))
-            color.setAlpha(30 if self.palette().window().color().lightness() >= 128 else 42)
-            painter.fillRect(rect, color)
-        pen = QPen(self.palette().mid().color(), 1.7)
+        # Sticky headings and tinted bands share exactly the same bounds.
+        for header in self.headers:
+            rect = self.section_rect(header)
+            painter.fillRect(rect, section_tint(header.text(), self.palette()))
+        connector_color = connection_color(self.palette())
+        pen = QPen(connector_color, 1.7)
         groups = connection_groups(self.edges, self.positions, self.order_edges,
                                    self.states, self.completion_targets)
+        # Different prerequisite sets must never share a vertical rail merely
+        # because they occupy the same gap between columns.
+        gaps = [(self.positions[sources[0]][0], self.positions[targets[0]][0])
+                for sources, targets, _ in groups]
+        lane_counts = {gap: gaps.count(gap) for gap in set(gaps)}
+        lanes = {}
         long_lane = 0
         if self.vertical:
             painter.setTransform(QTransform(0, 1, 1, 0, 0, 0))
-        for sources, targets, style in groups:
+        for (sources, targets, style), gap in zip(groups, gaps):
+            lanes[gap] = lanes.get(gap, 0) + 1
+            rail_fraction = lanes[gap] / (lane_counts[gap] + 1)
             rects = [self.cards[key][0].geometry() for key in sources]
             starts = [QPointF(rect.bottom(), rect.center().x()) if self.vertical else
                       QPointF(rect.right(), rect.center().y()) for rect in rects]
@@ -837,13 +978,15 @@ class FlowCanvas(QWidget):
                     QPointF(rect.left() - 4, rect.center().y()) for rect in rects]
             pen.setStyle(Qt.PenStyle.DotLine if style == 'completion' else
                          Qt.PenStyle.DashLine if style == 'blocked' else Qt.PenStyle.SolidLine)
+            pen.setColor(connection_color(self.palette(), muted=bool(self.trace_keys)))
             painter.setPen(pen)
             long_edge = self.positions[targets[0]][0] > self.positions[sources[0]][0] + 1
             # Reserve distinct bottom routes so unrelated long links never merge.
             gutter = (self.width() if self.vertical else self.height()) - 6 - long_lane * 10
             if long_edge:
                 long_lane += 1
-            path, arrows, junctions = connection_path(starts, ends, long_edge=long_edge, gutter=gutter)
+            path, arrows, junctions = connection_path(starts, ends, long_edge=long_edge,
+                gutter=gutter, rail_fraction=rail_fraction)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
             painter.setBrush(pen.color())
@@ -851,16 +994,32 @@ class FlowCanvas(QWidget):
                 painter.drawPolygon(arrow)
             for point in junctions:
                 painter.drawEllipse(point, 2, 2)
+            if self.trace_keys:
+                traced_starts = [point for key, point in zip(sources, starts) if key in self.trace_keys]
+                traced_ends = [point for key, point in zip(targets, ends) if key in self.trace_keys]
+                if traced_starts and traced_ends:
+                    path, arrows, junctions = connection_path(traced_starts, traced_ends,
+                        long_edge=long_edge, gutter=gutter, rail_fraction=rail_fraction)
+                    pen.setColor(connector_color)
+                    painter.setPen(pen)
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawPath(path)
+                    painter.setBrush(pen.color())
+                    for arrow in arrows:
+                        painter.drawPolygon(arrow)
+                    for point in junctions:
+                        painter.drawEllipse(point, 2, 2)
 
 
-def connection_path(starts, ends, *, long_edge=False, gutter=0):
+def connection_path(starts, ends, *, long_edge=False, gutter=0, rail_fraction=None):
     """One shared rail replaces crossing curves for a complete prerequisite set."""
-    if len(starts) == len(ends) == 1:
+    if len(starts) == len(ends) == 1 and rail_fraction is None:
         path, arrow = dependency_path(starts[0], ends[0], long_edge=long_edge, gutter=gutter)
         return path, [arrow], []
     path = QPainterPath()
     left, right = max(point.x() for point in starts), min(point.x() for point in ends)
-    rail = left + 18 if long_edge else (left + right) / 2
+    fraction = .5 if rail_fraction is None else rail_fraction
+    rail = left + 10 + 16 * fraction if long_edge else left + (right - left) * fraction
     heights = [point.y() for point in starts] + ([gutter] if long_edge else [point.y() for point in ends])
     path.moveTo(rail, min(heights))
     path.lineTo(rail, max(heights))
@@ -906,6 +1065,20 @@ class FitMapView(QGraphicsView):
     minimum_scale = .05
     maximum_scale = 2.5
 
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        # Resolve the whole card after scene dispatch and pointer-follow have
+        # run. Child widgets and proxy enter/leave ordering must not clear it.
+        if not event.buttons():
+            point = self.proxy.mapFromScene(self.mapToScene(event.position().toPoint()))
+            key = next((key for key, (card, _, _) in self.canvas.cards.items()
+                        if not card.isHidden() and QRectF(card.geometry()).contains(point)), '')
+            if key != self.canvas.hover_key:
+                if key:
+                    self.canvas.trace_card(key, True)
+                elif self.canvas.hover_key:
+                    self.canvas.trace_card(self.canvas.hover_key, False)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.itemAt(event.position().toPoint()) is None:
             self.canvas.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -919,28 +1092,179 @@ class FitMapView(QGraphicsView):
         self.orientation = 'horizontal'
         self._fitting = False
         self.anchor = ''
+        self.pointer_follow = False
+        self._pointer_state = None
+        self._pointer_pressed = False
+        self.sticky_sections = QWidget(self)
+        self.sticky_sections.setObjectName('workflowStickySections')
+        self.sticky_sections.setAccessibleName('Workflow sections')
+        self.sticky_sections.setAutoFillBackground(False)
+        self.sticky_labels = []
+        self.sticky_sections.hide()
         scene = QGraphicsScene(self); self.setScene(scene); self.proxy = scene.addWidget(canvas)
         self.setBackgroundBrush(canvas.palette().window())
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.setBackgroundRole(QPalette.ColorRole.Window)
+        self.setAutoFillBackground(False)
+        self.setMouseTracking(True)
+        self.viewport().installEventFilter(self)
         canvas.focused.connect(self.reveal)
+        canvas.sections_changed.connect(self._update_sticky_sections)
+        self.scale_changed.connect(lambda _: self._layout_sticky_sections())
+        self._update_sticky_sections()
+
+    def _update_sticky_sections(self):
+        for widget in self.sticky_labels:
+            widget.hide()
+            widget.deleteLater()
+        self.sticky_labels = []
+        headings = [header.text() for header in self.canvas.headers]
+        visible = bool(headings) and getattr(self.canvas, 'compact', False)
+        for header in self.canvas.headers:
+            # Keep the band's layout geometry while its title lives solely in
+            # the sticky strip. Hiding must not collapse or shift the sections.
+            policy = header.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            header.setSizePolicy(policy)
+            header.setVisible(not visible)
+        if visible:
+            for heading in headings:
+                label = QLabel(heading, self.sticky_sections)
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.sticky_labels.append(label)
+        self._style_sticky_sections()
+        self.sticky_sections.setVisible(visible)
+        self._layout_sticky_sections()
+
+    def _style_sticky_sections(self):
+        for label in self.sticky_labels:
+            color = section_tint(label.text(), self.canvas.palette())
+            label.setStyleSheet('font-weight: 600; padding: 5px 8px; '
+                                f'background: rgba({color.red()}, {color.green()}, {color.blue()}, {color.alpha()});')
+
+    def _layout_sticky_sections(self):
+        vertical = self.canvas.vertical
+        height = width = 0
+        if not self.sticky_sections.isHidden():
+            if vertical:
+                width = max((label.sizeHint().width() for label in self.sticky_labels), default=0)
+            else:
+                height = max((label.sizeHint().height() for label in self.sticky_labels), default=0)
+        if (self.viewportMargins().left(), self.viewportMargins().top()) != (width, height):
+            self.setViewportMargins(width, height, 0, 0)
+        if vertical:
+            self.sticky_sections.setGeometry(0, self.viewport().y(), width, self.viewport().height())
+        else:
+            self.sticky_sections.setGeometry(self.viewport().x(), 0, self.viewport().width(), height)
+        for header, label in zip(self.canvas.headers, self.sticky_labels):
+            band = self.mapFromScene(self.proxy.mapRectToScene(
+                QRectF(self.canvas.section_rect(header)))).boundingRect()
+            rect = (QRectF(0, band.top(), width, band.height()) if vertical else
+                    QRectF(band.left(), 0, band.width(), height))
+            # Clip both the tint and the text to the visible part of its band.
+            # A section that has panned entirely off screen has no sticky label.
+            rect = rect.intersected(QRectF(self.sticky_sections.rect()))
+            label.setVisible(not rect.isEmpty())
+            label.setGeometry(rect.toAlignedRect())
+
+    def scrollContentsBy(self, dx, dy):
+        super().scrollContentsBy(dx, dy)
+        if hasattr(self, 'sticky_sections'):
+            self._layout_sticky_sections()
+
+    def drawForeground(self, painter, rect):
+        super().drawForeground(painter, rect)
+        if self.sticky_sections.isHidden():
+            return
+        # Fitting can leave spare space above (or left of) the canvas. Continue
+        # each band through that space all the way to its sticky heading.
+        visible = self.mapToScene(self.viewport().rect()).boundingRect()
+        for header in self.canvas.headers:
+            band = self.proxy.mapRectToScene(QRectF(self.canvas.section_rect(header)))
+            extension = (QRectF(visible.left(), band.top(), max(0., band.left() - visible.left()), band.height())
+                         if self.canvas.vertical else
+                         QRectF(band.left(), visible.top(), band.width(), max(0., band.top() - visible.top())))
+            painter.fillRect(extension, section_tint(header.text(), self.canvas.palette()))
+
+    def set_pointer_follow(self, enabled):
+        self.pointer_follow = enabled
+        if not enabled:
+            self._end_pointer_follow()
+
+    def eventFilter(self, watched, event):
+        if watched is self.viewport():
+            if event.type() == QEvent.Type.ToolTip:
+                QToolTip.hideText()
+                return True
+            if event.type() == QEvent.Type.MouseMove and not event.buttons():
+                self._follow_pointer(event.position())
+            elif event.type() == QEvent.Type.MouseButtonPress:
+                self._pointer_pressed = True
+            elif event.type() == QEvent.Type.KeyPress:
+                self._pointer_pressed = False
+                self._end_pointer_follow()
+            elif event.type() == QEvent.Type.Leave:
+                self._pointer_pressed = False
+                self._end_pointer_follow()
+                if self.canvas.hover_key:
+                    self.canvas.trace_card(self.canvas.hover_key, False)
+        return super().eventFilter(watched, event)
+
+    def mouseReleaseEvent(self, event):
+        try:
+            super().mouseReleaseEvent(event)
+        finally:
+            self._pointer_pressed = False
+
+    def _follow_pointer(self, position):
+        if not self.pointer_follow or not self.fit_mode:
+            return
+        if self._pointer_state is None:
+            current = self.transform().m11()
+            if current >= 1:
+                return
+            self._pointer_state = (self.transform(), self.horizontalScrollBar().value(),
+                                   self.verticalScrollBar().value())
+            self.scale(1 / current, 1 / current)
+            self.scale_changed.emit(1.)
+        # Reach each edge in the outer fifth of the viewport so exploring a
+        # corner does not require aiming at the physical edge of the map.
+        for bar, coordinate, extent in (
+                (self.horizontalScrollBar(), position.x(), self.viewport().width()),
+                (self.verticalScrollBar(), position.y(), self.viewport().height())):
+            margin = extent * .20
+            fraction = max(0., min(1., (coordinate - margin) / max(1, extent - 2 * margin)))
+            bar.setValue(round(bar.minimum() + fraction * (bar.maximum() - bar.minimum())))
+
+    def _end_pointer_follow(self):
+        if self._pointer_state is None:
+            return
+        transform, horizontal, vertical = self._pointer_state
+        self._pointer_state = None
+        self.setTransform(transform)
+        self.horizontalScrollBar().setValue(horizontal)
+        self.verticalScrollBar().setValue(vertical)
+        self.scale_changed.emit(transform.m11())
 
     def fit_map(self, force=False):
-        if self._fitting:
+        if self._fitting or self._pointer_state is not None:
             return
         self._fitting = True
         try:
             self._fit_map(force)
         finally:
             self._fitting = False
+            self._layout_sticky_sections()
 
     def _fit_map(self, force=False):
         if self.fit_mode:
             self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.canvas.adapt_to(self.viewport().size(), self.orientation)
+            self._layout_sticky_sections()
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if self.fit_mode:
             self.canvas.adjustSize()
@@ -967,6 +1291,9 @@ class FitMapView(QGraphicsView):
             self.setSceneRect(self.proxy.boundingRect().adjusted(-4, -4, 4, 4))
 
     def reveal(self, key):
+        if self._pointer_state is not None and self._pointer_pressed:
+            return
+        self._end_pointer_follow()
         if key in self.canvas.cards:
             self.anchor = key
             rect = self.proxy.mapRectToScene(QRectF(self.canvas.cards[key][0].geometry()))
@@ -983,9 +1310,11 @@ class FitMapView(QGraphicsView):
             self.ensureVisible(rect, 24, 24)
 
     def reset_view(self):
+        self._end_pointer_follow()
         self.fit_mode, self._fitted, self.anchor = True, None, ''
 
     def zoom(self, amount):
+        self._end_pointer_follow()
         self.fit_mode = False
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -995,18 +1324,22 @@ class FitMapView(QGraphicsView):
         self.scale_changed.emit(scale)
 
     def set_orientation(self, orientation):
+        self._end_pointer_follow()
         self.orientation = orientation
         self.fit_mode = True
         self.fit_map(force=True)
 
     def resizeEvent(self, event):
+        self._end_pointer_follow()
         super().resizeEvent(event)
+        self._layout_sticky_sections()
         self.fit_map()
 
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() in {QEvent.Type.PaletteChange, QEvent.Type.ApplicationPaletteChange, QEvent.Type.StyleChange}:
             self.setBackgroundBrush(self.palette().window())
+            self._style_sticky_sections()
 
 
 def orientation_picker(view):
@@ -1016,6 +1349,32 @@ def orientation_picker(view):
         control.addItem(label, key)
     control.setCurrentIndex(control.findData(view.orientation))
     control.currentIndexChanged.connect(lambda _: view.set_orientation(control.currentData()))
+    return control
+
+
+def pointer_follow_picker(view):
+    control = QPushButton('Follow mouse')
+    control.setCheckable(True)
+    control.setToolTip('Enlarge fitted maps while the pointer moves inside. Move toward an edge to see that corner; leave to restore the overview.')
+    path = config_directory() / 'workflow-view.json'
+    try:
+        values = load_profile(path)
+        enabled = values.get('follow_mouse', False) is True
+    except (OSError, ValueError):
+        enabled = False
+    control.setChecked(enabled)
+    view.set_pointer_follow(enabled)
+    control.toggled.connect(view.set_pointer_follow)
+
+    def remember(enabled):
+        try:
+            values = load_profile(path)
+            values['follow_mouse'] = enabled
+            save_profile(path, values, allowed=set(values))
+        except (OSError, ValueError) as error:
+            control.setToolTip('Could not save Follow mouse preference: ' + str(error))
+
+    control.toggled.connect(remember)
     return control
 
 
@@ -1057,6 +1416,8 @@ class WorkflowFlow(QWidget):
         self.scroll = FitMapView(self.canvas)
         self.orientation = orientation_picker(self.scroll)
         tools.insertWidget(tools.count() - 3, self.orientation)
+        self.follow_mouse = pointer_follow_picker(self.scroll)
+        tools.insertWidget(tools.count() - 3, self.follow_mouse)
         self.scroll.setAccessibleName('Workflow dependency map. Scroll or drag to pan. Tab between cards; Space selects a step.')
         self.scroll.scale_changed.connect(lambda scale: self.zoom_out.setEnabled(scale > self.scroll.minimum_scale))
         self.scroll.scale_changed.connect(lambda scale: self.zoom_in.setEnabled(scale < self.scroll.maximum_scale))
@@ -1115,7 +1476,7 @@ class WorkflowFlow(QWidget):
         self.views.setCurrentIndex(1 if visible else 0)
         self.stages_button.setChecked(not visible)
         self.map_button.setChecked(visible)
-        for control in (self.orientation, self.fit_button, self.zoom_in, self.zoom_out):
+        for control in (self.orientation, self.follow_mouse, self.fit_button, self.zoom_in, self.zoom_out):
             control.setVisible(visible)
         self.update_guidance()
         if visible:
@@ -1138,7 +1499,9 @@ class WorkflowFlow(QWidget):
                 'Groups can overlap: prerequisites determine order. Use Dependency map to trace them.')
         else:
             self.guidance.setText(f'Read left to right. Arrows show prerequisites. Up to {self.plan.max_workers} steps can run together. '
-                'Drag to pan; use + to zoom. Redundant success arrows are omitted; details list every prerequisite.' +
+                'Hover a card to trace its prerequisites and downstream steps. Other branches stay gray. '
+                'Drag to pan; use + to zoom. '
+                'Redundant success arrows are omitted; details list every prerequisite.' +
                 ('' if self.graph_only else ' Stages returns to the readable step list.'))
 
         self.scroll.setToolTip(self.guidance.text() + '\nShared junctions mean every incoming prerequisite is required.\n' + self.legend.text())
@@ -1147,6 +1510,7 @@ class WorkflowFlow(QWidget):
         self.scroll.fit_map()
 
     def fit_map(self):
+        self.scroll._end_pointer_follow()
         self.scroll.fit_mode = True
         self.scroll.fit_map(force=True)
 

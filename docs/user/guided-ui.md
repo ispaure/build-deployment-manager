@@ -70,7 +70,18 @@ execution-location dropdown in each table row. The live workflow overview keeps
 cards on the right. The overview defaults to Horizontal; Best fit can choose the
 orientation, or select Vertical explicitly. Display controls sit beside the
 overview heading in the upper-right corner. Fit shows the complete graph without scrollbars; zoom in
-to read a dense graph and scroll or drag to explore it. Selecting a card
+to read a dense graph and scroll or drag to explore it. Follow mouse is disabled
+by default and remembers your choice across app launches. Enable it to move
+inside a fitted map to enlarge small cards, then move toward
+an edge to reach that corner. The map reaches its edge within the outer fifth
+of the panel, so you do not need to aim at the border. Source, Testing and Delivery
+headings stay readable above their section boxes while you zoom and pan. Their
+widths and horizontal positions follow the boxes; offscreen sections scroll out
+of the heading strip too. In Vertical view, headings stick along the left edge
+and follow each section's height and vertical position.
+Leaving the map restores the complete overview.
+Turn Follow mouse off for a stationary map; manual zoom also stops following
+until you use Fit again. Selecting a card
 opens its matching configuration section and destination category.
 Changing selections adds and removes branches immediately; missing platform
 requirements stay visible as amber cards without selecting them on your behalf.
@@ -80,6 +91,26 @@ It is built from the selected intent and descriptor metadata, without calling th
 project planner or inspecting source on each edit. Review resolves exact source,
 build/test substeps, dependencies, hosts and resource limits. Repeated proposal/planned badges are hidden in the overview; Run cards show
 actual execution status. Source choices never commit, push or deploy anything.
+
+Preview cards list their prerequisites. Optional device builds connect only to
+selected checks for the package's declared platforms; selecting Windows checks
+does not make them prerequisites of an iOS build. Package dependencies carry
+their checks forward to later signing/export steps. Different prerequisite sets
+use separate connector rails; dots mark junctions within a shared set.
+Hover a card to emphasize it, its prerequisites and its downstream execution steps.
+Unrelated cards and their connections remain visible in gray, in both light and
+dark themes. Sibling branches sharing an ancestor stay gray unless they are also
+upstream or downstream of the hovered card.
+Moving away restores the complete map without changing selection.
+Keyboard tab focus provides the same trace. Completion waits are included and
+keep their dotted lines.
+The full card, including its labels and icons, activates the hover trace.
+Floating tooltips are suppressed inside the map so they cannot interrupt the
+trace or cover adjacent cards; select a card to inspect its details.
+Exact host checks are resolved during Review and can be inspected in the side
+pane. A shared executable step keeps one identity across dependent branches;
+distinct steps remain distinct even when their labels or execution hosts match.
+The preview does not decide whether host checks can be reused or must repeat.
 
 Source is visible up front: Current files includes edits; Latest commit selects
 HEAD and excludes edits; Specific commit, branch or tag accepts an explicit Git
@@ -156,8 +187,8 @@ Projects supporting selectable execution locations show a location beside each
 platform: macOS can run on GitHub while iOS uses local simulators, for example.
 Choosing GitHub explains its committed-source requirement. Select Latest commit
 or a specific revision explicitly to exclude local edits.
-GitHub checks need no release identifier: launching checks is a separately reviewed
-external action, distinct from publishing. Native tester delivery can still require
+GitHub checks need no release identifier. Start authorizes their hosted launch
+in a fresh reviewed plan. Native tester delivery can still require
 local native receipts; unsupported combinations explain that prerequisite.
 
 Configuration settings and the proposed map scroll independently; the workspace
@@ -297,18 +328,28 @@ followed by its outcome and measured duration. The task card and Details pane al
 show the current test. Runners without live events still update from intermediate
 JUnit reports, or after completion if they only write a final report.
 Live observations do not mark a task as passed; final retained evidence decides
-its outcome. Timing bars show each card's share of total reported step time, then
-each task, folder, file and test's share of its parent's reported time. They are
-measured time shares, not estimates of completion. Parallel work can overlap, so
+its outcome. The Time column shows seconds (s), or milliseconds (ms) below one
+second, inside a bar. Its fill shows each item's share of measured sibling time.
+At every expanded level the measured children total 100%, independently of their
+parent's share. For example, commonUtils at 10s is 10% of 100s of Android tasks;
+its children divide their own measured total. If other tasks bring Android to
+200s, commonUtils becomes 5% while its children still total 100%. Unmeasured
+children join that calculation as timing arrives. These are measured time shares,
+not estimates of completion. Parallel work can overlap, so
 reported work time differs from elapsed run time; unmeasured items show no bar.
+Reused tasks are labelled Reused. Their task, folder, file and test times show a
+dash with no bar and do not contribute to current timing shares. Tooltips retain
+previous-run durations where available; cached outcomes remain inspectable.
 Running, passed, failed and awaiting-approval cards use blue, green, red and amber
 backgrounds in both light and dark themes; blocked and skipped cards are muted.
 Live palette changes refresh manager-local styles together while preserving view
 selection and zoom; buttons continue following the active application accent.
 
 Uploads, delivery and hosted test launches identify their approval boundary.
-Start runs eligible checks and preparation; external steps pause for separate
-approval and their dependent work waits too. Legacy whole-plan external operations
+Start authorizes selected Firebase, TestFlight and GitHub actions in fresh plans.
+Delivery runs after its required checks and package preparation pass; GitHub
+hosted test launches run at their dependency point. Other external
+steps pause for separate approval and their dependent work waits too. Legacy whole-plan external operations
 still ask for explicit confirmation before Start. Changing any selection or saved
 setting requires a fresh plan review.
 
@@ -401,8 +442,10 @@ the project-owned evidence folder.
 
 ## Continue delivery in one session
 
-An integrated project plan can test, build and prepare delivery in one run. When
-it reaches an external upload/deploy/publish phase, it pauses for review. Select
+An integrated project plan can test, build and prepare delivery in one run.
+Firebase, TestFlight and GitHub actions authorized by Start proceed without another
+prompt. Older saved runs retain their approval requirements. When a phase
+requires separate approval, it pauses for review. Select
 Review and continue delivery to see selectable cards with exact destinations,
 captured recipients and prepared file identities. The cards use the workflow's
 approval badges and selected outlines. Package/version/build fields appear when
@@ -468,8 +511,9 @@ before each installation. The reviewed package is installed in place, without
 uninstalling, clearing app data, automatic re-signing or silently switching devices.
 Signature, provisioning, version and connection failures stop that target.
 Unknown installation outcomes require reconciliation before retrying.
-Device-only Logistics delivery can use captured current files; GitHub/Firebase/
-TestFlight retain their committed-source and complete release-acceptance policies.
+Logistics local builds, device delivery, Firebase and TestFlight can use captured
+current files. Full release-acceptance gates still apply to Release packages.
+GitHub-hosted execution requires committed source.
 Local device delivery currently requires the configured Mac build environment.
 Native builds and personal-device installation acceptance require separate runs;
 portable contract tests and offscreen layout checks do not establish those results.
@@ -484,11 +528,11 @@ to its consumers when the project declares package metadata.
 Logistics device destinations offer Debug (default) and Release. Debug prepares a
 separate development app. Release reuses the signed Firebase APK on Android, or
 exports a separately provisioned iOS device app from the shared Release archive.
-Each device still has its own reviewed installation. Release packaging requires
-committed source, the existing release signing setup and full release gates.
+Each device still has its own reviewed installation. Release packaging uses the
+captured source, the existing release signing setup and full release gates.
 
 The overview explains source requirements for selected destinations. Current files
-can be used for local tests and Debug device delivery. GitHub releases, tester
-services and Release device packages require committed source. Latest commit
-excludes edits without committing them; GitHub releases also require a clean
-checkout matching that commit. Selecting a source never commits or pushes it.
+can be used for local tests, Debug and Release device packages, Firebase and
+TestFlight. GitHub-hosted execution requires committed source; GitHub source
+releases also require a clean checkout matching that commit. Latest commit
+excludes edits without committing them. Selecting a source never commits or pushes it.

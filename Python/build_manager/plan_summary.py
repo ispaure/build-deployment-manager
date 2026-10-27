@@ -107,12 +107,20 @@ def summary_rows(plan, fields=()):
 
 
 def start_scope(plan):
-    if plan.effect in EXTERNAL:
+    if plan.effect in EXTERNAL and any(getattr(phase, 'approval_required', True) for phase in plan.phases
+            if (phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL):
         return 'Start asks for confirmation of this external operation before running it.'
     effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
+    authorized_actions = any(phase.effect in {'upload', 'publish', 'dispatch'}
+                             and not getattr(phase, 'approval_required', True) for phase in plan.phases)
+    authorized = 'Start authorizes selected Firebase, TestFlight and GitHub actions after their prerequisites pass. ' if authorized_actions else ''
     if any((phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL
            and getattr(phase, 'approval_required', True) for phase in plan.phases):
-        return 'Start runs eligible checks and preparation. External actions pause for separate approval; their dependent work waits too.'
+        return authorized + ('Start runs eligible checks and preparation. '
+            + ('Other external actions' if authorized_actions else 'External actions')
+            + ' pause for separate approval; their dependent work waits too.')
+    if authorized_actions:
+        return authorized + 'Start also runs the reviewed checks and preparation.'
     if effects <= {'test', 'inspect'}:
         return 'Start runs the reviewed checks and inspections. No delivery is selected.'
     return 'Start runs the reviewed local work. Dependencies and resource limits determine when each step starts.'

@@ -59,10 +59,13 @@ class AccessibilityPassTests(unittest.TestCase):
         view.setFont(QFont(view.font().family(), 14))
         for key, state in [('android', 'running'), ('ios', 'waiting_resource'), ('firebase', 'awaiting_review')]:
             view.update_phase(dict(id=key, status=state))
+        view.show_results_tab()
+        view.tabs.setCurrentIndex(0)
         view.resize(640, 620)
         view.show()
         self.app.processEvents()
         self.assertEqual(view.width(), 640)
+        self.assertTrue(view.activity.isVisible())
         for button in view.activity.buttons:
             self.assertLessEqual(button.geometry().right(), view.activity.width())
         self.assertLessEqual(view.activity.columns, 2)

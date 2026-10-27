@@ -36,7 +36,8 @@ class ProposedWorkflowTests(unittest.TestCase):
         }
         capability['destinations']['device'] = dict(
             label='Device', platforms=['android'], testing_optional=True, package='debug')
-        for platforms, expected in (([], ('source',)), (['android'], ('platform.android',))):
+        for platforms, expected in (([], ('source',)), (['android'], ('platform.android',)),
+                                    (['ios'], ('source',)), (['ios', 'android'], ('platform.android',))):
             with self.subTest(platforms=platforms):
                 proposal = propose(capability=capability, goal='deliver', revision='working-tree',
                     platforms=platforms, destinations=['device'], backends={})
@@ -87,7 +88,7 @@ class ProposedWorkflowTests(unittest.TestCase):
         self.assertFalse(hasattr(proposal, 'save'))
         self.assertTrue(all(not hasattr(node, 'argv') for node in proposal.phases))
         self.assertEqual(CAPABILITY, before)
-        self.assertTrue(any('committed source' in message for message in proposal.messages))
+        self.assertFalse(any('committed source' in message for message in proposal.messages))
 
     def test_empty_and_checks_only_maps_never_show_delivery(self):
         args = dict(capability=CAPABILITY, goal='validate', revision='HEAD',

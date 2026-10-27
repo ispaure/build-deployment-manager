@@ -439,7 +439,7 @@ class ConfigurationView(QWidget):
     def update_summary(self, *_):
         revision = self.revision.text()
         if revision == 'working-tree':
-            text = 'Current files include uncommitted edits. Review checks whether the project permits this source for your selected work.'
+            text = 'Current files capture your uncommitted edits for local builds and delivery.'
         elif revision == 'HEAD':
             text = 'Latest commit: uncommitted edits are excluded. This does not commit or push anything.'
         else:
@@ -447,9 +447,6 @@ class ConfigurationView(QWidget):
         if any(self.platform_checks[name].isChecked() and choice.currentText() == 'GitHub'
                for name, choice in self.platform_backends.items()):
             text += ' GitHub runs committed source; local edits are excluded.'
-        declared_policy = any('source_policy' in row for row in (getattr(self.project, 'journey_capability', None) or {}).get('destinations', {}).values())
-        if revision == 'working-tree' and self.goal.currentData() == 'deliver' and not declared_policy:
-            text += ' Delivery policy may require committed source. Latest commit excludes your edits without committing them.'
         self._source_help = text
         self.source_mode.setToolTip(text)
         self.source_mode.setAccessibleDescription(text)

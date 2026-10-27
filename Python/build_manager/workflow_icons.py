@@ -4,7 +4,7 @@ from importlib.resources import files
 import re
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QWidget
 
@@ -64,7 +64,10 @@ class WorkflowIcons(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         color = self.palette().text().color()
-        if self.parentWidget().property('state') in {'blocked', 'skipped'}:
+        if self.parentWidget().property('traceMuted'):
+            dark = self.parentWidget().palette().window().color().lightness() < 128
+            color = QColor('#aaaaaa' if dark else '#777777')
+        elif self.parentWidget().property('state') in {'blocked', 'skipped'}:
             color.setAlphaF(.45)
         ratio = self.devicePixelRatioF()
         for index, renderer in enumerate(self.renderers):

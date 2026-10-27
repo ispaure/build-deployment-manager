@@ -43,6 +43,11 @@ def retained_proposal(plan, capability=None):
             platforms=destinations[key].get('platforms', list(targets))) for key in selected_destinations})
     recipients = {}
     for destination_id, destination in resolved['destinations'].items():
+        if destination_id in {'firebase', 'testflight', 'github'}:
+            actions = [phase for phase in plan.phases if phase.id in destinations[destination_id]['steps']
+                       and (phase.effect if phase.effect != 'inherit' else plan.effect)
+                       in {'upload', 'deploy', 'publish', 'dispatch'}]
+            destination['approval_required'] = any(phase.approval_required for phase in actions)
         name = destination.get('recipient_field')
         if name and values.get(name):
             try:

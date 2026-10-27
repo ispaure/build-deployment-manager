@@ -50,7 +50,8 @@ displayed checkout, source and host match your intention.
 
 If a backend is unavailable, fix the stated prerequisite or explicitly choose
 another declared backend. The manager does not silently substitute a hosted run.
-Projects can allow working-tree tests while requiring committed release sources.
+Local Logistics builds and Firebase/TestFlight delivery can use captured current
+files. GitHub-hosted execution requires committed source.
 See [guided UI](guided-ui.md) for each control and [host requirements](hosts.md).
 
 ## Remember choices and save run presets

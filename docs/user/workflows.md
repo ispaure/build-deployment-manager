@@ -21,7 +21,16 @@ commands, output artifact types and effects. The default is sequential. Source,
 settings, adapter and toolchain data are captured once. Passing tests never
 approves an external effect. Required failed/skipped/unknown dependencies block it.
 
-An explicit per-step upload/deploy/publish effect pauses after preparation. Review
+For a fresh GUI plan, **Start reviewed workflow** authorizes the selected Firebase
+and TestFlight uploads and GitHub actions. Release delivery runs after its required
+checks and package preparation pass, without a second approval dialog. GitHub
+hosted test launches also use Start authorization, then supply their test results
+to dependent work. Review shows this scope before
+Start. Failed checks still block delivery, and uncertain upload outcomes still
+require reconciliation before retry. Existing saved runs keep their original
+approval requirements; inspect a fresh plan to use this behavior.
+
+Other explicit per-step upload/deploy/publish effects pause after preparation. Review
 exact source/settings, retained artifact checksums, actual embedded identities and
 destinations before approving. Approval is session-only and scoped to the complete
 plan and verified prerequisite outputs. A changed or missing original/captured
@@ -105,9 +114,11 @@ operations. Windows child processes remain owned by their process job.
 ## Hosted test launches
 
 `dispatch` identifies a remote workflow launch separately from publication,
-upload or deployment. It uses the same explicit approval, persisted intent and
+upload or deployment. Fresh GUI plans authorize GitHub launches through Start;
+older saved plans retain separate approval. It uses the same persisted intent and
 unknown-outcome reconciliation as other external actions. A checks-only plan can
 therefore run hosted tests without selecting a release destination or identifier.
 Integrated plans bind dispatch steps to their selected platform and required gates.
-The UI labels their continuation “Review and start GitHub checks”. Preparing or
-viewing a plan never grants dispatch approval.
+For saved plans that still require approval, the UI labels their continuation
+“Review and start GitHub checks”. Preparing or viewing a plan never starts a
+dispatch; Start authorizes a fresh plan's selected GitHub actions.

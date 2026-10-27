@@ -80,7 +80,7 @@ class SettingsAsyncTests(unittest.TestCase):
             deadline = time.monotonic() + 5
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
-            self.assertIsNotNone(panel.plan); self.assertIn('preparation', panel.start.text())
+            self.assertIsNotNone(panel.plan); self.assertEqual(panel.start.text(), 'Start reviewed workflow')
             self.assertIn('firebase:fixture', panel.overview.toPlainText())
             panel.platform_checks['android'].setChecked(False)
             self.assertIsNone(panel.plan); self.assertTrue(panel.destination_checks['firebase'].isChecked())
@@ -91,7 +91,7 @@ class SettingsAsyncTests(unittest.TestCase):
             self.assertEqual(panel.preset.currentText(), 'Firebase workflow')
             self.assertIn('Modified', panel.preset_note.text()); panel.close()
 
-    def test_real_gui_integrated_run_pauses_and_continues_selected_destinations(self):
+    def test_real_gui_integrated_start_authorizes_selected_destinations(self):
         import json
         with TemporaryDirectory() as folder:
             root = Path(folder)
@@ -112,15 +112,9 @@ class SettingsAsyncTests(unittest.TestCase):
                 while panel.cancel.isEnabled():
                     self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
                 return json.loads(panel.result.read_text())
-            first = finish(); self.assertEqual(first['status'], 'awaiting_review')
-            original = panel.result
-            with patch.object(panel, 'confirm_continuation', return_value=('firebase', 'testflight')):
-                panel.continue_run.click()
-                while panel.reviewing:
-                    self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
-            last = finish(); self.assertEqual(last['status'], 'passed'); self.assertEqual(panel.result, original)
+            last = finish(); self.assertEqual(last['status'], 'passed')
+            self.assertFalse(panel.continue_run.isEnabled())
             self.assertIn('firebase:fixture/app/testers: passed', panel.run_view.destinations.text())
-            self.assertEqual(first['phases'][2]['started_at'], last['phases'][2]['started_at'])
 
     def test_group_approval_requires_selection_and_keeps_cancel_default(self):
         from build_manager.ui import EffectReviewDialog

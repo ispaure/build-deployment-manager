@@ -587,6 +587,8 @@ class ManagerPanel(QWidget):
         if self.selection_revision != self.preparation_revision:
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
             return
+        from .workflows import start_authorized_effects
+        plan = start_authorized_effects(plan)
         self.plan = plan
         if not self.preparing_verification and self.goal.currentData() == 'validate':
             effects = [(phase.effect if phase.effect != 'inherit' else plan.effect) for phase in plan.phases]
@@ -600,7 +602,7 @@ class ManagerPanel(QWidget):
         self.stages.setCurrentIndex(1)
         self.start.setEnabled(True)
         effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
-        self.start.setText('Start validation and preparation' if plan.journey and plan.journey['goal'] == 'deliver'
+        self.start.setText('Start reviewed workflow' if plan.journey and plan.journey['goal'] == 'deliver'
                            else 'Start validation' if self.goal.currentData() == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
         self.status.clear()
@@ -621,7 +623,9 @@ class ManagerPanel(QWidget):
         if self.plan is None or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         confirmed = self.plan.effect in {'deploy', 'upload', 'publish', 'dispatch'}
-        if confirmed and QMessageBox.question(self, 'Confirm reviewed operation',
+        separate_approval = any(phase.approval_required for phase in self.plan.phases
+            if (phase.effect if phase.effect != 'inherit' else self.plan.effect) in {'deploy', 'upload', 'publish', 'dispatch'})
+        if confirmed and separate_approval and QMessageBox.question(self, 'Confirm reviewed operation',
                 f'{self.plan.operation} on {self.plan.backend}? Review the source and destinations above.',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
@@ -920,13 +924,17 @@ class ManagerPanel(QWidget):
         if safe.source.get('dirty'):
             source = 'Working tree with uncommitted changes · ' + str(source)
         effects = [phase.effect if phase.effect != 'inherit' else safe.effect for phase in safe.phases]
+        from .plan_summary import start_scope
+        scope = start_scope(safe)
         counts = {effect: effects.count(effect) for effect in set(effects)}
+        upload_label = ('uploads requiring review' if all(phase.approval_required for phase in safe.phases
+            if (phase.effect if phase.effect != 'inherit' else safe.effect) == 'upload') else 'uploads')
         work = ' · '.join(f'{counts[effect]} {label}' for effect, label in
             (('test', 'check steps'), ('inspect', 'inspection steps'), ('build', 'build steps'),
-             ('upload', 'uploads requiring review'), ('deploy', 'device deliveries'), ('publish', 'publication steps requiring review'), ('dispatch','GitHub test launches requiring review'))
+             ('upload', upload_label), ('deploy', 'device deliveries'), ('publish', 'publication steps'), ('dispatch','GitHub test launches'))
             if counts.get(effect))
         self.review_summary.setText(f'Project: {safe.project}\nSource: {source}\nPlatforms: {platforms}\nRuns on: {safe.backend}\n\n'
-            + ('Each destination waits for its selected checks.\nIndependent preparation branches can proceed as their checks pass.\nSelected device deliveries proceed automatically; uploads and publication pause for review:\n' + destinations
+            + ('Each destination waits for its selected checks.\nIndependent preparation branches can proceed as their checks pass.\n' + scope + '\n' + destinations
                if destinations else 'This plan will run the selected checks. No delivery is selected.' if safe.effect == 'test' and all(phase.effect not in {'upload', 'deploy', 'publish'} for phase in safe.phases)
                else f'Operation: {safe.operation}\nEffect: {safe.effect}. Review technical steps before starting.')
             + f'\n\n{len(safe.phases)} steps in total: {work}.'
@@ -946,15 +954,12 @@ class ManagerPanel(QWidget):
         self.review_run_inputs.hide()
         self.review_flow_plan = safe
         self.review_context.setText(f'{safe.project} · {platforms} · {source}')
-        from .plan_summary import start_scope
         self.review_workspace.reset(safe, getattr(self.project, 'run_fields', ()),
             capability=getattr(self.project, 'journey_capability', None), proposal=proposal,
             summary=self.review_summary.text(), inputs=self.review_run_inputs.toPlainText())
-        scope = start_scope(safe)
         self.start.setToolTip(scope)
         effects = {phase.effect if phase.effect != 'inherit' else safe.effect for phase in safe.phases}
-        self.review_help.setText('Start requires confirmation.' if safe.effect in {'upload', 'deploy', 'publish', 'dispatch'}
-            else 'External actions pause for separate approval.' if effects & {'upload', 'deploy', 'publish', 'dispatch'} else '')
+        self.review_help.setText(scope if effects & {'upload', 'deploy', 'publish', 'dispatch'} else '')
         self.review_help.setVisible(bool(self.review_help.text()))
         self.review_state.setText('Ready to start · ' + str(len(safe.phases)) + ' execution steps · ' + safe.project)
 

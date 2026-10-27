@@ -9,6 +9,26 @@ from commonUtils.runtime.operations import check_cancelled
 EXTERNAL={'deploy','upload','publish','dispatch'}
 
 
+def start_authorized_effects(plan):
+    """Bind fresh GUI review to selected deliveries/hosted checks, never history."""
+    from dataclasses import replace
+    destinations = plan.journey.get('destinations', {})
+    dispatches = {step for row in plan.journey.get('executions', {}).values()
+                  if row.get('backend') == 'GitHub' for step in row.get('steps', [])}
+    phases = []
+    for phase in plan.phases:
+        providers = {name for name, row in destinations.items() if phase.id in row['steps']}
+        provider = phase.provider or (next(iter(providers)) if len(providers) == 1 else '')
+        effect = phase.effect if phase.effect != 'inherit' else plan.effect
+        if not provider and effect == 'dispatch' and phase.id in dispatches:
+            provider = 'github'
+        if (effect == 'upload' and provider in {'firebase', 'testflight'}
+                or effect in {'upload', 'publish', 'dispatch'} and provider == 'github'):
+            phase = replace(phase, effect=effect, provider=provider, approval_required=False)
+        phases.append(phase)
+    return replace(plan, phases=tuple(phases))
+
+
 def verify_artifacts(row, *, cancelled=lambda: False):
     for artifact in row.get('artifacts',[]):
         check_cancelled(cancelled)

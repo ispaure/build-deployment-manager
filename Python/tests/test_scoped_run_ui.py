@@ -97,6 +97,29 @@ class ScopedRunTests(unittest.TestCase):
         self.assertEqual(visible, ['android.xml'])
         self.assertIn('2 reported test cases', self.view.overall_tests.text())
 
+    def test_substep_time_shares_use_only_the_displayed_scope(self):
+        self.view.update_phase(dict(id='android', status='passed', seconds=10, tests=[case('android test')]))
+        self.view.update_phase(dict(id='ios', status='passed', seconds=90, tests=[case('ios test')]))
+        self.view.select_phase('android')
+        self.view.refresh_subtests(force=True)
+        row = self.view.substeps.topLevelItem(0)
+        self.assertEqual(row.text(2), '10s')
+        self.assertEqual(row.data(2, Qt.ItemDataRole.UserRole), 1)
+        self.assertEqual(row.child(0).text(2), '200ms')
+        self.assertEqual(row.child(0).data(2, Qt.ItemDataRole.UserRole), 1)
+
+    def test_reused_substeps_keep_previous_durations_out_of_current_timing(self):
+        self.view.update_phase(dict(id='android', status='passed', seconds=0, reused=True,
+                                    reuse=dict(original_seconds=10), tests=[case('cached test')]))
+        self.view.select_phase('android')
+        self.view.refresh_subtests(force=True)
+        row = self.view.substeps.topLevelItem(0)
+        self.assertEqual(row.text(1), 'Reused')
+        for item, previous in ((row, '10s'), (row.child(0), '200ms')):
+            self.assertEqual(item.text(2), '—')
+            self.assertIsNone(item.data(2, Qt.ItemDataRole.UserRole))
+            self.assertIn('Previous run: ' + previous, item.toolTip(2))
+
     def test_running_and_never_started_timings_match_graph_and_inspector(self):
         with patch('build_manager.run_ui.time.monotonic', return_value=100):
             self.view.update_phase(dict(id='env', status='running'))

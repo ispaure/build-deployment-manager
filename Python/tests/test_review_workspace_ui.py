@@ -12,7 +12,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QPoint, QProcess, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QTabWidget, QProgressBar, QScrollArea
+from PySide6.QtWidgets import QApplication, QTabWidget, QScrollArea
 from build_manager import Phase
 from build_manager.ui import ManagerPanel
 from test_journeys import integrated
@@ -138,17 +138,90 @@ class ReviewWorkspaceTests(unittest.TestCase):
         file = appearance.child(0)
         self.assertEqual([file.child(i).text(0) for i in range(file.childCount())], ['test_done', 'test_current'])
         self.assertEqual(file.child(1).text(1), 'Running')
-        row_bar = view.tasks.itemWidget(row, 2).bar
-        self.assertIsInstance(row_bar, QProgressBar)
-        self.assertEqual(row_bar.value(), 200)
-        self.assertIn('20%', row_bar.format())
-        # The folder/file use their measured time; the test is 2 / 10 seconds.
+        self.assertEqual(row.data(2, Qt.ItemDataRole.UserRole), .2)
+        # Each level divides its measured siblings, independent of wall time.
         row.setExpanded(True)
         appearance.setExpanded(True)
         file.setExpanded(True)
-        test_bar = view.tasks.itemWidget(file.child(0), 2).bar
-        self.assertEqual(test_bar.value(), 200)
+        self.assertEqual(appearance.data(2, Qt.ItemDataRole.UserRole), 1)
+        self.assertEqual(file.data(2, Qt.ItemDataRole.UserRole), 1)
+        shares = [file.child(i).data(2, Qt.ItemDataRole.UserRole) for i in range(file.childCount())]
+        self.assertAlmostEqual(sum(shares), 1)
         self.assertEqual(file.text(0), 'test_theme.py')
+
+    def test_time_shares_renormalize_each_level_as_sibling_results_arrive(self):
+        phases = tuple(Phase(key, (sys.executable, '-V'), str(self.root)) for key in ('commonutils', 'other'))
+        self.panel.present_plan(replace(self.plan, phases=phases, journey={}))
+        view = self.view
+        facts = {'commonutils': dict(status='passed', seconds=10, tests=[
+            dict(name='small', file='shared/test_api.py', status='passed', seconds=.025),
+            dict(name='large', file='shared/test_api.py', status='passed', seconds=.075)]),
+            'other': dict(status='running', seconds=90)}
+        view.set_facts(facts)
+        row = view.rows['commonutils']
+        folder = row.child(0)
+        file = folder.child(0)
+        for item in (row, folder, file):
+            item.setExpanded(True)
+        self.assertEqual(row.data(2, Qt.ItemDataRole.UserRole), .1)
+        self.assertEqual(folder.data(2, Qt.ItemDataRole.UserRole), 1)
+        self.assertEqual(file.data(2, Qt.ItemDataRole.UserRole), 1)
+        self.assertAlmostEqual(file.child(0).data(2, Qt.ItemDataRole.UserRole), .25)
+        self.assertAlmostEqual(file.child(1).data(2, Qt.ItemDataRole.UserRole), .75)
+        self.assertEqual(file.child(0).text(2), '25ms')
+        facts['other']['seconds'] = 190
+        facts['commonutils']['tests'].append(dict(name='new', file='shared/test_api.py', status='passed', seconds=.1))
+        view.set_facts(facts)
+        self.assertEqual(row.data(2, Qt.ItemDataRole.UserRole), .05)
+        self.assertIs(row.child(0).child(0), file)
+        self.assertEqual(row.text(2), '10s')
+        self.assertAlmostEqual(file.child(0).data(2, Qt.ItemDataRole.UserRole), .125)
+        self.assertAlmostEqual(sum(file.child(i).data(2, Qt.ItemDataRole.UserRole) for i in range(3)), 1)
+        self.assertIsNone(view.tasks.itemWidget(file.child(0), 2))
+        row.setExpanded(False)
+        row.setExpanded(True)
+        self.assertAlmostEqual(file.child(0).data(2, Qt.ItemDataRole.UserRole), .125)
+
+    def test_reused_subtree_has_no_current_timing_and_keeps_historical_tooltips(self):
+        phases = tuple(Phase(key, (sys.executable, '-V'), str(self.root)) for key in ('commonutils', 'other'))
+        self.panel.present_plan(replace(self.plan, phases=phases, journey={}))
+        view = self.view
+        tests = [dict(name='test_cached', file='shared/test_api.py', status='passed', seconds=.025)]
+        fact = dict(status='passed', seconds=10, tests=tests)
+        view.set_facts({'commonutils': fact, 'other': dict(status='passed', seconds=90)})
+        row = view.rows['commonutils']
+        folder = row.child(0)
+        file = folder.child(0)
+        case = file.child(0)
+        for item in (row, folder, file):
+            item.setExpanded(True)
+        # Even identical descendants must refresh when reuse status changes.
+        cached = dict(fact, reused=True, reuse=dict(original_seconds=10))
+        view.set_facts({'commonutils': cached, 'other': dict(status='passed', seconds=90)})
+        self.assertEqual(row.text(1), 'Reused')
+        for item in (row, folder, file, case):
+            self.assertEqual(item.text(2), '—')
+            self.assertIsNone(item.data(2, Qt.ItemDataRole.UserRole))
+            self.assertIn('Previous run:', item.toolTip(2))
+            self.assertIn('Reused result', item.data(2, Qt.ItemDataRole.AccessibleTextRole))
+        self.assertIn('10s', row.toolTip(2))
+        self.assertIn('25ms', case.toolTip(2))
+        self.assertEqual(view.rows['other'].data(2, Qt.ItemDataRole.UserRole), 1)
+        self.assertEqual(row.parent().text(2), '90s')
+        cached['seconds'] = 0  # Actual retained evidence uses zero for this run.
+        view.set_facts({'commonutils': cached})
+        self.assertEqual(row.parent().text(2), '—')
+        self.assertIsNone(row.parent().data(2, Qt.ItemDataRole.UserRole))
+        row.setExpanded(False)
+        row.setExpanded(True)
+        self.assertEqual(case.text(2), '—')
+        self.assertEqual(case.data(0, Qt.ItemDataRole.UserRole + 1)['seconds'], .025)
+        # A fresh execution restores normal timing without rebuilding the tree.
+        view.set_facts({'commonutils': fact})
+        self.assertIs(row.child(0).child(0).child(0), case)
+        self.assertEqual(row.text(2), '10s')
+        self.assertEqual(case.text(2), '25ms')
+        self.assertEqual(case.data(2, Qt.ItemDataRole.UserRole), 1)
 
     def test_one_persistent_inspector_syncs_keyboard_card_task_and_dependency_selection(self):
         view = self.view
