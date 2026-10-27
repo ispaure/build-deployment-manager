@@ -6,6 +6,11 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, Q
 from .ui_components import SelectionSummary, ActionStrip, style_tabs
 
 
+def delivery_tab_label(category):
+    return {'Mobile tester platforms': 'Tester', 'Mobile dev devices': 'Development',
+            'Mobile stores': 'Store', 'Source releases': 'Source'}.get(category, category)
+
+
 class ConfigurationSection(QWidget):
     def __init__(self, label, *, expanded=True):
         super().__init__()
@@ -59,9 +64,8 @@ class ConfigurationView(QWidget):
         preview = QWidget()
         preview_layout = QVBoxLayout(preview)
         preview_layout.setContentsMargins(4, 0, 0, 0)
-        heading = QLabel('Workflow overview')
-        heading.setStyleSheet('font-weight: 600;')
-        preview_layout.addWidget(heading)
+        self.proposed_flow.overview_heading.setText('Workflow overview')
+        self.proposed_flow.overview_heading.show()
         preview_layout.addWidget(self.proposed_flow, 1)
         self.splitter = QSplitter()
         self.editor_pane = QWidget()
@@ -126,7 +130,7 @@ class ConfigurationView(QWidget):
         self.config_tabs.setUsesScrollButtons(True)
         style_tabs(self.config_tabs)
         self.config_pages, self.page_layouts = {}, {}
-        for key, label in [('source', 'Source'), ('platforms', 'Platforms'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
+        for key, label in [('source', 'Source'), ('platforms', 'Test'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
             page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(6)
             self.config_tabs.addTab(page, label); self.config_pages[key], self.page_layouts[key] = page, body
         configuration_layout.addWidget(self.config_tabs, 1)
@@ -238,12 +242,29 @@ class ConfigurationView(QWidget):
         delivery = section('delivery', 'Delivery · destinations and recipients')
         self.delivery_tabs = QTabWidget()
         self.delivery_categories, self.destination_categories = {}, {}
+        self.delivery_platform_tabs, self.delivery_platform_pages, self.destination_platforms = {}, {}, {}
         if capability:
             delivery.body.addWidget(self.delivery_tabs)
-            def category(label):
+            def category(label, platforms=()):
                 if label not in self.delivery_categories:
                     page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(4)
-                    self.delivery_tabs.addTab(page, label.removeprefix('Mobile ').capitalize()); self.delivery_categories[label] = (page, body)
+                    self.delivery_tabs.addTab(page, delivery_tab_label(label)); self.delivery_categories[label] = (page, body)
+                    if label in {'Mobile tester platforms', 'Mobile dev devices'}:
+                        tabs = QTabWidget()
+                        style_tabs(tabs)
+                        tabs.setAccessibleName(delivery_tab_label(label) + ' delivery platforms')
+                        body.addWidget(tabs)
+                        self.delivery_platform_tabs[label] = tabs
+                        self.delivery_platform_pages[label] = {}
+                        for platform, title in (('android', 'Android'), ('ios', 'iOS')):
+                            platform_page = QWidget()
+                            platform_body = QVBoxLayout(platform_page)
+                            platform_body.setContentsMargins(4, 4, 4, 4)
+                            platform_body.setSpacing(4)
+                            tabs.addTab(platform_page, title)
+                            self.delivery_platform_pages[label][platform] = (platform_page, platform_body)
+                if len(platforms) == 1 and platforms[0] in self.delivery_platform_pages.get(label, {}):
+                    return self.delivery_platform_pages[label][platforms[0]][1]
                 return self.delivery_categories[label][1]
             categories = {'Mobile tester platforms': 0, 'Mobile dev devices': 1, 'Mobile stores': 2, 'Source releases': 3}
             for name, row in sorted(capability.get('destinations', {}).items(), key=lambda item: categories.get(item[1].get('category'), 4)):
@@ -271,14 +292,22 @@ class ConfigurationView(QWidget):
                 self.destination_groups[name] = group
                 group_layout.addWidget(options)
                 label = row.get('category', 'Destinations')
-                category(label).addWidget(group)
+                category(label, row.get('platforms', ())).addWidget(group)
                 self.destination_categories[name] = label
+                self.destination_platforms[name] = row['platforms'][0] if len(row.get('platforms', ())) == 1 else ''
                 self.delivery_widgets.append(group)
             for row in capability.get('unavailable_destinations', []):
                 label = QLabel(row['label'] + ' · unavailable in this workflow\n' + row['reason'])
                 label.setWordWrap(True)
                 label.setTextFormat(Qt.TextFormat.PlainText)
-                category(row.get('category', 'Destinations')).addWidget(label)
+                category(row.get('category', 'Destinations'), row.get('platforms', ())).addWidget(label)
+            for pages in self.delivery_platform_pages.values():
+                for page, body in pages.values():
+                    if not body.count():
+                        empty = QLabel('No destinations declared by this project.')
+                        empty.setWordWrap(True)
+                        body.addWidget(empty)
+                    body.addStretch()
             for page, body in self.delivery_categories.values():body.addStretch()
             for index, label in enumerate(sorted(self.delivery_categories, key=lambda name: categories.get(name, 4))):
                 current = self.delivery_tabs.indexOf(self.delivery_categories[label][0])
@@ -481,7 +510,7 @@ class ConfigurationView(QWidget):
         warning = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
         for key in self.config_pages:
             index = self.config_tabs.indexOf(self.config_pages[key])
-            label = {'source': 'Source', 'platforms': f'Platforms ({len(platforms)})' if guided else 'Operation',
+            label = {'source': 'Source', 'platforms': f'Test ({len(platforms)})' if guided else 'Operation',
                      'delivery': f'Delivery ({len(destinations)})', 'advanced': 'Options'}[key]
             self.config_tabs.setTabText(index, label)
             self.config_tabs.setTabIcon(index, warning if key in issues else QIcon())
@@ -489,8 +518,26 @@ class ConfigurationView(QWidget):
         for category, (page, _) in self.delivery_categories.items():
             count = sum(control.isChecked() for name, control in self.destination_checks.items()
                 if self.destination_categories[name] == category) if self.goal.currentData() == 'deliver' else 0
+            if category == 'Mobile dev devices':
+                from .run_fields import selection_ids
+                devices = {platform: set() for platform in ('android', 'ios', '')}
+                destinations = getattr(self.project, 'journey_capability', {}).get('destinations', {})
+                if self.goal.currentData() == 'deliver':
+                    for name, control in self.destination_checks.items():
+                        if not control.isChecked() or self.destination_categories[name] != category:
+                            continue
+                        field = self.run_fields.controls.get(destinations[name].get('recipient_field'))
+                        if field is not None:
+                            platform = self.destination_platforms.get(name, '')
+                            devices.setdefault(platform, set()).update(selection_ids(field.text()))
+                count = sum(len(ids) for ids in devices.values())
+                tabs = self.delivery_platform_tabs[category]
+                for platform, (platform_page, _) in self.delivery_platform_pages[category].items():
+                    title = 'Android' if platform == 'android' else 'iOS'
+                    tabs.setTabText(tabs.indexOf(platform_page), f'{title} ({len(devices[platform])})')
             index = self.delivery_tabs.indexOf(page)
-            self.delivery_tabs.setTabText(index, category.removeprefix('Mobile ').capitalize() + (f' ({count})' if count else ''))
+            self.delivery_tabs.setTabText(index, f'{delivery_tab_label(category)} ({count})')
+            self.delivery_tabs.setTabToolTip(index, f'{category} · {count} selected')
 
     def refresh_blockers(self, blockers):
         if blockers == self.current_blockers:
@@ -539,7 +586,11 @@ class ConfigurationView(QWidget):
         item.reveal()
         self.config_tabs.setCurrentWidget(self.config_pages['platforms' if section == 'validation' else section])
         if section == 'delivery' and target in self.destination_categories:
-            self.delivery_tabs.setCurrentWidget(self.delivery_categories[self.destination_categories[target]][0])
+            category = self.destination_categories[target]
+            self.delivery_tabs.setCurrentWidget(self.delivery_categories[category][0])
+            platform = self.destination_platforms.get(target)
+            if platform in self.delivery_platform_pages.get(category, {}):
+                self.delivery_platform_tabs[category].setCurrentWidget(self.delivery_platform_pages[category][platform][0])
         if section == 'source':
             control = self.source_mode
         elif section == 'delivery' and target in self.destination_checks:

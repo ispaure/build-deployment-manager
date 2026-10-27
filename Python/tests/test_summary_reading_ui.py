@@ -57,7 +57,7 @@ class SummaryReadingTests(unittest.TestCase):
         self.assertLess(text.index('Failure headline'), text.index('Dependencies:'))
         self.view.attention_problems.click()
         self.assertEqual(self.view.selected, 'check')
-        self.assertEqual(self.view.tabs.currentWidget(), self.view.steps.parentWidget())
+        self.assertIs(self.view.run_choices.inspector_tabs.currentWidget(), self.view.run_choices.details_scroll)
         self.assertIn('Failure headline', self.view.detail.toPlainText())
 
     def test_problem_action_scopes_tests_and_selects_failure_message(self):

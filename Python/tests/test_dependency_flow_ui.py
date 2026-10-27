@@ -317,7 +317,8 @@ class DependencyFlowTests(unittest.TestCase):
                 self.assertIn('needs your approval', view.next_action.text())
                 view.update_phase(dict(id='testflight', status='unknown'))
                 self.assertIn('unknown outcome', view.next_action.text())
-                view.flow.whole.click()
-                self.assertIn('Testflight', view.selection_heading.text())
+                view.run_choices.flow.all_tasks.click()
+                self.assertEqual(set(view.run_choices.rows), {phase.id for phase in plan.phases})
+                self.assertEqual(view.run_choices.selected, '')
             finally:
                 view.close()

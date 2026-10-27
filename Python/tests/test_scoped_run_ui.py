@@ -42,19 +42,19 @@ class ScopedRunTests(unittest.TestCase):
     def tearDown(self):
         self.assertEqual(self.plan.data(), self.original)
 
-    def test_leaf_and_expanded_cards_keep_the_same_right_hand_inspector(self):
+    def test_all_cards_keep_the_same_right_hand_inspector(self):
         self.view.resize(1200, 780)
         self.view.show()
         for key in ('deliver.testflight', 'platform.android', 'deliver.testflight'):
             self.grouped.open_group(key)
             self.app.processEvents()
-            self.assertIs(self.grouped.content_splitter.widget(1), self.view.inspector)
+            self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
             self.assertIs(self.grouped.content_splitter.widget(0), self.grouped.pages)
-            self.assertTrue(self.view.inspector.isVisible())
+            self.assertTrue(self.view.run_choices.inspector.isVisible())
             if key == 'deliver.testflight':
                 self.assertEqual(self.grouped.pages.currentIndex(), 0)
 
-    def test_keyboard_card_opens_only_its_graph_and_shared_inspector(self):
+    def test_keyboard_card_keeps_overview_and_scopes_shared_inspector(self):
         self.view.resize(1200, 780)
         self.view.show()
         self.app.processEvents()
@@ -62,15 +62,15 @@ class ScopedRunTests(unittest.TestCase):
         main.setFocus()
         QTest.keyClick(main, Qt.Key.Key_Space)
         self.app.processEvents()
-        self.assertEqual(set(self.view.flow.canvas.cards), {'env', 'android'})
-        self.assertEqual(self.view.flow.canvas.edges, [('env', 'android')])
-        self.assertIs(self.grouped.content_splitter.widget(1), self.view.inspector)
-        self.assertTrue(self.view.inspector.isVisible())
-        self.assertTrue(self.view.flow.scroll.isVisible())
+        self.assertEqual(set(self.view.run_choices.rows), {'env', 'android'})
+        self.assertEqual(self.grouped.pages.currentIndex(), 0)
+        self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
+        self.assertTrue(self.view.run_choices.inspector.isVisible())
+        self.assertTrue(self.grouped.map.isVisible())
+        self.assertTrue(self.view.flow.isHidden())
         self.assertTrue(self.view.steps.isHidden())
         self.assertTrue(self.view.flow.stages_button.isHidden())
         self.assertTrue(self.view.flow.map_button.isHidden())
-        self.assertTrue(self.view.flow.whole.isHidden())
         self.assertEqual(self.view.pages.count(), 1)
         self.view.flow.canvas.cards['android'][0].click()
         self.assertEqual(self.view.selected, 'android')
@@ -118,16 +118,16 @@ class ScopedRunTests(unittest.TestCase):
 
     def test_external_prerequisites_navigate_to_their_own_card(self):
         self.grouped.open_group('deliver.firebase')
-        self.assertEqual(set(self.view.flow.canvas.cards), {'firebase'})
-        self.assertEqual(self.view.external_prerequisites.itemData(1), 'prepare')
-        self.view.external_prerequisites.activated.emit(1)
+        self.assertEqual(set(self.view.run_choices.rows), {'firebase'})
+        self.assertEqual(self.view.run_choices.prerequisite_layout.itemAt(1).widget().full_text, 'Prepare')
+        self.view.run_choices.prerequisite_layout.itemAt(1).widget().click()
         self.assertEqual(self.view.selected, 'prepare')
         self.assertIn('prepare', self.view.flow.canvas.cards)
         self.view.update_phase(dict(id='ios', status='failed', error='Gate failed'))
         self.grouped.open_group('deliver.firebase')
         self.view.blocking_step.click()
         self.assertEqual(self.view.selected, 'ios')
-        self.assertEqual(set(self.view.flow.canvas.cards), {'ios'})
+        self.assertEqual(set(self.view.run_choices.rows), {'ios'})
         self.assertIn('Gate failed', self.view.detail.toPlainText())
 
     def test_delivery_includes_prepared_inputs_and_keeps_file_navigation_local(self):
@@ -146,7 +146,7 @@ class ScopedRunTests(unittest.TestCase):
     def test_startup_error_opens_run_evidence_without_faking_a_step_failure(self):
         self.view.unverified('Runner could not import its dependencies')
         self.view.show_problems()
-        self.assertEqual(self.grouped.pages.currentIndex(), 1)
+        self.assertEqual(self.grouped.pages.currentIndex(), 0)
         self.assertIn('Runner could not import', self.view.detail.toPlainText())
         self.assertTrue(all(row['status'] == 'queued' for row in self.view.facts.values()))
 
@@ -164,11 +164,11 @@ class ScopedRunTests(unittest.TestCase):
             replace(self.plan.phases[1], dependencies=('admit',)), *self.plan.phases[3:]))
         self.view.reset(plan)
         self.view.run_choices.flow.open_group('platform.android')
-        self.assertEqual(set(self.view.flow.canvas.cards), {'admit', 'android'})
+        self.assertEqual(set(self.view.run_choices.rows), {'admit', 'android'})
         self.view.flow.canvas.cards['admit'][0].click()
-        self.assertEqual(self.view.flow.canvas.edges, [('admit', 'android')])
+        self.assertIn(('ios', 'admit'), self.view.flow.canvas.edges)
         self.assertIn('ios', self.view.detail.toPlainText())
-        self.assertEqual(self.view.external_prerequisites.itemData(1), 'ios')
+        self.assertIn('wait for completion', self.view.run_choices.prerequisite_layout.itemAt(1).widget().full_text)
 
     def test_rehydration_failure_navigation_and_reset_keep_one_inspector(self):
         report = [dict(id='env', status='passed', seconds=1),
@@ -180,8 +180,8 @@ class ScopedRunTests(unittest.TestCase):
             self.assertEqual(self.view.selected, 'android')
             self.assertEqual(self.view.tests.currentItem().text(0), 'broken')
             self.assertIn('Expected success', self.view.test_detail.toPlainText())
-            self.assertEqual(set(self.view.flow.canvas.cards), {'env', 'android'})
-            self.assertIs(self.view.run_choices.flow.content_splitter.widget(1), self.view.inspector)
+            self.assertIn('android', self.view.run_choices.rows)
+            self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
             self.app.processEvents()
         self.view.reset(self.plan)
         self.view.run_choices.flow.open_group('source')

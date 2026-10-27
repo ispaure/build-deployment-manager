@@ -1,6 +1,31 @@
 # Clearer plan review and run progress
 
-## Design decision
+## Current UI decision
+
+Review plan and Progress & results now share `ReviewPlanView`: a persistent
+captured-card overview beside the task tree and Details / Command / Plan inspector.
+Selecting every card follows the same rule: filter the side pane without opening
+a nested map. All tasks clears that filter. Run-only test, timing, output and
+delivery reports supplement the inspector under Results. Start retains the
+selection and pane sizes, and live facts update the reviewed cards in place.
+Best fit measures wrapped card layouts in both orientations using widths from
+88% to 124% of the normal card width. It favors readable text before scaling the
+map; explicit orientation and manual zoom retain control. Reflow keeps the same
+card widgets and dependency identities.
+
+The nested browser in `grouped_workflow_ui.py`, `PlanSummaryView` and supporting
+grouping/map code are deliberately preserved for a later UX review and possible
+improved reintroduction. `nested_navigation=False` unhooks it from both active
+stages. **Do not delete this dormant view as unused code or reconnect it without
+an explicit user request.** This preservation requirement is also in the root
+`AGENTS.md`; the earlier design discussion below records the superseded proposal.
+
+Portable Qt tests cover both stages, consistent leaf/multi-task selection,
+frozen overview geometry, live facts, cross-card prerequisite selection, report
+inspection and reset. Offscreen screenshots are layout checks, not native desktop
+or screen-reader acceptance. Raw evidence remains under ignored test-results.
+
+## Earlier design decision (superseded)
 
 After **Next: review plan**, open a readable confirmation of the user's choices,
 the work that Start authorizes, and the actions that require later approval.
@@ -14,7 +39,7 @@ are included so the handoff from review remains understandable. Configuration,
 project settings and the execution engine retain their existing responsibilities.
 This refines the review portion of the [redesign brief](ux-redesign-brief.md).
 
-## Desktop implementation status
+## Earlier desktop implementation (superseded)
 
 The native Qt implementation now opens Review on Run summary, with three
 captured-choice columns above the familiar Source, platform, package and

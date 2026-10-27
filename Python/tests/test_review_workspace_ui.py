@@ -83,9 +83,9 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.assertIs(view.rows['firebase'].parent(), view.card_rows['deliver.firebase'])
         self.assertIn('firebase:fixture', view.fact_values['Delivery'].text())
         view.flow.canvas.cards['platform.android'][0].click()
-        self.assertEqual(view.flow.pages.currentIndex(), 1)
+        self.assertEqual(view.flow.pages.currentIndex(), 0)
         self.assertEqual(set(view.rows), {'environment', 'android'})
-        self.assertEqual(set(view.graph.canvas.cards), {'environment', 'android'})
+        self.assertTrue(view.graph.isHidden())
 
     def test_task_expands_reported_cases_and_keeps_selection_during_live_updates(self):
         view = self.view
@@ -164,13 +164,13 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.assertTrue(view.graph.whole.isHidden())
         self.assertEqual(view.selected, 'environment')
         view.tasks.setCurrentItem(view.rows['android'])
-        self.assertEqual(view.graph.selected, 'android')
-        self.assertTrue(view.graph.canvas.cards['android'][0].isChecked())
+        self.assertEqual(view.selected, 'android')
+        self.assertTrue(view.flow.canvas.cards['platform.android'][0].isChecked())
         self.assertEqual(view.prerequisite_layout.itemAt(1).widget().full_text, 'Check environment')
         self.assertTrue(view.error_panel.isHidden())
         self.assertTrue(view.fact_values['Elapsed'].isHidden())
         self.assertTrue(view.fact_values['Runs on'].text())
-        view.graph.canvas.cards['environment'][0].click()
+        view.tasks.setCurrentItem(view.rows['environment'])
         self.assertIs(view.tasks.currentItem(), view.rows['environment'])
         view.flow.back.click()
         self.assertIs(view.inspector_scroll, inspector)
@@ -225,7 +225,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
             exit_code=7, seconds=2.5, log='environment.log', tests=[dict(name='broken case', status='error', message='Expected tool output')])})
         view.log_reader = lambda key: 'Captured stderr: missing plugin\nlast diagnostic line'
         view.flow.open_group('deliver.testflight')
-        view.graph.select('testflight')
+        view.inspect_phase('testflight')
         self.assertTrue(view.problems.isVisible())
         view.problems.click()
         self.assertEqual(view.selected, 'environment')

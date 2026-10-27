@@ -84,10 +84,15 @@ class RunView(QWidget):
         self.phase_log_reader = None
         self.review_available = False
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        heading = QLabel('Run progress & results')
+        heading.setStyleSheet('font-size: 18pt; font-weight: 600;')
+        layout.addWidget(heading)
         self.context = QLabel('Run source and destination will appear here.')
         self.context.setWordWrap(True)
         self.context.setAccessibleName('Source and destination of the displayed run')
-        layout.addWidget(self.context)
+        self.context.hide()  # Captured identity remains in the shared workspace.
         self.summary = QLabel('No run yet. Configure your goal and inspect the plan.')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
@@ -95,7 +100,6 @@ class RunView(QWidget):
         self.workflow_action.setWordWrap(True)
         self.workflow_action.setTextFormat(Qt.TextFormat.PlainText)
         self.workflow_action.setAccessibleName('Run outcome and next action')
-        layout.addWidget(self.workflow_action)
         self.attention = QFrame()
         self.attention.setObjectName('runAttention')
         self.attention.setAccessibleName('Run needs attention')
@@ -125,7 +129,6 @@ class RunView(QWidget):
         self.progress.setAccessibleName('Completed workflow steps')
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
-        layout.addWidget(self.progress)
         self.activity = ActionStrip()
         self.activity_buttons = {}
         for state, color in (('running', '#245db5'), ('queued', '#727272'),
@@ -135,10 +138,8 @@ class RunView(QWidget):
             button.setStyleSheet(button.styleSheet() + f' QPushButton {{ border-left: 4px solid {color}; }}')
             button.clicked.connect(lambda checked=False, state=state: self.inspect_activity(state))
             self.activity_buttons[state] = button
-        layout.addWidget(self.activity)
         self.overall_tests = QLabel('No individual case reports available yet.')
         self.overall_tests.setWordWrap(True)
-        layout.addWidget(self.overall_tests)
         from .workflow_ui import WorkflowFlow
         self.flow = WorkflowFlow(self, graph_only=True)
         self.flow.hide()
@@ -187,12 +188,9 @@ class RunView(QWidget):
         inspector_layout.addWidget(self.external_prerequisites)
         self.tabs = QTabWidget()
         inspector_layout.addWidget(self.tabs, 1)
-        from .plan_summary_ui import PlanSummaryView
-        self.run_choices = PlanSummaryView()
-        self.run_choices.phase_selected.connect(self.inspect_summary_phase)
-        self.run_choices.blocker_selected.connect(self.inspect_blocking_phase)
-        self.run_choices.problems_selected.connect(self.inspect_phase_problems)
-        self.run_choices.group_selected.connect(self.select_group)
+        from .review_ui import ReviewPlanView
+        self.run_choices = ReviewPlanView()
+        self.run_choices.phase_selected.connect(self.select_phase)
         self.pages = QStackedWidget()
         self.pages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.pages.setAccessibleName('Workflow cards and step inspection')
@@ -215,6 +213,8 @@ class RunView(QWidget):
         layout.addWidget(self.pages, 1)
         results = QWidget()
         results_layout = QVBoxLayout(results)
+        for control in (self.workflow_action, self.progress, self.activity, self.overall_tests):
+            results_layout.addWidget(control)
         self.result_counts = QLabel('No test reports yet. Counts appear as tests finish.')
         self.result_counts.setWordWrap(True)
         self.result_counts.setAccessibleName('Reported test totals')
@@ -327,6 +327,12 @@ class RunView(QWidget):
         log_layout.addWidget(self.log)
         self.tabs.addTab(log_page, 'Output')
         self.tabs.addTab(self.delivery_page, 'Files and deliveries')
+        # The same persistent overview/task/detail workspace owns review and run.
+        # Run-only evidence supplements its inspector instead of replacing it.
+        self.run_choices.inspector_tabs.addTab(self.tabs, 'Results')
+
+    def show_results_tab(self):
+        self.run_choices.inspector_tabs.setCurrentWidget(self.tabs)
 
     def select_group(self, key):
         self.flow.selected = ''
@@ -343,13 +349,13 @@ class RunView(QWidget):
             self.flow.setVisible(bool(keys))
 
     def open_step_group(self, key):
-        grouped = self.run_choices.flow
-        if key:
-            group = next((group for group in grouped.grouped.members if key in grouped.group_keys(group)), '__unassigned__')
-            members = grouped.grouped.members.get(group, grouped.grouped.unassigned)
-            if (grouped.selected != group or key not in self.flow.canvas.cards
-                    or grouped.pages.currentIndex() == 0 and len(members) > 1):
-                grouped.open_group(group)
+        if key and self.run_choices.selected != key:
+            # Selection is mirrored without sending it back through select_phase.
+            self.run_choices.blockSignals(True)
+            try:
+                self.run_choices.inspect_phase(key)
+            finally:
+                self.run_choices.blockSignals(False)
 
     def live_facts(self):
         now = time.monotonic()
@@ -404,7 +410,7 @@ class RunView(QWidget):
         self.open_step_group(key)
         self.flow.select(key)
         self.restore_inspector_tab(tab)
-        self.flow.scroll.setFocus()
+        self.run_choices.tasks.setFocus()
 
     def restore_inspector_tab(self, tab):
         if self.tabs.isTabVisible(self.tabs.indexOf(tab)):
@@ -414,8 +420,8 @@ class RunView(QWidget):
 
     def inspect_blocking_phase(self, key):
         self.inspect_summary_phase(key)
-        self.tabs.setCurrentWidget(self.steps.parentWidget())
-        self.steps.setFocus()
+        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
+        self.run_choices.tasks.setFocus()
 
     def scoped_facts(self):
         if self.plan is None:
@@ -431,9 +437,9 @@ class RunView(QWidget):
             self.show_problem_tests()
             self.tests.setFocus()
             self.select_first_problem_test()
+            self.show_results_tab()
         else:
-            self.tabs.setCurrentWidget(self.steps.parentWidget())
-            self.detail.setFocus()
+            self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
 
     def select_first_problem_test(self):
         for index in range(self.tests.topLevelItemCount()):
@@ -612,6 +618,7 @@ class RunView(QWidget):
     def show_problem_tests(self):
         self.filter.setCurrentText('Problems')
         self.tabs.setCurrentWidget(self.tests.parentWidget())
+        self.show_results_tab()
 
     def show_blocking_step(self):
         if self.blocking_key:
@@ -628,26 +635,20 @@ class RunView(QWidget):
     def show_problems(self):
         """Leave any selected successful card and reveal the actual problem."""
         self.search.clear()
-        self.flow.select('')
-        unknown = next((key for key, row in self.facts.items() if row['status'] == 'unknown'), None)
-        cases = any(case['status'] in {'failed', 'error'}
-                    for row in self.facts.values() for case in row.get('tests', ()))
-        if cases and not unknown:
-            key = next(key for key, row in self.facts.items() if any(
-                case['status'] in {'failed', 'error'} for case in row.get('tests', ())))
-            self.inspect_phase_problems(key)
+        unknown = any(row['status'] == 'unknown' for row in self.facts.values())
+        failed_test = next((key for key, row in self.facts.items() if any(
+            case.get('status') in {'failed', 'error'} for case in row.get('tests', ()))), '')
+        if failed_test and not unknown:
+            self.inspect_phase_problems(failed_test)
             return
-        key = unknown or next((key for key, row in self.facts.items()
-            if row['status'] in {'failed', 'error', 'timeout', 'cancelled', 'interrupted'}), None)
-        if key:
-            self.flow.select(key)
-        else:
-            self.open_step_group(next(iter(self.phases), ''))
-            self.flow.select('')
-            self.selection_heading.setText('Run problem · no step failure recorded')
+        self.run_choices.log_reader = self.phase_log_reader
+        self.run_choices.show_problems()
+        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
+        if not any(self.run_choices.is_problem(key) for key in self.phases):
+            self.run_choices.flow.close_group()
+            self.run_choices.context_info.setText(self.summary.text())
+            self.run_choices.context_info.show()
             self.set_detail_text(self.summary.text(), None)
-        self.tabs.setCurrentWidget(self.steps.parentWidget())
-        self.steps.setFocus()
 
     def set_review_available(self, available):
         self.review_available = available
@@ -690,24 +691,27 @@ class RunView(QWidget):
         self.attention_changed.emit()
 
     def show_timings(self):
-        if self.run_choices.flow.pages.currentIndex() == 0:
-            self.open_step_group(next(iter(self.phases), ''))
         self.tabs.setCurrentWidget(self.timings.parentWidget())
+        self.show_results_tab()
 
     def reset(self, plan, previous=(), *, fields=(), capability=None, proposal=None):
         self.pending_refresh = self.pending_tests = False
         self.final_tests_signature = None
         self.plan = plan
         self.selected = ''
-        self.flow.setParent(None)
-        self.inspector.setParent(None)
-        self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal)
+        self.run_choices.blockSignals(True)
+        try:
+            self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal,
+                                   summary=plan_overview(plan))
+        finally:
+            self.run_choices.blockSignals(False)
         self.pages.setCurrentIndex(0)
         self.delivered.clear()
         self.delivery_signature = None
         self.output_lines.clear()
         self.flow.reset(plan)
-        self.run_choices.flow.attach_inspector(self.flow, self.inspector)
+        self.flow.hide()
+        self.inspector.hide()
         self.rows, self.facts, self.started = {}, {}, {}
         self.detail_key = None
         self.external_dependency_keys = None
@@ -740,6 +744,7 @@ class RunView(QWidget):
         self.tabs.setCurrentIndex(0)
         self.refresh_inspector()
         self.refresh_output()
+        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
 
     def update_phase(self, event, *, refresh=True):
         key = event['id']
@@ -788,6 +793,7 @@ class RunView(QWidget):
         self.refresh_inspector()
 
     def refresh_summary(self):
+        self.run_choices.log_reader = self.phase_log_reader
         terminal = {'passed', 'failed', 'error', 'skipped', 'cancelled', 'timeout', 'interrupted', 'unknown'}
         counts = {}
         for fact in self.facts.values():
@@ -803,7 +809,7 @@ class RunView(QWidget):
             visible_counts[state] = visible_counts.get(state, 0) + 1
         text = ' · '.join(f'{value} {key.replace("_", " ")}' for key, value in visible_counts.items()) or 'No steps'
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
-        self.summary.setText(prefix + text + self.run_timing)
+        self.summary.setText(prefix + f'{done} / {len(self.rows)} steps finished · ' + text + self.run_timing)
         activity_names = {'running': 'Running', 'queued': 'Queued',
             'waiting_resource': 'Waiting for capacity', 'retrying': 'Waiting to reconnect', 'awaiting_review': 'Needs approval'}
         for button in self.activity_buttons.values():
@@ -941,6 +947,8 @@ class RunView(QWidget):
     def inspect_delivered(self, item, column=0):
         if item:
             self.inspect_blocking_phase(item.data(0, Qt.ItemDataRole.UserRole))
+            self.tabs.setCurrentWidget(self.steps.parentWidget())
+            self.show_results_tab()
 
     def complete(self, report):
         self.started.clear()

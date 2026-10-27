@@ -39,10 +39,14 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 ## Choose work
 
 Run checks and Prepare and deliver are visible, exclusive goal buttons.
-Project operation opens the project operation controls. The Source, Platforms,
+Project operation opens the project operation controls. The Source, Test,
 Delivery and Options tab buttons sit above the settings pane; click one to
-open its choices. Labels stay short, with selection counts for Platforms and
-Delivery; hover for selected names. The active tab remains highlighted.
+open its choices. Delivery categories are Tester, Development, Store and Source.
+Test and each delivery category show selection counts. Tester and Development
+each contain Android and iOS subtabs; selecting a workflow card opens its matching
+platform. Development and its platform subtabs count selected devices for enabled
+destinations; its total combines Android and iOS devices. Other delivery categories
+count selected destinations. Hover for selected names. The active tab remains highlighted.
 The workflow overview takes roughly three quarters of the workspace by default;
 drag the divider to resize the panes. Requirements appear below both panes,
 keeping warning actions outside the tab contents.
@@ -61,10 +65,11 @@ current draft intact. Presets remain private to the selected checkout. On reopen
 that exactly match a saved preset re-select its name without reapplying it.
 
 Configuration uses two resizable columns. The selected section's settings appear
-on the left. Platforms presents a platform checkbox and
+on the left. Test presents a platform checkbox and
 execution-location dropdown in each table row. The live workflow overview keeps
-cards on the right. Best fit chooses the orientation, or select Horizontal or
-Vertical explicitly. Fit shows the complete graph without scrollbars; zoom in
+cards on the right. The overview defaults to Horizontal; Best fit can choose the
+orientation, or select Vertical explicitly. Display controls sit beside the
+overview heading in the upper-right corner. Fit shows the complete graph without scrollbars; zoom in
 to read a dense graph and scroll or drag to explore it. Selecting a card
 opens its matching configuration section and destination category.
 Changing selections adds and removes branches immediately; missing platform
@@ -190,22 +195,22 @@ available. Selecting one destination leaves other approvals pending. Completed
 delivery summaries show destination and retained-file counts; output selections
 and expanded groups remain stable while other work updates.
 
-Review opens as one workspace with a dependency map and a persistent side
-inspector. Captured source and run choices expand above it. The overview preserves
-the Source, platform, preparation and destination cards captured from Choose work.
-Cards containing multiple owned tasks open their execution subgraph. A card with
-one task stays on the overview and shows that task's details on the right, without
-expanding its prerequisite chain. The execution tree groups work by workflow card,
-then task, test folder, file and individual test. Its task list
-and details stay beside the map; selecting a task or a map step updates both.
-Back to choices and Start stay below the workspace.
+Review and Progress & results use the same workspace: the captured workflow
+cards stay on the left, with a persistent task list and inspector on the right.
+Captured source and run choices expand above it. The overview preserves the
+Source, platform, preparation and destination cards from Choose work. Selecting
+any card filters the side pane to its tasks; it never opens another card map.
+All tasks restores the complete task list. The tree groups work by workflow card,
+then task, test folder, file and individual test. Start carries the selected card,
+task and pane sizes into Progress & results, where states and timing update in
+place. Back to choices and Start stay below the review workspace.
 
 Results displays reported test counts, individual cases and measured timing.
 Unreported counts are shown as unavailable rather than successful zeroes. Cancel
 is available during work, and delivery/retry actions appear only when applicable.
 An attention area above the workflow names failed steps and pending approvals.
-View problems opens failed tests across the whole run, clearing unrelated search
-and card filters, or selects the failed step when no individual report exists.
+View problems finds failed tests across the whole run, clearing unrelated search,
+or selects the failed step when no individual report exists.
 Unknown outcomes take priority and open their step evidence for reconciliation.
 Review delivery uses the same retained-evidence verification and explicit approval
 dialog as the footer; it stays disabled while active work or verification prevents
@@ -227,10 +232,10 @@ responsible for obeying this rule in their own storage and artifact outputs.
 
 Read the captured source, selected platforms and exact destination identities.
 Expand Captured source and run choices to see the full source identity and captured
-notes and recipients. Click an overview card to inspect its execution steps;
-All workflow cards returns to the overview while keeping the side inspector open.
-Select a task in the inspector or a step on the map to show the same selection,
-prerequisites, execution location, timing and declared outputs. Prerequisite buttons
+notes and recipients. Click an overview card to inspect its execution steps.
+The overview stays visible; All tasks restores the full list in the side pane.
+Select a task in that list to show its prerequisites, execution location, timing
+and declared outputs. Prerequisite buttons
 open the relevant step, including across card boundaries. Unmapped work remains
 available through Other resolved subtasks.
 
@@ -319,33 +324,33 @@ Previously saved plans retain their original order; prepare a new plan after
 updating the manager and project adapter to use the new scheduling policy.
 
 The main workflow cards retain the captured Source, platform, preparation and
-destination groups during execution and while viewing retained runs. Open a card
-to see only its execution steps as a dependency graph. Select a step for its
-Details, Summary, Tests, Timing, Output and relevant Files and deliveries in the
-resizable inspector alongside the graph. Opening a card shows its combined
-evidence; selecting a step focuses its evidence. All workflow cards returns to
-the main overview.
-There is no separate results browser or stage list in the run view.
+destination groups during execution and while viewing retained runs. Selecting a
+card filters the persistent task list without navigating into another map.
+Select a task for Details, Command and Plan, just as in Review. The additional
+Results tab contains reported test totals, individual Tests, Timing, Output and
+relevant Files and deliveries. The run heading shows finished steps and current
+states; each card updates with its measured progress.
 
 Shared preparation stays in the chosen package cards, with shared task references
 where needed. Other resolved subtasks exposes work the project did not map to a
-chosen card. Dependencies outside the open card remain in the step's details;
-View prerequisite task opens the task's original card without starting work. Dotted arrows
-wait for completion without requiring success. View blocking step opens the
-recorded failed prerequisite even when it belongs to another card. View problems
-opens the relevant card and failing step, selecting its reported failure message
-when individual test reports exist. Source displays its captured identity without
-inventing executable steps when capture already happened during planning.
+chosen card. Prerequisite buttons select the relevant task without starting work,
+including across card boundaries. View blocking step selects the recorded failed
+prerequisite. View problems finds the failing step or reported test. Unknown
+outcomes take priority. Source displays its captured identity without inventing
+executable steps when capture already happened during planning.
 
-The overall outcome, next action and reported test-case count stay visible while
-inspecting a step. Opening a card selects a failed, running or approval step when
-available. Maps support pan, zoom, Tab and Space. Live updates preserve the graph
-selection, pan and zoom, and the text selection and scroll in Details.
-Click the map background to clear a step selection and show tasks and tests for
-the current view. This keeps an open workflow card open; use All workflow cards
-to return to the overview. Live test events are collected into short display
-batches so input and resizing can run between updates. Hidden Review maps refresh
-when opened rather than redrawing for every running test.
+All tasks clears the card filter. Maps support pan, zoom, Tab and Space.
+Best fit adapts the overview to the available panel: it tries horizontal and
+vertical arrangements and modest card widths so labels can wrap before shrinking
+the whole map. Horizontal and Vertical keep your chosen direction. Manual zoom
+preserves the arrangement while resizing; Fit resumes automatic sizing.
+The Source, Testing and Delivery backgrounds fill the overview's available
+height while cards retain bounded sizes within each section.
+
+Live updates preserve selection, pan and zoom, and the text selection and scroll in
+error details. Live test events are collected into short display batches so input
+and resizing can run between updates. Hidden Review maps refresh when opened
+rather than redrawing for every running test.
 
 Card text and colored edges identify running, passed, failed and approval states.
 When the project records each device's execution steps, a device card summarizes

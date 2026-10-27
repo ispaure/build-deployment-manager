@@ -15,11 +15,12 @@ class GroupedFlowView(QWidget):
     problems_selected = Signal(str)
     group_selected = Signal(str)
 
-    def __init__(self, parent=None, *, graph_mode=False, inspect_single_cards=False):
+    def __init__(self, parent=None, *, graph_mode=False, inspect_single_cards=False, nested_navigation=True):
         super().__init__(parent)
         self.plan, self.selected, self.facts = None, '', {}
         self.graph_mode = graph_mode
         self.inspect_single_cards = inspect_single_cards
+        self.nested_navigation = nested_navigation
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.pages = ViewportStack()
@@ -29,6 +30,10 @@ class GroupedFlowView(QWidget):
         self.overview_layout = body
         body.setContentsMargins(0, 0, 0, 0)
         toolbar = QHBoxLayout()
+        self.all_tasks = QPushButton('All tasks')
+        self.all_tasks.clicked.connect(self.close_group)
+        self.all_tasks.setVisible(not nested_navigation)
+        toolbar.addWidget(self.all_tasks)
         self.additional = QPushButton()
         self.additional.clicked.connect(lambda: self.open_group('__unassigned__'))
         toolbar.addWidget(self.additional)
@@ -122,7 +127,7 @@ class GroupedFlowView(QWidget):
         if inspector is not None:
             inspector.show()
 
-    def reset(self, plan, fields=(), *, preview=True, capability=None, proposal=None):
+    def reset(self, plan, fields=(), *, preview=True, capability=None, proposal=None, reserve_activity=None):
         self.plan, self.fields, self.preview = plan, fields, preview
         self.grouped = group_workflow(plan, capability, proposal)
         self.phases = {phase.id: phase for phase in plan.phases}
@@ -135,7 +140,7 @@ class GroupedFlowView(QWidget):
             self.details.clear()
         self.detail_selection = None
         self.pages.setCurrentIndex(0)
-        self.canvas.reset(self.grouped, reserve_activity=not preview)
+        self.canvas.reset(self.grouped, reserve_activity=not preview if reserve_activity is None else reserve_activity)
         self.map.reset_view()
         self.set_facts({})
         self.timer.start(0)
@@ -156,7 +161,7 @@ class GroupedFlowView(QWidget):
         self.heading.setText((node.label if node else 'Other execution steps') +
             f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))
         owned = self.grouped.members.get(key, ()) if key != '__unassigned__' else keys
-        if len(owned) <= 1:
+        if not self.nested_navigation or len(owned) <= 1:
             # Selecting a leaf scopes its inspector; it is not another page.
             self.pages.setCurrentIndex(0)
             if self.graph is not None:
@@ -167,6 +172,9 @@ class GroupedFlowView(QWidget):
             if self.graph is None and keys:
                 self.phase_selected.emit(keys[0])
             return
+        # PRESERVED EXPERIMENT: nested card navigation is intentionally dormant in
+        # ReviewPlanView (review and progress). Do not delete this implementation;
+        # it awaits a separate UX review and possible improved reintroduction.
         if self.graph is not None:
             self.heading.setText((node.label if node else 'Other execution steps') +
                 f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))

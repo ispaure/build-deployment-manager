@@ -227,6 +227,8 @@ class ManagerPanel(QWidget):
         from .run_ui import RunView
         run_page = QWidget()
         run_layout = QVBoxLayout(run_page)
+        run_layout.setContentsMargins(6, 4, 6, 4)
+        run_layout.setSpacing(4)
         self.run_view = RunView()
         run_layout.addWidget(self.run_view, 1)
         self.preview = self.run_view.log
@@ -436,7 +438,7 @@ class ManagerPanel(QWidget):
         if index == 1 and getattr(self, 'review_live_dirty', False):
             self.review_workspace.set_facts(self.run_view.live_facts())
             self.review_live_dirty = False
-        self.stage_heading.setVisible(index != 1)
+        self.stage_heading.setVisible(index not in (1, 2))
         self.stage_tabs.blockSignals(True)
         self.stage_tabs.setCurrentIndex(index)
         self.stage_tabs.blockSignals(False)
@@ -893,7 +895,6 @@ class ManagerPanel(QWidget):
         self.review_live_dirty = False
         self.stage_tabs.setTabEnabled(1, True)
         from .redaction import Redactor
-        from .run_ui import plan_overview
         self.redact = Redactor(os.environ.get(name) for name in plan.secret_environment)
         safe = self.safe_plan(plan)
         if proposal is not None:
@@ -909,8 +910,6 @@ class ManagerPanel(QWidget):
             if len(self.card_proposals) > 8:
                 self.card_proposals.pop(next(iter(self.card_proposals)))
         proposal = self.card_proposals.get(plan.identity)
-        self.overview.setPlainText(plan_overview(safe))
-        self.plan_data.setPlainText(json.dumps(self.redacted_data(plan.data()), indent=2))
         journey = getattr(safe, 'journey', {})
         platforms = ', '.join(journey.get('platforms', ())) or str(safe.adapter.get('platform') or safe.settings.get('platform', safe.source.get('platform', 'Not specified by this project')))
         destinations = '\n'.join('• ' + name + ': ' + row['identity'] + ' (requires: ' + ', '.join(row.get('platforms', list(journey.get('platforms', {})))) + ')' for name, row in journey.get('destinations', {}).items())
@@ -945,22 +944,6 @@ class ManagerPanel(QWidget):
             if field['id'] in values and field['id'] in captured_inputs]
         self.review_run_inputs.setPlainText('\n\n'.join(run_inputs))
         self.review_run_inputs.hide()
-        self.review_board.clear()
-        for phase in safe.phases:
-            effect = phase.effect if phase.effect != 'inherit' else safe.effect
-            label = phase.id.replace('-', ' ').replace('_', ' ').replace('.', ' ').capitalize()
-            description = {'test': 'Run checks', 'inspect': 'Inspect local files', 'build': 'Prepare files',
-                'upload': 'Upload · separate approval', 'deploy': 'Deliver · separate approval',
-                'publish': 'Publish · separate approval','dispatch':'Start GitHub checks · separate approval'}[effect]
-            if effect == 'deploy' and not getattr(phase, 'approval_required', True):
-                description = 'Install on selected device'
-            prerequisites = ', '.join(phase.dependencies)
-            if getattr(phase, 'waits_for', ()):
-                prerequisites += ('; ' if prerequisites else '') + 'Completion only: ' + ', '.join(phase.waits_for)
-            row = QTreeWidgetItem([label, prerequisites or 'Ready to start', description])
-            row.setToolTip(0, phase.id)
-            self.review_board.addTopLevelItem(row)
-
         self.review_flow_plan = safe
         self.review_context.setText(f'{safe.project} · {platforms} · {source}')
         from .plan_summary import start_scope
@@ -984,8 +967,18 @@ class ManagerPanel(QWidget):
     def seed_run(self, plan, previous=()):
         safe = self.safe_plan(plan)
         self.run_view.reset(safe, self.redacted_data(previous), fields=getattr(self.project, 'run_fields', ()), capability=getattr(self.project, 'journey_capability', None), proposal=self.card_proposals.get(plan.identity))
+        workspace = self.run_view.run_choices
+        if self.review_workspace.plan == safe:
+            workspace.splitter.setSizes(self.review_workspace.splitter.sizes())
+            workspace.sidebar_splitter.setSizes(self.review_workspace.sidebar_splitter.sizes())
+            group = self.review_workspace.flow.selected
+            if group:
+                workspace.flow.open_group(group)
+            if self.review_workspace.selected:
+                workspace.inspect_phase(self.review_workspace.selected)
         self.phase_rows = self.run_view.rows
         self.run_view.phase_log_reader = self.read_phase_log
+        workspace.log_reader = self.read_phase_log
         self.review_workspace.log_reader = self.read_phase_log
         self.review_workspace.set_facts(self.run_view.facts if previous else {})
         self.view_run.setEnabled(True)

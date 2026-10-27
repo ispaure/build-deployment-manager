@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from PySide6.QtCore import QPoint, QPointF, QRectF
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 from build_manager import Phase, Plan
 from build_manager.ui import ManagerPanel
 from build_manager.workflow_ui import dependency_path
@@ -41,7 +41,7 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         panel.destination_checks['firebase'].setChecked(True)
         for _ in range(5):
             self.app.processEvents()
-        for key, label in [('source', 'Source'), ('platforms', 'Platforms (1)'),
+        for key, label in [('source', 'Source'), ('platforms', 'Test (1)'),
                            ('delivery', 'Delivery (1)'), ('advanced', 'Options')]:
             index = view.config_tabs.indexOf(view.config_pages[key])
             self.assertEqual(view.config_tabs.tabText(index), label)
@@ -56,7 +56,7 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         next(iter(view.blocker_actions.values())).click()
         self.assertGreaterEqual(view.config_tabs.currentIndex(), 0)
 
-    def test_review_card_opens_exact_fork_join_map_and_preserves_plan(self):
+    def test_review_card_scopes_fork_join_tasks_and_preserves_plan(self):
         base = integrated(self.root)
         environment = Phase('environment', (sys.executable, '-V'), str(self.root), label='Check environment')
         branch = Phase('parallel', (sys.executable, '-V'), str(self.root), dependencies=('environment',))
@@ -72,11 +72,11 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         for _ in range(5):
             self.app.processEvents()
         flow = self.panel.review_workspace.graph
-        self.assertTrue(flow.scroll.isVisible())
-        self.assertEqual(set(flow.canvas.cards), {'environment', 'parallel', 'android'})
-        self.assertEqual(set(flow.canvas.edges), {('environment', 'parallel'),
-            ('parallel', 'android')})
-        flow.canvas.cards['android'][0].click()
+        self.assertTrue(flow.isHidden())
+        self.assertEqual(cards.pages.currentIndex(), 0)
+        workspace = self.panel.review_workspace
+        self.assertEqual(set(workspace.rows), {'environment', 'parallel', 'android'})
+        workspace.tasks.setCurrentItem(workspace.rows['android'])
         prerequisites = self.panel.review_workspace.prerequisite_layout
         self.assertEqual({prerequisites.itemAt(i).widget().full_text for i in range(1, prerequisites.count())},
                          {'Check environment', 'Parallel'})
@@ -151,6 +151,7 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         view = WorkflowFlow(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan)
+        view.orientation.setCurrentIndex(view.orientation.findData('best'))
         view.show()
         for orientation in ('horizontal', 'vertical', 'best'):
             view.orientation.setCurrentIndex(view.orientation.findData(orientation))
@@ -165,6 +166,53 @@ class ChooseWorkLayoutTests(unittest.TestCase):
                 self.assertTrue(viewport.contains(bounds), (orientation, bounds, viewport))
                 self.assertAlmostEqual(bounds.center().x(), viewport.center().x(), delta=2)
                 self.assertAlmostEqual(bounds.center().y(), viewport.center().y(), delta=2)
+
+    def test_overview_reflow_bounds_card_sizes_and_preserves_manual_zoom(self):
+        from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
+        from build_manager.workflow_ui import WorkflowFlow
+        plan = ProposedWorkflow(tuple(ProposedStep(str(i), 'A readable workflow heading',
+            'Explanatory text that wraps across several lines',
+            (str(i - 1),) if i else (), section='delivery') for i in range(4)))
+        view = WorkflowFlow(graph_only=True)
+        self.addCleanup(view.close)
+        view.reset(plan)
+        view.show()
+        cards = {key: row[0] for key, row in view.canvas.cards.items()}
+        for width, height in ((550, 900), (1400, 450), (550, 900)):
+            view.resize(width, height)
+            for _ in range(5):
+                self.app.processEvents()
+            for key, card in cards.items():
+                self.assertIs(view.canvas.cards[key][0], card)
+                self.assertGreaterEqual(card.width(), round(view.canvas.base_card_width * .88))
+                self.assertLessEqual(card.width(), round(view.canvas.base_card_width * 1.24))
+            bounds = view.scroll.mapFromScene(view.scroll.proxy.sceneBoundingRect()).boundingRect()
+            self.assertTrue(view.scroll.viewport().rect().contains(bounds))
+        view.scroll.zoom(1.2)
+        scale = view.scroll.transform().m11()
+        geometry = {key: card.geometry() for key, card in cards.items()}
+        view.resize(1000, 600)
+        self.app.processEvents()
+        self.assertEqual(view.scroll.transform().m11(), scale)
+        self.assertEqual({key: card.geometry() for key, card in cards.items()}, geometry)
+
+    def test_review_sections_fill_height_without_clipping_reserved_card_contents(self):
+        self.panel.present_plan(integrated(self.root))
+        self.panel.stages.setCurrentIndex(1)
+        self.panel.show()
+        flow = self.panel.review_workspace.flow
+        for width, height in ((1050, 850), (1600, 800)):
+            self.panel.resize(width, height)
+            for _ in range(6):
+                self.app.processEvents()
+            flow.map.fit_map(force=True)
+            bounds = flow.map.mapFromScene(flow.map.proxy.sceneBoundingRect()).boundingRect()
+            self.assertGreaterEqual(bounds.height(), flow.map.viewport().height() - 20)
+            for card, _, _ in flow.canvas.cards.values():
+                self.assertGreaterEqual(card.height(), card.layout().totalHeightForWidth(card.width()))
+                badge = card.findChild(QLabel, 'approvalBadge')
+                if badge and not badge.isHidden():
+                    self.assertGreaterEqual(badge.height(), badge.minimumSizeHint().height())
 
     def test_exact_map_orientation_and_fit_contain_the_entire_plan(self):
         from build_manager.workflow_ui import WorkflowFlow

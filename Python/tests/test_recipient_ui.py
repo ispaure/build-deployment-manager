@@ -43,6 +43,70 @@ class RecipientUITests(unittest.TestCase):
                 with self.assertRaises(ValueError):selection_ids(value)
         finally:picker.close()
 
+    def test_short_delivery_labels_keep_counts_and_platform_navigation(self):
+        with TemporaryDirectory() as directory:
+            project = self.project(Path(directory))
+            destinations = project.journey_capability['destinations']
+            destinations['firebase']['category'] = 'Mobile tester platforms'
+            destinations['testflight']['category'] = 'Mobile tester platforms'
+            destinations['ios-device'] = dict(label='iOS devices', platforms=['ios'], category='Mobile dev devices')
+            destinations['store'] = dict(label='Store upload', platforms=['ios'], category='Mobile stores')
+            destinations['source'] = dict(label='Source release', platforms=[], category='Source releases')
+            view = ConfigurationView(project)
+            self.addCleanup(view.close)
+            view.goal.setCurrentIndex(view.goal.findData('deliver'))
+            view.destination_checks['firebase'].setChecked(True)
+            view.destination_checks['testflight'].setChecked(True)
+            self.assertEqual([view.delivery_tabs.tabText(i) for i in range(view.delivery_tabs.count())],
+                             ['Tester (2)', 'Development (0)', 'Store (0)', 'Source (0)'])
+            before = view.choices()
+            for destination, category, platform in (
+                    ('firebase', 'Mobile tester platforms', 'android'),
+                    ('testflight', 'Mobile tester platforms', 'ios'),
+                    ('phones', 'Mobile dev devices', 'android'),
+                    ('ios-device', 'Mobile dev devices', 'ios')):
+                view.open_section('delivery', destination)
+                tabs = view.delivery_platform_tabs[category]
+                page = view.delivery_platform_pages[category][platform][0]
+                self.assertIs(tabs.currentWidget(), page)
+                self.assertTrue(page.isAncestorOf(view.destination_checks[destination]))
+                self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
+                                 ['Android (0)', 'iOS (0)'] if category == 'Mobile dev devices' else ['Android', 'iOS'])
+            self.assertEqual(view.choices(), before)
+
+    def test_development_counts_selected_devices_per_platform_and_total(self):
+        with TemporaryDirectory() as directory:
+            project = self.project(Path(directory))
+            project.journey_capability['destinations']['ios-devices'] = dict(
+                label='iOS devices', platforms=['ios'], category='Mobile dev devices', recipient_field='ios-phones')
+            project.run_fields.append(dict(id='ios-phones', label='Choose iOS devices',
+                                           kind='multiselect', destinations=['ios-devices']))
+            view = ConfigurationView(project)
+            self.addCleanup(view.close)
+            view.goal.setCurrentIndex(view.goal.findData('deliver'))
+            for destination in ('phones', 'ios-devices'):
+                view.destination_checks[destination].setChecked(True)
+            for field, prefix in (('phones', 'android'), ('ios-phones', 'ios')):
+                picker = view.run_fields.controls[field]
+                picker.set_choices([dict(id=f'{prefix}-{i}', label=f'Device {i}') for i in (1, 2)])
+                for i in range(2):
+                    picker.items.item(i).setCheckState(Qt.CheckState.Checked)
+            category = 'Mobile dev devices'
+            index = view.delivery_tabs.indexOf(view.delivery_categories[category][0])
+            tabs = view.delivery_platform_tabs[category]
+            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (4)')
+            self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Android (2)', 'iOS (2)'])
+            view.destination_checks['ios-devices'].setChecked(False)
+            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (2)')
+            self.assertEqual(tabs.tabText(1), 'iOS (0)')
+            view.destination_checks['ios-devices'].setChecked(True)
+            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (4)')
+            view.run_fields.controls['phones'].items.item(1).setCheckState(Qt.CheckState.Unchecked)
+            self.assertEqual(tabs.tabText(0), 'Android (1)')
+            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (3)')
+            view.goal.setCurrentIndex(view.goal.findData('validate'))
+            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (0)')
+
     def test_recipient_controls_live_under_delivery_category_and_map_tracks_selected_names(self):
         with TemporaryDirectory() as directory:
             view = ConfigurationView(self.project(Path(directory)))

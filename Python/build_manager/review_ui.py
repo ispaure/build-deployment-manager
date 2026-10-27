@@ -1,5 +1,6 @@
 """One review map and a persistent, synchronized task/evidence inspector."""
 import shlex
+import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QLabel, QPlainTextEdit,
@@ -64,7 +65,7 @@ class ReviewPlanView(QWidget):
         layout.addWidget(self.problems)
         self.splitter = QSplitter()
         self.splitter.setChildrenCollapsible(False)
-        self.flow = GroupedFlowView(graph_mode=True, inspect_single_cards=True)
+        self.flow = GroupedFlowView(graph_mode=True, inspect_single_cards=True, nested_navigation=False)
         self.graph = WorkflowFlow(graph_only=True)
         self.flow.attach_inspector(self.graph)
         self.flow.group_selected.connect(self.select_group)
@@ -205,15 +206,30 @@ class ReviewPlanView(QWidget):
             self.plan_tabs.addTab(widget, label)
         self.technical_section = self.plan_tabs
         self.inspector_tabs.addTab(self.plan_tabs, 'Plan')
-        self.inspector_tabs.setMinimumHeight(220)
+        self.inspector_tabs.setMinimumHeight(140)
         self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([750, 460])
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 2)
         layout.addWidget(self.splitter, 1)
 
-    def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs=''):
+    def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='', preview=True):
         self.plan, self.fields, self.summary = plan, fields, summary
+        from .run_ui import plan_overview
+        self.overview.setPlainText(plan_overview(plan))
+        self.plan_data.setPlainText(json.dumps(plan.data() if hasattr(plan, 'data') else vars(plan),
+                                                default=vars, indent=2))
+        self.board.clear()
+        for phase in plan.phases:
+            parents = ', '.join(phase.dependencies) or 'Ready to start'
+            if getattr(phase, 'waits_for', ()):
+                parents += '; completion only: ' + ', '.join(phase.waits_for)
+            effect = phase.effect if phase.effect != 'inherit' else plan.effect
+            approval = effect in {'upload', 'deploy', 'publish', 'dispatch'} and getattr(phase, 'approval_required', True)
+            row = QTreeWidgetItem([phase_title(phase), parents,
+                                   effect + (' · separate approval' if approval else '')])
+            row.setToolTip(0, phase.id)
+            self.board.addTopLevelItem(row)
         self.phases = {phase.id: phase for phase in plan.phases}
         self.selected, self.facts, self.detail_selection = '', {}, None
         self.captured.setText('\n\n'.join(name + ': ' + value for name, value in captured_choices(plan)) +
@@ -223,8 +239,9 @@ class ReviewPlanView(QWidget):
         self.source_details.toggle.setChecked(False)
         self.inspector_tabs.setCurrentIndex(0)
         self.plan_tabs.setCurrentIndex(0)
-        self.graph.reset(plan, preview=True)
-        self.flow.reset(plan, fields, preview=True, capability=capability, proposal=proposal)
+        self.graph.reset(plan, preview=preview)
+        # Reserve the same status space before and after Start.
+        self.flow.reset(plan, fields, preview=preview, capability=capability, proposal=proposal, reserve_activity=True)
         self.problems.hide()
         self.select_group('')
 
@@ -414,7 +431,8 @@ class ReviewPlanView(QWidget):
         self.render_details()
 
     def show_problems(self):
-        key = next((key for key in self.phases if self.is_problem(key)), '')
+        key = next((key for key in self.phases if self.facts.get(key, {}).get('status') == 'unknown'), '')
+        key = key or next((key for key in self.phases if self.is_problem(key)), '')
         if key:
             self.inspect_phase(key)
             self.inspector_tabs.setCurrentWidget(self.details_scroll)

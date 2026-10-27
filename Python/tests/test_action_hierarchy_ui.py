@@ -129,7 +129,7 @@ class ActionHierarchyTests(unittest.TestCase):
         view.attention_problems.click()
         self.assertEqual(view.selected, 'ios')
         self.assertEqual(view.pages.currentIndex(), 0)
-        self.assertIs(view.tabs.currentWidget(), view.steps.parentWidget())
+        self.assertIs(view.run_choices.inspector_tabs.currentWidget(), view.run_choices.details_scroll)
         self.assertIn('Simulator check failed', view.detail.toPlainText())
 
     def test_problem_tests_clear_unrelated_selection_and_search(self):

@@ -196,7 +196,9 @@ class BlockerCardTests(unittest.TestCase):
         font = QFont(original); font.setPointSize(14); self.app.setFont(font)
         self.window.resize(1024, 700); self.window.show()
         for _ in range(8): self.app.processEvents()
-        button = panel.run_view.blocking_step
+        button = panel.run_view.run_choices.blocker
+        panel.run_view.run_choices.details_scroll.ensureWidgetVisible(button)
+        self.app.processEvents()
         self.assertTrue(button.isVisible())
         ancestor = button.parentWidget()
         while ancestor:

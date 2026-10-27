@@ -581,9 +581,12 @@ class FlowCanvas(QWidget):
         self.edges = visible_dependencies(phases)
         self.completion_targets = {phase.id for phase in phases if phase.always}
         compact = getattr(plan, 'proposed', False) or getattr(plan, 'grouped', False)
+        self.compact = compact
         if reserve_activity is None:
             reserve_activity = not compact
         width = max(216, self.fontMetrics().horizontalAdvance('Waiting for approval') + 48)
+        self.base_card_width = width
+        self.base_card_height = 64 if compact else 100
         column_sections = {}
         for phase in phases:
             section = getattr(phase, 'section', '')
@@ -675,12 +678,15 @@ class FlowCanvas(QWidget):
 
     def arrange(self, vertical):
         self.vertical = vertical
+        self.grid.setAlignment(Qt.AlignmentFlag(0) if getattr(self, 'compact', False) else
+                               Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.grid.setHorizontalSpacing(24 if vertical else 48)
         self.grid.setVerticalSpacing(48 if vertical else 24)
         for label, (column, span) in zip(self.headers, self.header_positions):
             self.grid.removeWidget(label)
             label.setWordWrap(vertical)
             label.setMaximumWidth(96 if vertical else 16777215)
+            label.setMaximumHeight(16777215 if vertical else label.fontMetrics().lineSpacing() + 8)
             if vertical:
                 self.grid.addWidget(label, column, 0, span, 1)
             else:
@@ -689,15 +695,18 @@ class FlowCanvas(QWidget):
             level, lane = self.positions[key]
             self.grid.removeWidget(card)
             if vertical:
-                self.grid.addWidget(card, level, lane + 1, 1, 2)
+                self.grid.addWidget(card, level, lane + 1, 1, 2, Qt.AlignmentFlag.AlignCenter)
             else:
-                self.grid.addWidget(card, lane + 1, level, 2, 1)
+                self.grid.addWidget(card, lane + 1, level, 2, 1, Qt.AlignmentFlag.AlignCenter)
         self.adjustSize()
         self.updateGeometry()
         self.update()
 
     def adapt_to(self, size, orientation='best'):
         if not self.adaptive or not self.cards:
+            return
+        if self.compact:
+            self.adapt_overview(size, orientation)
             return
         levels = max(level for level, _ in self.positions.values()) + 1
         lanes = max(sum(level == column for level, _ in self.positions.values()) for column in range(levels))
@@ -713,6 +722,43 @@ class FlowCanvas(QWidget):
             horizontal[0] > size.width() and vertical_fit > horizontal_fit * 1.15)
         if upright != self.vertical:
             self.arrange(upright)
+
+    def adapt_overview(self, size, orientation):
+        """Reflow within modest card widths before shrinking the whole map.
+
+        Measure wrapped labels in the actual layout, including reserved activity
+        space. Never rebuild cards: selection, keyboard focus and live facts stay
+        attached to the same widgets. Explicit orientations remain authoritative.
+        """
+        widths = [round(self.base_card_width * factor) for factor in (.88, 1, 1.12, 1.24)]
+        directions = (False, True) if orientation == 'best' else (orientation == 'vertical',)
+        best = None
+        for vertical in directions:
+            for width in widths:
+                for card, _, _ in self.cards.values():
+                    card.setFixedWidth(width)
+                    card.ensurePolished()
+                    card.layout().invalidate()
+                    card.setMinimumHeight(max(self.base_card_height,
+                                              card.layout().totalHeightForWidth(width)))
+                self.arrange(vertical)
+                self.grid.invalidate()
+                bounds = self.sizeHint()
+                scale = min((size.width() - 12) / max(1, bounds.width()),
+                            (size.height() - 12) / max(1, bounds.height()), 1.35)
+                # Readable type comes first; prefer comfortable wrapping over
+                # oversized cards when several layouts fit equally well.
+                score = scale - .035 * abs(width / self.base_card_width - 1)
+                candidate = (score, vertical, width)
+                if best is None or score > best[0] + .005:
+                    best = candidate
+        _, vertical, width = best
+        for card, _, _ in self.cards.values():
+            card.setFixedWidth(width)
+            card.layout().invalidate()
+            card.setMinimumHeight(max(self.base_card_height,
+                                      card.layout().totalHeightForWidth(width)))
+        self.arrange(vertical)
 
     def update_facts(self, plan, facts, selected, preview=False):
         self.states = display_states(plan, facts, preview)
@@ -896,7 +942,8 @@ class FitMapView(QGraphicsView):
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.canvas.adapt_to(self.viewport().size(), self.orientation)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.canvas.adjustSize()
+        if self.fit_mode:
+            self.canvas.adjustSize()
         rect = self.proxy.boundingRect().adjusted(-4, -4, 4, 4)
         self.setSceneRect(rect)
         geometry = (rect, self.viewport().size())
@@ -910,6 +957,14 @@ class FitMapView(QGraphicsView):
             self.scale_changed.emit(scale)
         elif self.fit_mode:
             self._fitted = geometry
+        if self.fit_mode and getattr(self.canvas, 'compact', False):
+            # Section backgrounds use the viewport's spare space. Cards keep
+            # their measured size and sit centrally in their expanded cells.
+            scale = self.transform().m11()
+            self.canvas.resize(max(self.canvas.width(), int((self.viewport().width() - 16) / scale)),
+                               max(self.canvas.height(), int((self.viewport().height() - 16) / scale)))
+            self.canvas.grid.activate()
+            self.setSceneRect(self.proxy.boundingRect().adjusted(-4, -4, 4, 4))
 
     def reveal(self, key):
         if key in self.canvas.cards:
@@ -973,10 +1028,15 @@ class WorkflowFlow(QWidget):
         self.plan, self.facts, self.selected, self.preview = None, {}, '', False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        self.overview_heading = QLabel()
+        self.overview_heading.setStyleSheet('font-weight: 600;')
+        self.overview_heading.hide()
         self.whole = QPushButton('Whole workflow')
         self.whole.setCheckable(True)
         self.whole.clicked.connect(lambda: self.select(''))
         tools = QHBoxLayout(); tools.setContentsMargins(0, 0, 0, 0)
+        tools.addWidget(self.overview_heading)
         tools.addWidget(self.whole)
         self.stages_button = QPushButton('Stages')
         self.map_button = QPushButton('Dependency map')

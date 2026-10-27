@@ -126,33 +126,35 @@ class PlanSummaryTests(unittest.TestCase):
         view.complete(dict(status='unknown'))
         self.assertIn('will not repeat', view.workflow_action.text())
 
-    def test_card_contains_all_subtasks_and_can_reset_after_drilling_in(self):
+    def test_card_selection_keeps_overview_and_uses_shared_task_inspector(self):
         plan = integrated(self.root)
         environment = Phase('android.env', (sys.executable, '-V'), str(self.root), label='Check environment')
         plan = replace(plan, phases=(environment, replace(plan.phases[0], dependencies=('android.env',)), *plan.phases[1:]))
         view = RunView()
         self.addCleanup(view.close)
         view.reset(plan)
-        cards = view.run_choices.flow
+        workspace = view.run_choices
+        cards = workspace.flow
+        overview_ids = tuple(cards.canvas.cards)
         cards.open_group('platform.android')
-        self.assertEqual(list(view.flow.canvas.cards), ['android.env', 'android'])
-        self.assertEqual(view.flow.canvas.edges, [('android.env', 'android')])
-        view.flow.canvas.cards['android'][0].click()
-        self.assertIn('Check environment', view.detail.toPlainText())
-        view.update_phase(dict(id='android.env', status='passed', seconds=.2))
-        self.assertEqual(view.selected, 'android')
-        self.assertEqual(view.flow.canvas.states['android.env'][0], 'passed')
-        cards.back.click()
         self.assertEqual(cards.pages.currentIndex(), 0)
+        self.assertEqual(tuple(cards.canvas.cards), overview_ids)
+        self.assertEqual(set(workspace.rows), {'android.env', 'android'})
+        workspace.tasks.setCurrentItem(workspace.rows['android'])
+        self.assertEqual(view.selected, 'android')
+        self.assertIn('Check environment', workspace.prerequisite_layout.itemAt(1).widget().full_text)
+        view.update_phase(dict(id='android.env', status='passed', seconds=.2))
+        self.assertEqual(workspace.selected, 'android')
+        self.assertEqual(workspace.rows['android.env'].text(1), 'Passed')
+        cards.all_tasks.click()
+        self.assertEqual(set(workspace.rows), {phase.id for phase in plan.phases})
         cards.open_group('source')
-        self.assertTrue(view.flow.isHidden())
-        self.assertIn('No executable source subtasks', view.detail.toPlainText())
+        self.assertIn('No executable source subtasks', workspace.context_info.text())
         cards.open_group('platform.android')
-        cards.reset(plan, preview=False)
-        self.assertEqual(cards.rows, {})
         view.reset(plan)
-        self.assertEqual(view.run_choices.flow.pages.currentIndex(), 0)
-        self.assertEqual(view.run_choices.flow.rows, {})
+        self.assertEqual(cards.pages.currentIndex(), 0)
+        self.assertEqual(workspace.selected, '')
+        self.assertEqual(set(workspace.rows), {phase.id for phase in plan.phases})
 
     def test_review_and_run_keep_frozen_choose_work_geometry(self):
         from build_manager.grouped_workflow import retained_proposal
@@ -173,6 +175,52 @@ class PlanSummaryTests(unittest.TestCase):
         self.assertEqual(run.grouped.phases, proposal.phases)
         self.assertEqual(run.canvas.positions, review.canvas.positions)
         self.assertEqual(run.canvas.edges, review.canvas.edges)
+
+    def test_start_keeps_shared_workspace_selection_and_live_reports(self):
+        from build_manager.review_ui import ReviewPlanView
+        plan = integrated(self.root)
+        panel = ManagerPanel(OtherProject(self.root))
+        self.addCleanup(panel.close)
+        panel.resize(1280, 800)
+        panel.present_plan(plan)
+        panel.stages.setCurrentIndex(1)
+        panel.show()
+        self.app.processEvents()
+        review = panel.review_workspace
+        review.flow.open_group('platform.android')
+        review.splitter.setSizes([650, 500])
+        self.app.processEvents()
+        panel.seed_run(plan)
+        panel.stages.setCurrentIndex(2)
+        self.app.processEvents()
+        run = panel.run_view.run_choices
+        self.assertIsInstance(run, ReviewPlanView)
+        self.assertEqual(run.selected, review.selected)
+        self.assertEqual(run.flow.selected, review.flow.selected)
+        self.assertEqual(run.flow.pages.currentIndex(), 0)
+        self.assertEqual(run.flow.canvas.positions, review.flow.canvas.positions)
+        self.assertTrue(panel.stage_heading.isHidden())
+        panel.run_view.update_phase(dict(id='android', status='running', seconds=12))
+        self.assertEqual(run.selected, 'android')
+        self.assertEqual(run.rows['android'].text(1), 'Running')
+        self.assertIn('12.00s', run.fact_values['Elapsed'].text())
+        self.assertTrue(run.plan_data.toPlainText())
+        self.assertEqual(run.board.topLevelItemCount(), len(plan.phases))
+        self.assertEqual(panel.process.state(), QProcess.ProcessState.NotRunning)
+
+    def test_dormant_nested_browser_is_preserved_for_later_review(self):
+        from build_manager.grouped_workflow_ui import GroupedFlowView
+        phases = (Phase('first', (sys.executable, '-V'), str(self.root)),
+                  Phase('second', (sys.executable, '-V'), str(self.root), dependencies=('first',)))
+        view = GroupedFlowView()
+        self.addCleanup(view.close)
+        view.reset(Plan('Fixture', 'Checks', {}, phases, str(self.root)))
+        view.open_group('operation')
+        self.assertEqual(view.pages.currentIndex(), 1)
+        self.assertEqual(set(view.step_flow.canvas.cards), {'first', 'second'})
+        self.assertEqual(view.step_flow.canvas.edges, [('first', 'second')])
+        view.close_group()
+        self.assertEqual(view.pages.currentIndex(), 0)
 
     def test_resource_wait_names_the_contention_and_clears_when_execution_starts(self):
         plan = integrated(self.root)
