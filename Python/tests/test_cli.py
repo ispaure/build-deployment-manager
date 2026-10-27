@@ -17,6 +17,13 @@ from build_manager.cli import main
 
 
 class CLITests(unittest.TestCase):
+    def test_zero_platform_journey_reaches_project_policy_instead_of_parser_rejection(self):
+        from build_manager.cli import parser_for_cli
+        args = parser_for_cli().parse_args(['journey', '--goal', 'deliver',
+            '--destination', 'devices', '--output', 'plan.json'])
+        self.assertEqual(args.platforms, [])
+        self.assertEqual(args.destinations, ['devices'])
+
     def setUp(self):
         self.temp = TemporaryDirectory(prefix='manager CLI café ')
         self.addCleanup(self.temp.cleanup)

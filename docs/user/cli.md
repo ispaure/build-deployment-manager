@@ -202,3 +202,8 @@ Keep `result.json`, `plan.json` and logs for recovery. Do not turn a nonzero exi
 into an automatic blind retry.
 
 For callers in Python, see the [automation API](../development/automation-api.md).
+
+For a project destination that explicitly supports device-only delivery, omit
+`--platform` from `journey --goal deliver` to select no tests. The project still
+validates that selection; provider releases or destinations requiring tests reject
+it. Tests explicitly selected remain prerequisites of dependent delivery.

@@ -91,7 +91,7 @@ def parser_for_cli():
     journey = sub.add_parser('journey', help='Prepare multi-platform validation/delivery')
     journey.add_argument('--project')
     journey.add_argument('--goal', choices=('validate', 'deliver'), default='validate')
-    journey.add_argument('--platform', action='append', required=True, dest='platforms')
+    journey.add_argument('--platform', action='append', default=[], dest='platforms')
     journey.add_argument('--destination', action='append', default=[], dest='destinations')
     journey.add_argument('--execution', action='append', default=[], help='Platform=backend')
     for command in (plan, journey):
