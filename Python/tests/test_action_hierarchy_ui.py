@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import QPoint
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFrame, QPushButton, QWidget
 
 from build_manager.app import ManagerWindow
@@ -130,6 +130,15 @@ class ActionHierarchyTests(unittest.TestCase):
         # Apply actual pixel metrics to existing controls: QApplication font
         # changes alone can leave explicitly inherited platform fonts unchanged.
         font = QFont(self.app.font())
+        if os.name == 'nt':
+            # The Windows offscreen plugin does not enumerate system fonts.
+            # Load the native font rather than measuring its missing-font
+            # fallback (one full pixel-size advance for every character).
+            native_font = Path(os.environ['WINDIR']) / 'Fonts' / 'segoeui.ttf'
+            font_id = QFontDatabase.addApplicationFont(str(native_font))
+            self.assertGreaterEqual(font_id, 0, str(native_font))
+            self.addCleanup(QFontDatabase.removeApplicationFont, font_id)
+            font.setFamily(QFontDatabase.applicationFontFamilies(font_id)[0])
         font.setPixelSize(28)
         for widget in (window, *window.findChildren(QWidget)):
             widget.setFont(font)
