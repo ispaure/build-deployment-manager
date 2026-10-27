@@ -52,7 +52,12 @@ only when the project explicitly requests it, with optional reauthentication.
 
 `distribute(artifact, app_id=..., group=..., release_notes=...,
 capture_result=False)` preserves direct console output. With `capture_result=True`
-it requires a nonempty JSON operation receipt. Arguments remain structured; paths
+it accepts a nonempty JSON operation receipt or an explicit successful void-command
+envelope with exit zero. Firebase CLI 15.34's distribution command awaits the
+provider operations but returns no result object; this produces
+`{cli_status: "success", receipt_kind: "completed-command"}`. That receipt does
+not invent a remote release ID. Missing/invalid success, nonzero exit and
+ambiguous result objects remain uncertain. Arguments remain structured; paths
 and group names are never interpolated through a shell. The client does not
 approve an upload, rebuild/sign an artifact or retry an invocation.
 

@@ -31,6 +31,11 @@ class FirebaseCLI:
             response = json.loads(result.stdout)
             if response.get('status') == 'error':
                 raise ValueError('Unsuccessful Firebase response')
+            # appdistribution:distribute awaits upload/notes/distribution but
+            # returns void (firebase-tools 15.34.0). Its explicit success
+            # envelope is a completed CLI command, not a release-resource ID.
+            if write and response.get('status') == 'success' and response.get('result') is None:
+                return dict(cli_status='success', receipt_kind='completed-command')
             value = response['result']
             if write and (not isinstance(value, dict) or not value):
                 raise ValueError('Missing operation receipt')

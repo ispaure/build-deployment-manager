@@ -141,6 +141,26 @@ class FirebaseTransportTests(unittest.TestCase):
                 self.assertNotIn(output, str(failure.exception))
                 self.assertEqual(run.call_count, 1)
 
+    def test_distribution_void_success_is_a_command_receipt_not_an_unknown_upload(self):
+        client = FirebaseCLI('firebase', '/private/workspace')
+        for output in ('{"status":"success"}', '{"status":"success","result":null}'):
+            with self.subTest(output=output), patch('build_manager.firebase.subprocess.run',
+                    return_value=subprocess.CompletedProcess([], 0, output)) as run:
+                self.assertEqual(client.distribute('app.apk', app_id='other', group='friends',
+                    release_notes='notes.txt', capture_result=True),
+                    dict(cli_status='success', receipt_kind='completed-command'))
+                self.assertEqual(run.call_count, 1)
+        for code, output in [(1, '{"status":"success"}'), (0, '{}'),
+                             (0, '{"status":"success","result":{}}')]:
+            with self.subTest(code=code, output=output), patch('build_manager.firebase.subprocess.run',
+                    return_value=subprocess.CompletedProcess([], code, output)):
+                with self.assertRaises(ProviderOutcomeUnknown):
+                    client.distribute('app.apk', app_id='other', group='friends',
+                                      release_notes='notes.txt', capture_result=True)
+        with patch('build_manager.firebase.subprocess.run',
+                   return_value=subprocess.CompletedProcess([], 0, '{"status":"success"}')):
+            with self.assertRaises(FirebaseError): client.query('projects:list')
+
     def test_real_harmless_cli_receives_one_literal_distribution_and_receipt(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
