@@ -155,3 +155,25 @@ pinned dependency suites, named project interpreters and success prerequisites.
 Logistics desktop and mobile host validation now require commonUtils before
 project host suites. Suite discovery does not execute tests or replace native
 acceptance.
+
+## Publicly verifiable test receipts
+
+`build_manager.attestations.export_receipts` signs passed, authenticated local
+cache entries using an explicitly supplied private SSH signing key. It checks the
+original and retained artifact hashes before export. The envelope contains test
+input identities, completion times and artifact hashes; it excludes local paths,
+environment values and artifact contents. The project supplies public source,
+dependency, coverage and toolchain bindings. Keep private keys outside checkouts.
+
+`verify_export` checks the SSH signature against a receiver-owned allowed-signers
+file in the `build-manager-test-evidence-v1` namespace. The receiver must derive
+its own exact bindings and required test-input identities. Every original test
+completion and envelope issuance must be within one day; exporting an older
+receipt again cannot extend its lifetime. Wrong source, platform, toolchain,
+coverage, signature or freshness rejects the proof. Callers run fresh checks on
+rejection. A valid signature by itself does not establish equivalent coverage.
+
+These headless APIs establish the signing boundary. They do not automatically
+publish evidence, install a trusted signer, restore reports or skip hosted jobs.
+Projects own transport, signer enrollment and workflow integration; that policy
+must be reviewed separately before using an envelope as a hosted release gate.
