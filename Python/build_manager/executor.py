@@ -154,12 +154,15 @@ class Executor:
                 save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
+                retry_after = {}
+                retry_history = {row['id']: row['retry_attempts'] for row in previous if row.get('retry_attempts')}
                 with ThreadPoolExecutor(max_workers=plan.max_workers) as pool:
                     while pending or running:
                         changed = False
                         for phase in list(pending):
                             if len(running)>=plan.max_workers:break
-                            if any(name not in rows or rows[name]['status']=='running' for name in (*phase.dependencies, *phase.waits_for)):continue
+                            if not self.cancelled.is_set() and time.monotonic() < retry_after.get(phase.id, 0):continue
+                            if any(name not in rows or rows[name]['status'] in {'running', 'retrying'} for name in (*phase.dependencies, *phase.waits_for)):continue
                             if phase.always and running and not phase.dependencies and not phase.waits_for:continue
                             if phase.always and not phase.dependencies and not phase.waits_for and plan.max_workers>1 and any(not p.always for p in pending):continue
                             blocked = any(rows[name]['status']!='passed' for name in phase.dependencies)
@@ -194,15 +197,35 @@ class Executor:
                                 phase,effect=running.pop(future);row=future.result()
                                 row['operation_id']=rows[phase.id]['operation_id']
                                 row['effect']=effect
+                                if (row['status'] == 'failed' and row.get('exit_code') in phase.retry_exit_codes
+                                        and not self.cancelled.is_set()):
+                                    history = retry_history.setdefault(phase.id, [])
+                                    attempt_log = output / (phase.id + '.retry-' + str(len(history) + 1) + '.log')
+                                    if row.get('log') and (output / row['log']).exists():
+                                        (output / row['log']).replace(attempt_log)
+                                        row['log'] = attempt_log.name
+                                    history.append(dict(row))
+                                    row.update(status='retrying', retry_count=len(history), retry_delay=phase.retry_delay,
+                                               retry_attempts=history,
+                                               reason='Temporarily unavailable; retrying automatically. Independent work continues.')
+                                    retry_after[phase.id] = time.monotonic() + phase.retry_delay
+                                    pending.append(phase)
+                                elif phase.id in retry_history:
+                                    row.update(retry_count=len(retry_history[phase.id]), retry_attempts=retry_history[phase.id])
                                 if effect in EXTERNAL and row['status']!='passed':row['status']='unknown'
                                 rows[phase.id]=row;self.event(dict(type='phase',**row));changed=True
                         if not changed and not running and pending:
-                            raise RuntimeError('Workflow dependencies cannot make progress.')
+                            if any(p.id in retry_after for p in pending) and not self.cancelled.is_set():
+                                if any(row['status'] == 'awaiting_review' for row in rows.values()):
+                                    break  # Return ready approvals while offline recipients remain pending.
+                                self.cancelled.wait(.05)
+                            else:
+                                raise RuntimeError('Workflow dependencies cannot make progress.')
                         if changed:
                             report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
                             save()
                 statuses=[row['status'] for row in report['phases'] if row['required']]
-                cleanup_failed=any(p.always and p.required and rows[p.id]['status']!='passed' for p in plan.phases)
+                cleanup_failed=any(p.always and p.required and p.id in rows and rows[p.id]['status']!='passed' for p in plan.phases)
                 report['status']=('unknown' if 'unknown' in statuses else 'failed' if cleanup_failed else
                     'awaiting_review' if 'awaiting_review' in statuses else 'cancelled' if self.cancelled.is_set() else
                     'failed' if any(status!='passed' for status in statuses) else 'passed')
@@ -233,11 +256,85 @@ class Executor:
         self.event(dict(type='phase', **row))
         started = time.monotonic()
         environment = dict(os.environ, **phase.environment)
+        environment['BUILD_MANAGER_TEST_PROGRESS'] = '1'
         redact = Redactor(environment.get(name) for name in secret_environment)
         messages = Queue(maxsize=128)
         process = None
         reader = None
         tail = []
+        # Only changed, explicitly declared reports belong to this attempt.
+        from .test_results import read_junit
+        live_reports = {}
+        for value in phase.artifacts:
+            if phase.artifact_types.get(value) == 'junit':
+                path = Path(value)
+                try:
+                    stat = path.stat()
+                    signature = (stat.st_mtime_ns, stat.st_size)
+                except OSError:
+                    signature = None
+                live_reports[path] = signature
+        live_cases = {}
+        next_report_check = 0
+        streaming_tests = False
+        next_stream_snapshot = 0
+        streamed_cases = {}
+        file_states = {name: dict(name=name, status='planned') for name in phase.test_files}
+
+        def stream_progress(event):
+            nonlocal streaming_tests, next_stream_snapshot
+            streaming_tests = True
+            kind = event.pop('kind')
+            if kind.startswith('file_'):
+                file_states[event['name']] = dict(event, status='running' if kind == 'file_started' else event['status'])
+                if kind == 'file_started':
+                    file_states[event['name']]['started_at'] = timestamp()
+                elif (row.get('current_test') or {}).get('file') == event['name']:
+                    row['current_test'] = None
+            elif kind == 'test_started':
+                row['current_test'] = dict(event, status='running', started_at=timestamp())
+            else:
+                identity = (event['file'], event['classname'], event['name'])
+                streamed_cases[identity] = dict(event, suite=event['file'])
+                row['current_test'] = None
+            row.update(test_files=list(file_states.values()), live_tests=list(streamed_cases.values()), tests_provisional=True)
+            # Current-test transitions are immediate, but don't resend the
+            # entire growing case inventory twice for every fast testcase.
+            update = dict(type='phase', id=phase.id, status=row['status'],
+                          current_test=row.get('current_test'), tests_provisional=True)
+            if kind.startswith('file_') or time.monotonic() >= next_stream_snapshot:
+                update.update(test_files=row['test_files'], live_tests=row['live_tests'])
+                next_stream_snapshot = time.monotonic() + .25
+            self.event(update)
+
+        def report_progress():
+            nonlocal next_report_check
+            if streaming_tests or time.monotonic() < next_report_check:
+                return
+            next_report_check = time.monotonic() + .5
+            changed = False
+            for path, previous in live_reports.items():
+                try:
+                    stat = path.stat()
+                    signature = (stat.st_mtime_ns, stat.st_size)
+                    if signature == previous:
+                        continue
+                    cases = read_junit(path)
+                except (OSError, ValueError):
+                    # Writers may still be replacing a report. Final ingestion
+                    # remains strict and decides the execution outcome.
+                    continue
+                live_reports[path] = signature
+                for case in cases:
+                    for key in ('name', 'classname', 'suite', 'message'):
+                        case[key] = redact(case[key])
+                live_cases[path] = cases
+                changed = True
+            if changed:
+                row.update(live_tests=[case for cases in live_cases.values() for case in cases],
+                           tests_provisional=True)
+                self.event(dict(type='phase', **row))
+
         try:
             if os.name == 'nt':
                 from .windows_process import WindowsProcess
@@ -258,6 +355,7 @@ class Executor:
             # time on Windows (which would produce CRCRLF/blank log lines).
             with (output / row['log']).open('w', encoding='utf-8', newline='') as stream:
                 while not finished or process.poll() is None:
+                    report_progress()
                     if self.cancelled.is_set() and not phase.always:
                         row['status'] = 'cancelled'
                         stop_process(process, grace=phase.stop_grace)
@@ -275,6 +373,11 @@ class Executor:
                         finished = True
                         continue
                     line = redact(message.decode('utf-8', errors='replace'))
+                    from .test_progress import parse_test_progress
+                    progress = parse_test_progress(line)
+                    if progress is not None:
+                        stream_progress(progress)
+                        continue
                     stream.write(line)
                     stream.flush()
                     tail = (tail + line.splitlines())[-6:]
@@ -285,6 +388,11 @@ class Executor:
             if row['status'] == 'running':
                 row['status'] = 'passed' if process.returncode == 0 else 'failed'
             if phase.artifacts and row['status'] in {'passed', 'failed'}:
+                # Final retained evidence replaces interim snapshots; it must
+                # never append duplicate tests or trust the live snapshot.
+                row.pop('tests', None)
+                row['live_tests'] = []
+                row['tests_provisional'] = False
                 row['artifacts'] = []
                 directory = output / 'artifacts'
                 directory.mkdir(exist_ok=True)
@@ -309,6 +417,10 @@ class Executor:
                         for case in cases:
                             case.update({key: Redactor(environment.get(name) for name in secret_environment)(case[key])
                                          for key in ('name', 'classname', 'suite', 'message')})
+                            files = {info['file'] for info in streamed_cases.values()
+                                     if info['classname'] == case['classname'] and info['name'] == case['name']}
+                            if len(files) == 1:
+                                case['file'] = files.pop()
                         row.setdefault('tests', []).extend(cases)
                         if any(case['status'] in {'failed', 'error'} for case in cases):
                             row.update(status='failed', error='JUnit report contains failing tests.')
@@ -328,7 +440,12 @@ class Executor:
                     process.stdout.close()
                 if os.name == 'nt':
                     process.close()
-        row.update(seconds=time.monotonic() - started, finished_at=timestamp())
+        for info in file_states.values():
+            if info.get('status') == 'running':
+                info['status'] = row['status'] if row['status'] != 'passed' else 'reported'
+        if streaming_tests:
+            row['test_files'] = list(file_states.values())
+        row.update(seconds=time.monotonic() - started, finished_at=timestamp(), current_test=None)
         if row['status'] != 'passed':
             row['summary'] = '\n'.join(tail)
         return row

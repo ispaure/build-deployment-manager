@@ -31,8 +31,9 @@ cleanup across all tabs.
 Each run has Choose work, Review plan, Progress & results and History navigation,
 with Back/Next actions and an explicit Start button. Opening retained results
 from History creates another run tab. The action footer stays below the run’s
-scrolling content, including when detached. Filled blue
-buttons identify the main next action; Back, Cancel and utilities use neutral
+scrolling content, including when detached. Filled primary-action
+buttons follow the app's active accent color and identify the main next action;
+Back, Cancel and utilities use neutral
 buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 ## Choose work
@@ -62,8 +63,9 @@ that exactly match a saved preset re-select its name without reapplying it.
 Configuration uses two resizable columns. The selected section's settings appear
 on the left. Platforms presents a platform checkbox and
 execution-location dropdown in each table row. The live workflow overview keeps
-cards at a readable scale on the right; scroll or drag to explore larger maps.
-Fit resets the view without shrinking below native text size. Selecting a card
+cards on the right. Best fit chooses the orientation, or select Horizontal or
+Vertical explicitly. Fit shows the complete graph without scrollbars; zoom in
+to read a dense graph and scroll or drag to explore it. Selecting a card
 opens its matching configuration section and destination category.
 Changing selections adds and removes branches immediately; missing platform
 requirements stay visible as amber cards without selecting them on your behalf.
@@ -191,7 +193,10 @@ and expanded groups remain stable while other work updates.
 Review opens as one workspace with a dependency map and a persistent side
 inspector. Captured source and run choices expand above it. The overview preserves
 the Source, platform, preparation and destination cards captured from Choose work.
-Click a card to reveal its exact steps and upstream prerequisites. Its task list
+Cards containing multiple owned tasks open their execution subgraph. A card with
+one task stays on the overview and shows that task's details on the right, without
+expanding its prerequisite chain. The execution tree groups work by workflow card,
+then task, test folder, file and individual test. Its task list
 and details stay beside the map; selecting a task or a map step updates both.
 Back to choices and Start stay below the workspace.
 
@@ -234,7 +239,7 @@ tooltip. Repeated platform and validation prefixes are shortened so task names
 remain distinguishable; their tooltips retain full identities. Review does not
 manufacture elapsed times or historical estimates. The selected step shows compact
 fields and prerequisite buttons rather than a text dump; timeout, required flags
-and resource settings remain under Command & execution details. Output filenames
+and resource settings remain in the Command tab. Output filenames
 keep their full paths in tooltips.
 
 When evidence is present, failed task rows carry an error icon. View error details
@@ -246,23 +251,55 @@ step back to the recorded failure. Changing unrelated facts preserves selected
 text and scroll position in the details. A plan-preparation failure exposes Error
 details with the full redacted traceback beside the retained choices.
 
-Command & execution details expands the exact selected step command, working
-directory and environment references. Full plan & commands expands the readable
-plan, every declared dependency and complete redacted plan data in place. There
-are no separate summary, exact-step or technical tabs in Review. Selecting cards
-or expanding details starts no commands.
+The right inspector uses Details, Command and Plan tabs. Details presents labelled
+task facts, prerequisite controls and available error evidence. Command shows the
+exact selected step command, working directory and environment references. Plan
+contains Summary, Dependencies and Data views for the complete reviewed plan.
+The task/test tree and details tabs occupy independently resizable vertical panes,
+with no outer scrolling sidebar. Each pane scrolls its own content. Selecting tasks or tabs starts no
+commands.
 
-Fit keeps readable cards, with scrolling for graphs larger than the viewport.
+Fit shows the entire graph without scrollbars, scaling down when necessary.
+Zooming switches to a pannable view for inspecting dense graphs.
 Map interaction help is available in its tooltip rather than permanent instruction
 paragraphs. The footer keeps the approval boundary beside Start.
+Choose work, Review and Run maps offer Best fit, Horizontal and Vertical.
+Best fit switches between left-to-right and top-to-bottom when that fits the
+window better. Small workflows stay compact and aligned near the top.
+Source, Testing and Delivery
+use soft background tints rather than divider lines that resemble connections.
 Keyboard focus brings off-screen cards into view. Connections stay visible when
 selecting a step; selection changes the details, not which arrows appear.
+Steps sharing the same prerequisites use a shared junction instead of crossing
+arrows. Every incoming prerequisite at that junction is required.
 Arrows show prerequisites;
 branches can overlap when worker and shared-resource limits allow. The map omits
 redundant success arrows: if A → B → C already shows a requirement, it hides the
 extra A → C arrow. Details and the dependency table retain every declared
-dependency. Completion waits and always-run steps keep their separate relationships
-when connections are shown. Dotted arrows wait for completion without requiring success.
+dependency. Cleanup arrows also omit waits already implied by intervening steps
+finishing. A cleanup or completion-only path never hides a required success gate.
+Dotted arrows wait for completion without requiring success.
+Cleanup runs even after failed tests. Its completion therefore does not imply
+that those tests passed: final validation keeps its separate success requirements.
+
+Projects can declare test-file inventories in the reviewed plan, making files
+browsable before execution. Individual tests appear as the runner discovers and
+reports them; a file list does not promise that all cases are already known.
+Folders such as appearance expand once to reveal file basenames rather than
+repeating truncated paths on every row. Full paths remain in tooltips.
+The Logistics host runner reports the current test immediately at its start,
+followed by its outcome and measured duration. The task card and Details pane also
+show the current test. Runners without live events still update from intermediate
+JUnit reports, or after completion if they only write a final report.
+Live observations do not mark a task as passed; final retained evidence decides
+its outcome. Timing bars show each card's share of total reported step time, then
+each task, folder, file and test's share of its parent's reported time. They are
+measured time shares, not estimates of completion. Parallel work can overlap, so
+reported work time differs from elapsed run time; unmeasured items show no bar.
+Running, passed, failed and awaiting-approval cards use blue, green, red and amber
+backgrounds in both light and dark themes; blocked and skipped cards are muted.
+Live palette changes refresh manager-local styles together while preserving view
+selection and zoom; buttons continue following the active application accent.
 
 Uploads, delivery and hosted test launches identify their approval boundary.
 Start runs eligible checks and preparation; external steps pause for separate
@@ -304,8 +341,16 @@ The overall outcome, next action and reported test-case count stay visible while
 inspecting a step. Opening a card selects a failed, running or approval step when
 available. Maps support pan, zoom, Tab and Space. Live updates preserve the graph
 selection, pan and zoom, and the text selection and scroll in Details.
+Click the map background to clear a step selection and show tasks and tests for
+the current view. This keeps an open workflow card open; use All workflow cards
+to return to the overview. Live test events are collected into short display
+batches so input and resizing can run between updates. Hidden Review maps refresh
+when opened rather than redrawing for every running test.
 
 Card text and colored edges identify running, passed, failed and approval states.
+Execution cards reserve space for live status and progress so their size and map
+position stay stable as tests change. Long activity labels end with an ellipsis;
+hover for the full text or inspect the test tree and Details.
 A failed prerequisite immediately mutes affected pending descendants and explains
 why they will not run. This is a display prediction, not a new execution result;
 the executor later records skipped steps. Muted cards remain selectable. Cleanup

@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
-from .ui_components import SelectionSummary, ActionStrip
+from .ui_components import SelectionSummary, ActionStrip, style_tabs
 
 
 class ConfigurationSection(QWidget):
@@ -105,8 +105,8 @@ class ConfigurationView(QWidget):
             button.setCheckable(True)
             button.setStyleSheet('''QPushButton, QToolButton { min-height: 20px; padding: 6px 12px;
                 border: 1px solid palette(mid); border-radius: 6px; background: palette(button); font-weight: 600; }
-                QPushButton:checked, QToolButton:checked { border: 2px solid #245db5;
-                    padding: 5px 11px; background: palette(alternate-base); }
+                QPushButton:checked, QToolButton:checked { border: 2px solid palette(highlight);
+                    padding: 5px 11px; background: palette(alternate-base); color: palette(text); }
                 QPushButton:focus, QToolButton:focus { border: 2px solid palette(highlight); padding: 5px 11px; }
                 QPushButton:disabled, QToolButton:disabled { color: palette(mid); }''')
             self.goal_group.addButton(button)
@@ -124,7 +124,7 @@ class ConfigurationView(QWidget):
         self.config_tabs = QTabWidget()
         self.config_tabs.setAccessibleName('Workflow configuration')
         self.config_tabs.setUsesScrollButtons(True)
-        self.config_tabs.setStyleSheet('QTabBar::tab { padding: 6px 8px; }')
+        style_tabs(self.config_tabs)
         self.config_pages, self.page_layouts = {}, {}
         for key, label in [('source', 'Source'), ('platforms', 'Platforms'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
             page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(6)

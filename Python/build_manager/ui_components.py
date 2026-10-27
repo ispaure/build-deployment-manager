@@ -46,7 +46,7 @@ class SelectionSummary(QPushButton):
         self.setStyleSheet('''QPushButton { padding: 6px 10px; min-height: 20px;
             border: 1px solid palette(mid); border-radius: 6px; background: palette(alternate-base); }
             QPushButton:hover, QPushButton:focus { border: 1px solid palette(highlight); }
-            QPushButton:checked { border: 2px solid #245db5; padding: 5px 9px; font-weight: 600; }
+            QPushButton:checked { border: 2px solid palette(highlight); padding: 5px 9px; font-weight: 600; }
             QPushButton:disabled { color: palette(mid); }''')
 
     def set_summary(self, text):
@@ -115,10 +115,10 @@ def style_button(button, role='secondary'):
     base = 'QPushButton { min-height: 20px; padding: 6px 12px; border-radius: 6px;'
     if role == 'primary':
         button.setStyleSheet(base + '''
-            background: #245db5; color: white; border: 2px solid #245db5; font-weight: 600; }
-            QPushButton:hover { background: #194c9b; border-color: #194c9b; }
-            QPushButton:pressed { background: #123c80; }
-            QPushButton:focus { border: 2px dashed white; }
+            background: palette(highlight); color: palette(highlighted-text); border: 2px solid palette(highlight); font-weight: 600; }
+            QPushButton:hover { border-color: palette(text); }
+            QPushButton:pressed { border-color: palette(highlighted-text); }
+            QPushButton:focus { border: 2px dashed palette(highlighted-text); }
             QPushButton:disabled { background: palette(midlight); color: palette(mid);
                 border-color: palette(midlight); }
         ''')

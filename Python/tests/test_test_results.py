@@ -76,6 +76,42 @@ class JUnitTests(unittest.TestCase):
         self.assertEqual(row['tests'][0]['seconds'], 1.5)
         self.assertTrue(Path(row['artifacts'][0]['path']).is_file())
 
+    def test_live_report_arrives_before_exit_and_final_evidence_replaces_snapshot(self):
+        self.path.write_text('<testsuite><testcase name="stale"/></testsuite>')
+        release = self.root / 'release'
+        code = '''import time
+from pathlib import Path
+report, release = Path(REPORT), Path(RELEASE)
+time.sleep(.15)
+report.write_text('<testsuite>still writing')
+time.sleep(.6)
+report.write_text('<testsuite><testcase name="first" time=".1"/></testsuite>')
+deadline = time.monotonic() + 5
+while not release.exists():
+    assert time.monotonic() < deadline, 'No live report received before process exit'
+    time.sleep(.02)
+report.write_text('<testsuite><testcase name="first" time=".1"/><testcase name="second" time=".2"/></testsuite>')
+'''.replace('REPORT', repr(str(self.path))).replace('RELEASE', repr(str(release)))
+        phase = Phase('suite', (sys.executable, '-c', code), str(self.root),
+                      artifacts=(str(self.path),), artifact_types={str(self.path): 'junit'})
+        events = []
+        def observe(event):
+            events.append(event)
+            if event.get('live_tests'):
+                self.assertEqual(event['status'], 'running')
+                self.assertTrue(event['tests_provisional'])
+                self.assertNotIn('tests', event)
+                release.touch()
+        plan = Plan('Fixture', 'Test', {}, (phase,), str(self.root / 'workspace'))
+        report = Executor(event=observe).run(plan, self.root / 'live-result')
+        row = report['phases'][0]
+        self.assertEqual(row['status'], 'passed', row)
+        self.assertFalse(row['tests_provisional'])
+        self.assertEqual(row['live_tests'], [])
+        self.assertEqual([case['name'] for case in row['tests']], ['first', 'second'])
+        self.assertTrue(release.exists())
+        self.assertNotIn('stale', json.dumps(events))
+
     def test_malformed_declared_report_fails_phase_with_message(self):
         report = self.execute_report('<oops>')
         self.assertEqual(report['status'], 'failed')

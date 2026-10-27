@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QSplitter, QVBoxLayout, QWidget, QSizePolicy)
 from .grouped_workflow import group_workflow
 from .plan_summary import captured_choices, phase_title, summary_rows
-from .workflow_ui import FlowCanvas, FitMapView, WorkflowFlow, display_states, effect_label, blocking_prerequisite
+from .workflow_ui import FlowCanvas, FitMapView, WorkflowFlow, display_states, effect_label, blocking_prerequisite, orientation_picker
 from .ui_components import style_button, ViewportStack
 
 
@@ -15,10 +15,11 @@ class GroupedFlowView(QWidget):
     problems_selected = Signal(str)
     group_selected = Signal(str)
 
-    def __init__(self, parent=None, *, graph_mode=False):
+    def __init__(self, parent=None, *, graph_mode=False, inspect_single_cards=False):
         super().__init__(parent)
         self.plan, self.selected, self.facts = None, '', {}
         self.graph_mode = graph_mode
+        self.inspect_single_cards = inspect_single_cards
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.pages = ViewportStack()
@@ -34,10 +35,12 @@ class GroupedFlowView(QWidget):
         self.canvas = FlowCanvas()
         self.canvas.selected.connect(self.open_group)
         self.map = FitMapView(self.canvas)
+        self.orientation = orientation_picker(self.map)
+        toolbar.addWidget(self.orientation)
         self.map.setMinimumHeight(180)
         for title, callback in [('Fit', self.fit), ('+', lambda: self.map.zoom(1.2)), ('−', lambda: self.map.zoom(1 / 1.2))]:
             button = QPushButton(title)
-            button.setAccessibleName({'Fit': 'Fit readable cards', '+': 'Zoom in', '−': 'Zoom out'}[title])
+            button.setAccessibleName({'Fit': 'Fit entire workflow', '+': 'Zoom in', '−': 'Zoom out'}[title])
             button.setToolTip(button.accessibleName())
             if title == '+':
                 self.zoom_in = button
@@ -125,7 +128,7 @@ class GroupedFlowView(QWidget):
             self.details.clear()
         self.detail_selection = None
         self.pages.setCurrentIndex(0)
-        self.canvas.reset(self.grouped)
+        self.canvas.reset(self.grouped, reserve_activity=not preview)
         self.map.reset_view()
         self.set_facts({})
         self.timer.start(0)
@@ -135,14 +138,26 @@ class GroupedFlowView(QWidget):
         self.map.fit_map(force=True)
 
     def open_group(self, key):
+        if not key:
+            self.selected = ''
+            self.set_facts(self.facts)
+            self.group_selected.emit('')
+            return
         self.selected = key
         node = next((node for node in self.grouped.phases if node.id == key), None)
         keys = self.group_keys(key)
         if self.graph is not None:
             self.heading.setText((node.label if node else 'Other execution steps') +
                 f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))
-            self.graph.set_scope(keys)
-            self.pages.setCurrentIndex(1)
+            owned = self.grouped.members.get(key, ()) if key != '__unassigned__' else keys
+            expanded = len(owned) > 1 if self.inspect_single_cards else True
+            if expanded:
+                self.graph.set_scope(keys)
+            if self.inspect_single_cards:
+                self.graph.setVisible(expanded and bool(keys))
+            self.pages.setCurrentIndex(1 if expanded else 0)
+            if not expanded:
+                self.set_facts(self.facts)
             self.group_selected.emit(key)
             return
         self.heading.setText((node.label if node else 'Other resolved subtasks') + ' · ' + str(len(keys)) + ' execution step' + ('s' if len(keys) != 1 else ''))
@@ -280,7 +295,7 @@ class GroupedFlowView(QWidget):
             return
         states = display_states(self.plan, facts, self.preview)
         aggregate, counts = {}, {}
-        priority = ('unknown', 'failed', 'error', 'timeout', 'running', 'awaiting_review', 'blocked',
+        priority = ('unknown', 'failed', 'error', 'timeout', 'running', 'awaiting_review', 'retrying', 'blocked',
                     'interrupted', 'cancelled', 'waiting_resource', 'queued', 'pending', 'planned', 'skipped', 'passed')
         for key in self.grouped.members:
             members = self.group_keys(key)
@@ -321,10 +336,10 @@ class GroupedFlowView(QWidget):
             label.setText(text)
             label.setVisible(bool(text) and not self.preview)
             card = self.canvas.cards[key][0]
-            if self.preview and text:
-                card.setToolTip(card.toolTip() + '\n' + text + '\nOpen this card to inspect its subtasks.')
+            if text:
+                card.setToolTip(card.toolTip() + '\n' + text +
+                    ('\nOpen this card to inspect its subtasks.' if self.preview else ''))
                 card.setAccessibleDescription(card.accessibleDescription() + '\n' + text)
-            card.setMinimumHeight(max(64, card.layout().totalHeightForWidth(card.width())))
         self.canvas.adjustSize()
         self.map.fit_map()
         if self.pages.currentIndex() == 1 and not self.graph_mode:

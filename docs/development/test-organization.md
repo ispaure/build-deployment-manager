@@ -103,6 +103,36 @@ Use `python -m build_manager.reporting --start TEST_ROOT --output REPORT.xml
 --suite SUITE_ID --fail-on-skip` for ordinary stdlib unittest discovery. This helper
 is an optional execution/reporting API; it imports no Qt or project code.
 
+While a phase runs, the executor polls only its explicitly declared JUnit artifacts
+at most twice per second. A changed, parseable report emits a running phase event
+with `live_tests` and `tests_provisional=true`. Pre-existing unchanged files are
+ignored. Incomplete XML is retried; final report ingestion remains strict.
+Live snapshots are advisory progress, separate from authoritative `tests`: they
+do not satisfy dependencies or establish a passing phase. Final retained reports
+replace live snapshots rather than appending duplicate cases. Projects control
+report frequency and test inventories; no project code or console text is parsed
+to discover underlying tests.
+
+Adapters may declare `Phase.test_files` as an optional sequence of project-owned
+display paths. Empty inventories are omitted from serialization to preserve legacy
+plan identities. The manager renders these paths as folders/files without opening
+or importing them; the owning adapter supplies the inventory from its captured
+source. Individual case inventories remain runtime observations.
+
+The executor sets `BUILD_MANAGER_TEST_PROGRESS=1` for its child. Project runners
+can call `build_manager.test_progress.emit_test_progress` with `file_started`,
+`test_started`, `test_finished` and `file_finished` events. Required names and
+optional `classname`, `file`, `message`, `seconds` and terminal status are bounded
+and validated. The stdout marker is `@@BUILD_MANAGER_TEST@@` followed by schema-1
+JSON. These messages affect only advisory current-test/file state and `live_tests`;
+they cannot change phase identity, authorize actions, or satisfy dependencies.
+Once a structured stream is active, intermediate JUnit snapshots no longer
+overwrite it. Final retained JUnit remains authoritative. File identities from
+observed events are carried into matching final cases for the nested timing tree.
+The Logistics isolated runner and the optional manager `JUnitResult` producer
+emit these events at test start and finish. Standalone runs without the opt-in
+environment variable keep their normal output and dependencies.
+
 Logistics now declares host contracts/UI, Android native/runtime, iOS native and
 complete tester acceptance. Its existing isolated runner emits measured JUnit
 cases, and reviewed tester workflows require tooling, desktop UI, mobile-host and

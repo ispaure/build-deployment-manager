@@ -6,6 +6,7 @@ import re
 import time
 import unittest
 import xml.etree.ElementTree as ET
+from .test_progress import emit_test_progress
 
 
 def write_junit(path, suite, cases):
@@ -56,10 +57,13 @@ class JUnitResult(unittest.TextTestResult):
         identity = test.id()
         classname, _, name = identity.rpartition('.')
         self.current = dict(name=name, classname=classname, status='passed', message='')
+        emit_test_progress('test_started', name=name, classname=classname,
+                           file=os.environ.get('BUILD_MANAGER_TEST_FILE', ''))
         super().startTest(test)
 
     def stopTest(self, test):
         self.current['seconds'] = time.monotonic() - self.started
+        emit_test_progress('test_finished', file=os.environ.get('BUILD_MANAGER_TEST_FILE', ''), **self.current)
         self.cases.append(self.current)
         self.current = None
         super().stopTest(test)

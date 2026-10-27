@@ -14,6 +14,8 @@ def preferences_path(project=None):
 
 
 def apply_preferences(app, path):
+    from .palette_ui import install_palette_refresh
+    install_palette_refresh(app)
     values = load_profile(path)
     size = values.get('text_size', 0)
     if type(size) is not int or not 0 <= size <= 28:

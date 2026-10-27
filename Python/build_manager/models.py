@@ -28,8 +28,19 @@ class Phase:
     label: str = ''
     description: str = ''
     section: str = ''
+    test_files: tuple[str, ...] = ()
+    retry_exit_codes: tuple[int, ...] = ()
+    retry_delay: float = 30
 
     def __post_init__(self):
+        if (not isinstance(self.retry_exit_codes, (tuple, list)) or
+                any(type(code) is not int or not 1 <= code <= 255 for code in self.retry_exit_codes) or
+                type(self.retry_delay) not in (int, float) or not .1 <= self.retry_delay <= 3600 or
+                (self.retry_exit_codes and (self.effect != 'inspect' or self.always))):
+            raise ValueError('Only inspection steps can retry declared temporary exit codes with a bounded delay.')
+        if (not isinstance(self.test_files, (tuple, list)) or len(self.test_files) > 20000 or
+                any(not isinstance(name, str) or not name or len(name) > 1000 for name in self.test_files)):
+            raise ValueError('Test file inventory must contain bounded names declared by the project.')
         if not isinstance(self.waits_for, (tuple, list)) or any(not isinstance(name, str) or not name for name in self.waits_for):
             raise ValueError('Order prerequisites must be a list of step IDs.')
         if any(not isinstance(value, str) or len(value) > 2000 for value in (self.label, self.description)):
@@ -92,7 +103,10 @@ class Plan:
         data = asdict(self)
         # Keep legacy plan hashes stable when scheduling-only edges are absent.
         for phase in data['phases']:
-            for key in ('label', 'description', 'section'):
+            if not phase['retry_exit_codes']:
+                phase.pop('retry_exit_codes')
+                phase.pop('retry_delay')
+            for key in ('label', 'description', 'section', 'test_files'):
                 if not phase[key]:
                     phase.pop(key)
             if not phase['waits_for']:
@@ -133,7 +147,9 @@ class Plan:
                     raise ValueError('Plan commands must be argument lists, never shell strings.')
                 if not isinstance(row.get('waits_for', ()), (list, tuple)):
                     raise ValueError('Order prerequisites must be a list of step IDs.')
-                phases.append(Phase(**dict(row,waits_for=tuple(row.get('waits_for', ())),argv=tuple(row['argv']),dependencies=tuple(row.get('dependencies',())))))
+                if not isinstance(row.get('test_files', ()), (list, tuple)):
+                    raise ValueError('Test file inventory must be a list of project-declared names.')
+                phases.append(Phase(**dict(row,test_files=tuple(row.get('test_files', ())),waits_for=tuple(row.get('waits_for', ())),argv=tuple(row['argv']),dependencies=tuple(row.get('dependencies',())))))
             data['phases']=tuple(phases)
             return cls(**data)
         except (TypeError,KeyError) as error:

@@ -66,7 +66,7 @@ class RecipientUITests(unittest.TestCase):
                 self.assertEqual(picker.text(), '["phone-1"]')
             finally:view.run_fields.stop();view.close()
 
-    def test_platform_table_and_fit_map_keep_cards_readable_after_resize(self):
+    def test_platform_table_and_fit_map_contain_every_card_after_resize(self):
         with TemporaryDirectory() as directory:
             view = ConfigurationView(self.project(Path(directory)))
             view.resize(1100, 700); view.show()
@@ -81,10 +81,8 @@ class RecipientUITests(unittest.TestCase):
                     flow = view.proposed_flow; flow.fit_button.click()
                     self.app.processEvents()
                     self.assertGreaterEqual(flow.scroll.transform().m11(), flow.scroll.minimum_scale)
-                    for card, _, _ in flow.canvas.cards.values():
-                        self.assertGreaterEqual(card.width() * flow.scroll.transform().m11(), 216)
-                    if flow.scroll.sceneRect().width() > flow.scroll.viewport().width():
-                        self.assertGreater(flow.scroll.horizontalScrollBar().maximum(), 0)
+                    self.assertEqual(flow.scroll.horizontalScrollBar().maximum(), 0)
+                    self.assertEqual(flow.scroll.verticalScrollBar().maximum(), 0)
                     self.assertTrue(all(card[1].isHidden() for card in flow.canvas.cards.values()))
             finally:view.run_fields.stop();view.close()
 

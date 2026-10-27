@@ -63,6 +63,7 @@ class RunView(QWidget):
         self.outcome = ''
         self.cancelling = False
         self.selected = ''
+        self.pending_refresh = self.pending_tests = False
         self.output_lines = deque(maxlen=6000)
         self.phase_log_reader = None
         self.review_available = False
@@ -112,7 +113,7 @@ class RunView(QWidget):
         self.activity = ActionStrip()
         self.activity_buttons = {}
         for state, color in (('running', '#245db5'), ('queued', '#727272'),
-                             ('waiting_resource', '#727272'), ('awaiting_review', '#b37c12')):
+                             ('waiting_resource', '#727272'), ('retrying', '#727272'), ('awaiting_review', '#b37c12')):
             button = style_button(QPushButton())
             button.setAutoDefault(False)
             button.setStyleSheet(button.styleSheet() + f' QPushButton {{ border-left: 4px solid {color}; }}')
@@ -140,6 +141,22 @@ class RunView(QWidget):
         self.selection_info.setWordWrap(True)
         inspector_layout.addWidget(self.selection_heading)
         inspector_layout.addWidget(self.selection_info)
+        self.substeps = QTreeWidget()
+        self.substeps.setHeaderLabels(['Task / test', 'State', 'Time / share'])
+        self.substeps.setAccessibleName('Expand the selected execution step to inspect reported tests')
+        self.substeps.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.substeps.header().setStretchLastSection(False)
+        self.substeps.setIndentation(14)
+        self.substeps.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.substeps.setColumnWidth(1, 76)
+        self.substeps.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.substeps.setColumnWidth(2, 120)
+        self.substeps.setMaximumHeight(190)
+        self.substeps.currentItemChanged.connect(self.inspect_subtest)
+        self.substeps.itemExpanded.connect(lambda _: self.refresh_subtests(force=True))
+        self.substeps.itemCollapsed.connect(lambda _: self.refresh_subtests(force=True))
+        self.substeps.hide()
+        inspector_layout.addWidget(self.substeps)
         self.blocking_step = style_button(QPushButton('View blocking step'))
         self.blocking_step.hide()
         self.blocking_key = ''
@@ -423,8 +440,11 @@ class RunView(QWidget):
         else:
             self.steps.setCurrentItem(None)
             self.detail.clear()
+            self.flow.selected = ''
+            self.flow.set_facts(self.live_facts())
+        scope = self.scoped_facts()
         for name, row in self.rows.items():
-            row.setHidden(bool(key) and name != key)
+            row.setHidden(name not in scope)
         self.refresh_inspector()
         self.refresh_tests()
         self.refresh_output()
@@ -432,9 +452,54 @@ class RunView(QWidget):
         if not key:
             self.refresh_summary()
 
+    def inspect_subtest(self, item, previous=None):
+        if item is None or item.parent() is None:
+            return
+        case = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        self.test_detail.setPlainText('\n'.join(filter(None, (
+            case.get('classname'), case['name'], item.text(1), item.text(2), case.get('message')))))
+        self.tabs.setCurrentWidget(self.tests.parentWidget())
+
+    def refresh_subtests(self, *, force=False):
+        from .workflow_ui import title, update_test_children, time_share, visible_tree_rows
+        key = self.selected
+        live = self.live_facts()
+        keys = tuple(name for name in (self.scoped_facts() if not key else (key,)) if name in self.phases)
+        fact = live.get(key, {})
+        show = bool(keys) and (not key or bool(fact.get('tests') or fact.get('live_tests') or
+            fact.get('current_test') or getattr(self.phases.get(key), 'test_files', ()) or
+            'junit' in getattr(self.phases.get(key), 'artifact_types', {}).values()))
+        self.substeps.blockSignals(True)
+        if getattr(self, 'subtest_phase', None) != keys:
+            self.substeps.clear()
+            self.subtest_phase = keys
+        self.substeps.setVisible(show)
+        count = 0
+        if show:
+            for index, key in enumerate(keys):
+                fact = live.get(key, {})
+                cases = fact.get('tests') or fact.get('live_tests', ())
+                row = self.substeps.topLevelItem(index)
+                if row is None:
+                    row = QTreeWidgetItem()
+                    self.substeps.addTopLevelItem(row)
+                phase = self.phases[key]
+                row.setText(0, getattr(phase, 'label', '') or key.rsplit('.', 1)[-1].replace('_', ' ').replace('-', ' ').capitalize())
+                row.setToolTip(0, title(phase))
+                row.setText(1, fact.get('status', 'planned').capitalize())
+                row.setToolTip(1, f'{len(cases)} reported tests')
+                row.setText(2, duration(fact.get('seconds')))
+                update_test_children(row, key, fact, self.phases[key], force=force)
+                time_share(self.substeps, row, fact.get('seconds'), sum(info.get('seconds') or 0 for info in live.values()))
+                count += visible_tree_rows(row)
+            self.substeps.setFixedHeight(min(240, max(150,
+                self.substeps.header().height() + (self.substeps.fontMetrics().height() + 12) * count + 4)))
+        self.substeps.blockSignals(False)
+
     def refresh_inspector(self):
         if self.plan is None:
             return
+        self.refresh_subtests()
         from .workflow_ui import blocking_prerequisite
         self.blocking_key = blocking_prerequisite(self.plan, self.facts, self.selected) if self.plan else ''
         self.blocking_step.setVisible(bool(self.blocking_key))
@@ -485,6 +550,8 @@ class RunView(QWidget):
             self.next_action.setText('This step will not run. ' + reason + '\nSelect its prerequisite cards to inspect the cause.')
         elif state == 'waiting_resource':
             self.next_action.setText(reason + '\nOther independent platform steps can continue.')
+        elif state == 'retrying':
+            self.next_action.setText('Waiting to reconnect automatically. Other work continues; completed tests and prepared builds are retained. Stop cancels the wait.')
         elif state == 'running':
             self.next_action.setText('This step is running. Reports appear after capture; Output shows its current messages.')
         elif state == 'passed':
@@ -607,6 +674,7 @@ class RunView(QWidget):
         self.tabs.setCurrentWidget(self.timings.parentWidget())
 
     def reset(self, plan, previous=(), *, fields=(), capability=None, proposal=None):
+        self.pending_refresh = self.pending_tests = False
         self.plan = plan
         self.selected = ''
         self.flow.setParent(None)
@@ -651,7 +719,7 @@ class RunView(QWidget):
         self.refresh_inspector()
         self.refresh_output()
 
-    def update_phase(self, event):
+    def update_phase(self, event, *, refresh=True):
         key = event['id']
         if key not in self.rows:
             self.rows[key] = QTreeWidgetItem([key, '', '', '', ''])
@@ -667,15 +735,26 @@ class RunView(QWidget):
             self.started.pop(key, None)
             if 'seconds' in event:
                 self.rows[key].setText(2, duration(event['seconds']))
+        self.pending_refresh = True
+        self.pending_tests |= 'tests' in event or 'live_tests' in event
+        if refresh:
+            self.flush_updates()
+
+    def flush_updates(self):
+        if not self.pending_refresh:
+            return
+        self.pending_refresh = False
         self.refresh_summary()
         self.flow.set_facts(self.live_facts())
         self.refresh_inspector()
-        if self.steps.currentItem() == self.rows[key]:
-            self.show_detail(self.rows[key])
-        if 'tests' in event:
+        if self.pending_tests:
+            self.pending_tests = False
             self.refresh_tests()
 
     def tick(self):
+        if self.pending_refresh:
+            self.flush_updates()
+            return
         for key, started in self.started.items():
             elapsed = duration(time.monotonic() - started)
             self.rows[key].setText(2, elapsed)
@@ -704,7 +783,7 @@ class RunView(QWidget):
         prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
         self.summary.setText(prefix + text + self.run_timing)
         activity_names = {'running': 'Running', 'queued': 'Queued',
-            'waiting_resource': 'Waiting for capacity', 'awaiting_review': 'Needs approval'}
+            'waiting_resource': 'Waiting for capacity', 'retrying': 'Waiting to reconnect', 'awaiting_review': 'Needs approval'}
         for button in self.activity_buttons.values():
             self.activity.grid.removeWidget(button)
         active = []
@@ -726,7 +805,11 @@ class RunView(QWidget):
         problems = sum(case['status'] in {'failed', 'error'} for case in cases)
         self.overall_tests.setText(f'{len(cases)} reported test cases · {problems} problems' if cases
             else 'No individual case reports available yet. Step outcomes remain available.')
-        self.overall_tests.setVisible(bool(cases))
+        interim = sum(len(fact.get('live_tests', ())) for fact in self.facts.values())
+        if interim:
+            self.overall_tests.setText(f'{interim} interim test results · suites still running' +
+                (f' · {len(cases)} final results' if cases else ''))
+        self.overall_tests.setVisible(bool(cases or interim))
         if self.outcome == 'unknown' or counts.get('unknown'):
             action = 'An external action has an unknown outcome. Check its provider status before retrying; the manager will not repeat it automatically.'
         elif self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
@@ -920,6 +1003,11 @@ class RunView(QWidget):
         self.test_summary.setText(' · '.join(f'{value} {key}' for key, value in counts.items())
                                  if counts else 'No individual case report supplied. Step results remain available.')
         self.result_counts.setText(f'{sum(counts.values())} reported tests\n' + self.test_summary.text())
+        interim = sum(len(fact.get('live_tests', ())) for fact in self.scoped_facts().values())
+        if interim:
+            self.result_counts.setText(f'{sum(counts.values())} final test results · {interim} interim results\n'
+                'Expand the execution step above to inspect live reports.')
+            self.test_summary.setText('Interim reports are shown under the execution step; final outcomes appear here when the suite finishes.')
         for state, (card, label) in self.count_cards.items():
             value = counts.get(state, 0) if counts else '—'
             card.setText(f'<span style="font-size:24pt">{value}</span><br>{label}')
@@ -948,6 +1036,9 @@ class RunView(QWidget):
         self.tests.setColumnHidden(4, bool(self.selected))
         self.timings.setColumnHidden(3, bool(self.selected))
         self.filter_tests()
+        current = self.substeps.currentItem()
+        if current is not None and current.parent() is not None and self.tabs.currentWidget() == self.tests.parentWidget():
+            self.inspect_subtest(current)
 
     def filter_tests(self, *_):
         query, choice = self.search.text().casefold(), self.filter.currentText()

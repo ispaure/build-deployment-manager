@@ -43,6 +43,29 @@ class WorkflowTests(unittest.TestCase):
         artifact.unlink()
         with self.assertRaisesRegex(ValueError,'missing'):recover(plan,report)
 
+    def test_offline_recipient_does_not_block_other_delivery_review_or_repeat_build(self):
+        package = self.root / 'package'
+        ready = self.root / 'connected'
+        plan = Plan('Fixture', 'independent deliveries', {}, (
+            self.phase('build', f'from pathlib import Path;Path({str(package)!r}).write_text("fixed")', artifacts=(str(package),)),
+            self.phase('connect', f'from pathlib import Path;raise SystemExit(0 if Path({str(ready)!r}).exists() else 75)',
+                       dependencies=('build',), effect='inspect', retry_exit_codes=(75,), retry_delay=.1),
+            self.phase('offline-device', 'pass', effect='deploy', dependencies=('build', 'connect')),
+            self.phase('other-delivery', 'pass', effect='upload', dependencies=('build',))), str(self.root / 'workspace'))
+        output = self.root / 'result'
+        first = Executor().run(plan, output)
+        self.assertEqual(first['status'], 'awaiting_review')
+        self.assertEqual(next(row for row in first['phases'] if row['id'] == 'connect')['status'], 'retrying')
+        permission = approve(plan, 'other-delivery', first)
+        ready.touch()
+        second = Executor().run(plan, output, resume=True, approvals=[permission])
+        self.assertEqual(second['status'], 'awaiting_review')
+        self.assertEqual(next(row for row in second['phases'] if row['id'] == 'other-delivery')['status'], 'passed')
+        permission = approve(plan, 'offline-device', second)
+        final = Executor().run(plan, output, resume=True, approvals=[permission])
+        self.assertEqual(final['status'], 'passed')
+        self.assertEqual(final['phases'][0]['started_at'], first['phases'][0]['started_at'])
+
     def test_restart_retries_harmless_interrupted_step_but_keeps_dependency_failure(self):
         marker=self.root/'marker'
         a=self.phase('a','print("safe")')

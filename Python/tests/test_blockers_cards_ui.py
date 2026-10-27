@@ -120,14 +120,16 @@ class BlockerCardTests(unittest.TestCase):
                 effect='upload' if index == 11 else 'test'))
         return Plan('Fixture', 'Inspect', {}, tuple(phases), str(self.root / 'workspace'))
 
-    def test_map_has_readable_floor_and_keyboard_reveals_offscreen_cards(self):
+    def test_fit_contains_complete_graph_and_keyboard_reveals_cards_after_zoom(self):
         plan = self.long_plan(); before = plan.data()
         flow = WorkflowFlow(); self.addCleanup(flow.close)
         flow.resize(600, 500); flow.reset(plan, preview=True); flow.map_button.click(); flow.show()
         for _ in range(5): self.app.processEvents()
+        self.assertEqual(flow.scroll.horizontalScrollBar().maximum(), 0)
+        self.assertEqual(flow.scroll.verticalScrollBar().maximum(), 0)
+        flow.orientation.setCurrentIndex(flow.orientation.findData('horizontal'))
+        flow.scroll.zoom(flow.scroll.maximum_scale / flow.scroll.transform().m11())
         self.assertGreater(flow.scroll.horizontalScrollBar().maximum(), 0)
-        for _ in range(8): flow.scroll.zoom(.5)
-        self.assertEqual(flow.scroll.transform().m11(), flow.scroll.minimum_scale)
         card = flow.canvas.cards['step-11'][0]
         card.setFocus(Qt.FocusReason.TabFocusReason)
         self.app.processEvents()
@@ -135,6 +137,8 @@ class BlockerCardTests(unittest.TestCase):
         self.assertTrue(flow.scroll.viewport().rect().contains(rect))
         QTest.keyClick(card, Qt.Key.Key_Space)
         self.assertEqual(flow.selected, 'step-11')
+        for _ in range(8): flow.scroll.zoom(.5)
+        self.assertEqual(flow.scroll.transform().m11(), flow.scroll.minimum_scale)
         self.assertEqual(plan.data(), before)
         self.assertTrue(card.findChild(QLabel, 'approvalBadge').isVisible())
         flow.set_facts({'step-11': dict(status='passed')})

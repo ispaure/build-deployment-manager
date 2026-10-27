@@ -8,9 +8,9 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
-from PySide6.QtCore import QPoint, QPointF
+from PySide6.QtCore import QPoint, QPointF, QRectF
 from PySide6.QtWidgets import QApplication
-from build_manager import Phase
+from build_manager import Phase, Plan
 from build_manager.ui import ManagerPanel
 from build_manager.workflow_ui import dependency_path
 from test_ui import OtherProject
@@ -81,9 +81,10 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         self.assertEqual({prerequisites.itemAt(i).widget().full_text for i in range(1, prerequisites.count())},
                          {'Check environment', 'Parallel'})
         cards.open_group('deliver.firebase')
-        self.assertEqual(set(flow.canvas.cards), {'firebase', 'prepare', 'android', 'ios', 'environment', 'parallel'})
-        self.assertIn(('prepare', 'firebase'), flow.canvas.edges)
-        self.assertIn('from other cards', self.panel.review_workspace.task_heading.text())
+        self.assertEqual(cards.pages.currentIndex(), 0)
+        self.assertEqual(set(self.panel.review_workspace.rows), {'firebase'})
+        self.assertEqual(self.panel.review_workspace.selected, 'firebase')
+        self.assertTrue(flow.isHidden())
         self.assertEqual(self.panel.review_workspace.prerequisite_layout.itemAt(1).widget().full_text, 'Prepare')
         cards.open_group('source')
         self.assertTrue(flow.isHidden())
@@ -101,3 +102,64 @@ class ChooseWorkLayoutTests(unittest.TestCase):
                 self.assertLess(before.x, end.x() - 8)
                 self.assertEqual(arrow[0], end)
                 self.assertEqual((arrow[1].y() + arrow[2].y()) / 2, end.y())
+
+    def test_proposed_overview_reflows_without_changing_graph_or_selection(self):
+        from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
+        from build_manager.workflow_ui import WorkflowFlow
+        plan = ProposedWorkflow((
+            ProposedStep('source', 'Source', 'Current files', section='source'),
+            ProposedStep('test', 'Android', 'Required checks', ('source',)),
+            ProposedStep('build', 'Build', 'Development package', ('test',), section='delivery'),
+            ProposedStep('deliver', 'Deliver', 'Review before delivery', ('build',), section='delivery')))
+        view = WorkflowFlow(graph_only=True)
+        self.addCleanup(view.close)
+        view.reset(plan)
+        view.resize(760, 680)
+        view.show()
+        view.select('build')
+        for _ in range(5):
+            self.app.processEvents()
+        cards = {key: value[0] for key, value in view.canvas.cards.items()}
+        edges = list(view.canvas.edges)
+        self.assertTrue(view.canvas.vertical)
+        for source, target in edges:
+            self.assertLess(cards[source].geometry().bottom(), cards[target].geometry().top())
+        self.assertEqual(view.scroll.horizontalScrollBar().maximum(), 0)
+        view.resize(1500, 500)
+        for _ in range(5):
+            self.app.processEvents()
+        self.assertFalse(view.canvas.vertical)
+        self.assertEqual(view.canvas.edges, edges)
+        self.assertEqual(view.selected, 'build')
+        self.assertIs(view.canvas.cards['build'][0], cards['build'])
+        self.assertTrue(cards['build'].isChecked())
+        for source, target in edges:
+            self.assertLess(cards[source].geometry().right(), cards[target].geometry().left())
+
+    def test_exact_map_orientation_and_fit_contain_the_entire_plan(self):
+        from build_manager.workflow_ui import WorkflowFlow
+        phases = tuple(Phase(f'step-{i}', (sys.executable, '-V'), str(self.root),
+            dependencies=(f'step-{i-1}',) if i else ()) for i in range(8))
+        plan = Plan('Fixture', 'Test', {}, phases, str(self.root))
+        before = plan.data()
+        view = WorkflowFlow(graph_only=True)
+        self.addCleanup(view.close)
+        view.reset(plan, preview=True)
+        view.resize(700, 600)
+        view.show()
+        for orientation in ('horizontal', 'vertical', 'best'):
+            view.orientation.setCurrentIndex(view.orientation.findData(orientation))
+            for _ in range(4):
+                self.app.processEvents()
+            view.fit_button.click()
+            self.app.processEvents()
+            if orientation != 'best':
+                self.assertEqual(view.canvas.vertical, orientation == 'vertical')
+            self.assertEqual(view.scroll.horizontalScrollBar().maximum(), 0)
+            self.assertEqual(view.scroll.verticalScrollBar().maximum(), 0)
+            for card, _, _ in view.canvas.cards.values():
+                rect = view.scroll.mapFromScene(view.scroll.proxy.mapRectToScene(QRectF(card.geometry()))).boundingRect()
+                self.assertTrue(view.scroll.viewport().rect().contains(rect), (orientation, rect))
+        view.set_scope({'step-6', 'step-7'})
+        self.assertEqual(view.scroll.orientation, 'best')
+        self.assertEqual(plan.data(), before)

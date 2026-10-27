@@ -17,6 +17,17 @@ separate from portable subprocess tests. VM holds are never bypassed by setup.
 
 ## Registration and trusted subprocess bridge
 
+Inspection phases may declare `retry_exit_codes` and `retry_delay` (seconds,
+default 30). Only those explicitly temporary command failures retry, without a
+retry limit; each command retains its bounded timeout. The scheduler releases
+workers and resources during the delay, persists the waiting state and attempt
+logs, and exposes ready delivery approvals while other recipients wait. Stop
+cancels the wait. This policy is restricted to `effect='inspect'` phases;
+deployment, upload and publication never gain automatic replay. Keep availability
+checks separate from installation, and retain identity/signature/approval checks
+immediately before the actual effect. Unused retry fields are omitted from plan
+serialization to preserve legacy hashes.
+
 A tracked `build-project.json` declares schema 1, adapter API 1, stable project ID,
 name, interpreter (a checkout-relative path or mapping by `sys.platform`), bridge
 script and capabilities. Inspection parses JSON only. Registration IDs distinguish

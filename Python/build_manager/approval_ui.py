@@ -45,7 +45,7 @@ class EffectReviewDialog(QDialog):
             frame.setObjectName('approvalCard')
             frame.setStyleSheet('''QFrame#approvalCard { background: palette(base);
                 border: 1px solid palette(mid); border-left: 4px solid #b37c12; border-radius: 8px; }
-                QFrame#approvalCard[selected="true"] { border: 2px solid #245db5; border-left-width: 4px; }
+                QFrame#approvalCard[selected="true"] { border: 2px solid palette(highlight); border-left-width: 4px; }
                 QFrame#approvalCard QCheckBox { font-weight: 600; spacing: 8px; padding: 4px; }
                 QFrame#approvalCard QCheckBox:focus { border: 1px dashed palette(highlight); }''')
             rows = QVBoxLayout(frame)

@@ -1,5 +1,21 @@
 # Workflows, review and recovery
 
+## Waiting for a device
+
+Adapters can declare a separate connection check before installation. A temporary
+availability failure shows **Waiting to reconnect** and retries automatically
+until the selected device returns or you stop the run. The wait releases its
+worker and resources between checks, so independent testing, builds, delivery
+review and other recipients continue. Stop cancels the wait.
+
+Resume the retained run to reuse passed tests and verified packages. Connection
+checks do not approve installation; each recipient still needs review of its exact
+package and destination. A signing or identity mismatch stops explicitly. An
+interrupted installation has an uncertain outcome and requires reconciliation
+before another install; only pre-install availability checks retry automatically.
+
+## Execution and review
+
 A workflow extends an existing versioned plan: dependency-ordered phases declare
 commands, output artifact types and effects. The default is sequential. Source,
 settings, adapter and toolchain data are captured once. Passing tests never

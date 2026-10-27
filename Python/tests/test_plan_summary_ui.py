@@ -72,9 +72,9 @@ class PlanSummaryTests(unittest.TestCase):
         panel.start.setEnabled(True)
         panel.show()
         self.app.processEvents()
-        from PySide6.QtWidgets import QTabWidget
         workspace = panel.review_workspace
-        self.assertFalse(workspace.findChildren(QTabWidget))
+        self.assertEqual([workspace.inspector_tabs.tabText(i) for i in range(workspace.inspector_tabs.count())],
+                         ['Details', 'Command', 'Plan'])
         self.assertTrue(panel.review_splitter.isVisible())
         self.assertTrue(workspace.inspector_scroll.isVisible())
         self.assertLessEqual(panel.start.mapTo(panel, panel.start.rect().bottomRight()).y(), panel.height())
@@ -82,18 +82,17 @@ class PlanSummaryTests(unittest.TestCase):
         button = cards.canvas.cards['platform.android'][0]
         button.setFocus()
         QTest.keyClick(button, Qt.Key.Key_Space)
-        self.assertEqual(cards.pages.currentIndex(), 1)
-        self.assertEqual(set(workspace.graph.canvas.cards), {'android'})
-        self.assertTrue(workspace.graph.map_button.isHidden())
-        self.assertIs(workspace.graph.views.currentWidget(), workspace.graph.scroll)
+        self.assertEqual(cards.pages.currentIndex(), 0)
+        self.assertEqual(set(workspace.rows), {'android'})
+        self.assertTrue(workspace.graph.isHidden())
         self.assertEqual(workspace.tasks.currentItem(), workspace.rows['android'])
-        self.assertEqual(panel.review_flow.selected, 'android')
+        self.assertEqual(workspace.selected, 'android')
         cards.back.click()
         self.assertEqual(cards.pages.currentIndex(), 0)
         self.assertTrue(workspace.inspector_scroll.isVisible())
         workspace.tasks.setCurrentItem(workspace.rows['android'])
-        self.assertEqual(cards.pages.currentIndex(), 1)
-        self.assertEqual(panel.review_flow.selected, 'android')
+        self.assertEqual(cards.pages.currentIndex(), 0)
+        self.assertEqual(workspace.selected, 'android')
         self.assertEqual(panel.process.state(), QProcess.ProcessState.NotRunning)
         panel.invalidate()
         self.assertFalse(panel.start.isEnabled())
@@ -185,6 +184,8 @@ class PlanSummaryTests(unittest.TestCase):
         panel.session.buffer = json.dumps(dict(type='waiting', phase='android', resource='host.mobile-build',
             reason='Waiting for resource: host.mobile-build')) + '\n'
         panel.read_output()
+        panel.live_update_timer.stop()
+        panel.flush_live_updates()
         view = panel.run_view
         self.assertEqual(view.facts['android']['status'], 'waiting_resource')
         self.assertIn('Host mobile build', panel.session.current_phase)

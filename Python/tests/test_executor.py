@@ -62,6 +62,42 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / 'result/result.json').read_text())['status'], 'failed')
         self.assertLess(result['seconds'], 8)
 
+    def test_temporary_inspection_releases_worker_and_reuses_completed_build(self):
+        code = "from pathlib import Path; p=Path('ready'); print('checking'); raise SystemExit(0 if p.exists() else 75)"
+        plan = self.plan(
+            self.phase('build', "from pathlib import Path; Path('build-count').write_text('once')"),
+            self.phase('availability', code, effect='inspect', dependencies=('build',),
+                       retry_exit_codes=(75,), retry_delay=.2),
+            self.phase('independent', "from pathlib import Path; Path('ready').touch()"),
+            self.phase('consumer', "print('ready')", dependencies=('availability',)))
+        report = self.run_plan(plan)
+        self.assertEqual(report['status'], 'passed')
+        ready = next(row for row in report['phases'] if row['id'] == 'availability')
+        self.assertGreaterEqual(ready['retry_count'], 1)
+        self.assertTrue((self.root / 'result' / ready['retry_attempts'][0]['log']).is_file())
+        self.assertEqual((self.root / 'build-count').read_text(), 'once')
+
+    def test_indefinite_inspection_wait_is_cancellable_and_not_an_unknown_effect(self):
+        cancelled = Event()
+        def event(row):
+            if row.get('status') == 'retrying': cancelled.set()
+        plan = self.plan(self.phase('offline', 'raise SystemExit(75)', effect='inspect',
+                                    retry_exit_codes=(75,), retry_delay=30),
+                         self.phase('cleanup', 'pass', always=True))
+        report = self.run_plan(plan, cancelled=cancelled, event=event)
+        self.assertEqual(report['status'], 'cancelled')
+        self.assertEqual(report['phases'][-1]['status'], 'passed')
+        self.assertLess(report['seconds'], 5)
+
+    def test_retry_policy_rejects_external_effects_and_preserves_nontransient_failures(self):
+        for effect in ('deploy', 'upload', 'publish', 'inherit'):
+            with self.subTest(effect=effect), self.assertRaises(ValueError):
+                self.phase('unsafe', 'pass', effect=effect, retry_exit_codes=(75,))
+        report = self.run_plan(self.plan(self.phase('bad-config', 'raise SystemExit(1)',
+            effect='inspect', retry_exit_codes=(75,), retry_delay=.1)))
+        self.assertEqual(report['status'], 'failed')
+        self.assertNotIn('retry_count', report['phases'][0])
+
     def test_cancellation_stops_current_work_and_never_starts_remaining_device(self):
         cancelled = Event()
         timer = Timer(.15, cancelled.set)

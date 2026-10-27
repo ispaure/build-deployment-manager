@@ -83,6 +83,14 @@ class ManagerPanel(QWidget):
         self.process.finished.connect(self.finished)
         self.process.errorOccurred.connect(self.process_error)
         self.session.clock.timeout.connect(self.show_elapsed)
+        self.output_timer = QTimer(self)
+        self.output_timer.setSingleShot(True)
+        self.output_timer.timeout.connect(self.read_output)
+        self.live_update_timer = QTimer(self)
+        self.live_update_timer.setSingleShot(True)
+        self.live_update_timer.setInterval(100)
+        self.live_update_timer.timeout.connect(self.flush_live_updates)
+        self.review_live_dirty = False
         from .redaction import Redactor
         self.redact = Redactor(os.environ.get(name) for name in getattr(project, 'secret_environment', ()))
         self.reviewing = False
@@ -184,6 +192,8 @@ class ManagerPanel(QWidget):
         self.prepare.setToolTip('Check choices and prepare the plan. Tests start after the next review.')
         review = QWidget()
         review_layout = QVBoxLayout(review)
+        review_layout.setContentsMargins(6, 4, 6, 4)
+        review_layout.setSpacing(4)
         review_heading = QLabel('Review your run')
         review_heading.setStyleSheet('font-size: 18pt; font-weight: 600;')
         review_layout.addWidget(review_heading)
@@ -422,6 +432,9 @@ class ManagerPanel(QWidget):
                 self.readiness.setText(str(error))
 
     def show_stage(self, index):
+        if index == 1 and getattr(self, 'review_live_dirty', False):
+            self.review_workspace.set_facts(self.run_view.live_facts())
+            self.review_live_dirty = False
         self.stage_heading.setVisible(index != 1)
         self.stage_tabs.blockSignals(True)
         self.stage_tabs.setCurrentIndex(index)
@@ -767,15 +780,25 @@ class ManagerPanel(QWidget):
 
     def show_elapsed(self):
         self.run_view.tick()
+        if self.review_workspace.plan is not None and self.stages.currentIndex() == 1:
+            self.review_workspace.set_facts(self.run_view.live_facts())
         phase = self.session.phase_elapsed.elapsed()/1000 if self.session.phase_elapsed.isValid() else 0
         self.status.setText(f'{self.session.current_phase}; phase {phase:.0f}s; total {self.session.elapsed.elapsed()/1000:.0f}s')
         if self.preparing:
             self.plan_feedback.setText(f'Preparing your plan… {phase:.0f}s. Checking source and prerequisites; no tests have started.')
 
     def read_output(self):
+        self.output_timer.stop()
         self.session.buffer += bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        budget = QElapsedTimer()
+        budget.start()
+        processed = 0
         while '\n' in self.session.buffer:
+            if processed >= 128 or budget.elapsed() >= 8:
+                self.output_timer.start(0)
+                break
             line, self.session.buffer = self.session.buffer.split('\n', 1)
+            processed += 1
             try:
                 event = json.loads(line)
             except ValueError:
@@ -792,32 +815,47 @@ class ManagerPanel(QWidget):
                 else:
                     self.session.current_phase = event['phase'] + ': ' + self.redact(reason)
                     self.update_phase(dict(id=event['phase'], status='waiting_resource',
-                                           reason=self.redact(reason), resource=self.redact(resource)))
+                                           reason=self.redact(reason), resource=self.redact(resource)), defer=True)
             elif event.get('type') == 'phase':
-                self.update_phase(event)
-                if event['status'] == 'running':
+                previous_status = self.run_view.facts.get(event['id'], {}).get('status')
+                self.update_phase(event, defer=True)
+                if event['status'] == 'running' and previous_status != 'running':
                     self.session.phase_elapsed.start()
                 self.session.current_phase = event['id'] + ': ' + event['status']
-                self.show_elapsed()
             elif event.get('type') == 'error':
                 self.session.failure = self.redact(event['error'])
                 self.status.setText(self.redact(event['error']))
 
-    def update_phase(self, event):
-        self.run_view.update_phase(self.redacted_data(event))
+    def update_phase(self, event, *, defer=False):
+        self.run_view.update_phase(self.redacted_data(event), refresh=not defer)
         self.phase_rows = self.run_view.rows
-        self.review_workspace.set_facts(self.run_view.facts)
+        if defer:
+            self.review_live_dirty = True
+            if not self.live_update_timer.isActive():
+                self.live_update_timer.start()
+        else:
+            self.review_workspace.set_facts(self.run_view.facts)
+            self.review_live_dirty = False
 
-    def redacted_data(self, value):
+    def flush_live_updates(self):
+        self.run_view.flush_updates()
+        if self.stages.currentIndex() == 1 and self.review_live_dirty:
+            self.review_workspace.set_facts(self.run_view.live_facts())
+            self.review_live_dirty = False
+
+    def redacted_data(self, value, _redactor=None):
         from .redaction import Redactor
+        if _redactor is None:
+            _redactor = Redactor(self.redact.secrets)
         # Filter values rather than JSON syntax: password-like values and PEM
         # blocks must never consume the surrounding serialization delimiters.
         if isinstance(value, str):
-            return Redactor(self.redact.secrets)(value)
+            _redactor.private_key = False
+            return _redactor(value)
         if isinstance(value, dict):
-            return {key: self.redacted_data(item) for key, item in value.items()}
+            return {key: self.redacted_data(item, _redactor) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
-            return [self.redacted_data(item) for item in value]
+            return [self.redacted_data(item, _redactor) for item in value]
         return value
 
     def safe_plan(self, plan):
@@ -828,6 +866,7 @@ class ManagerPanel(QWidget):
         return SimpleNamespace(**data)
 
     def present_plan(self, plan, proposal=None):
+        self.review_live_dirty = False
         self.stage_tabs.setTabEnabled(1, True)
         from .redaction import Redactor
         from .run_ui import plan_overview
@@ -1063,6 +1102,11 @@ class ManagerPanel(QWidget):
 
     def finished(self, code, exit_status=None):
         self.read_output()
+        if '\n' in self.session.buffer:
+            QTimer.singleShot(0, lambda: self.finished(code, exit_status))
+            return
+        self.live_update_timer.stop()
+        self.flush_live_updates()
         self.read_errors()
         self.set_busy(False)
         status = 'failed'

@@ -42,6 +42,15 @@ class RunningStateTests(unittest.TestCase):
         self.assertTrue(self.view.activity.isHidden())
         self.assertIn('cancelled', self.view.summary.text())
 
+    def test_reconnection_wait_is_visible_without_marking_a_failed_deployment(self):
+        self.view.update_phase(dict(id='android', status='retrying', retry_count=2,
+                                    reason='Selected device is offline'))
+        self.assertEqual(self.view.activity_buttons['retrying'].text(), 'Waiting to reconnect · 1')
+        self.view.activity_buttons['retrying'].click()
+        self.assertEqual(self.view.selected, 'android')
+        self.assertIn('Other work continues', self.view.next_action.text())
+        self.assertEqual(self.view.outcome, '')
+
     def test_approval_remains_visible_after_the_process_has_paused(self):
         self.view.update_phase(dict(id='firebase', status='awaiting_review'))
         self.view.complete(dict(status='awaiting_review'))

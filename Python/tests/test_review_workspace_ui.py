@@ -12,7 +12,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QPoint, QProcess, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QTabWidget
+from PySide6.QtWidgets import QApplication, QTabWidget, QProgressBar, QScrollArea
 from build_manager import Phase
 from build_manager.ui import ManagerPanel
 from test_journeys import integrated
@@ -57,9 +57,103 @@ class ReviewWorkspaceTests(unittest.TestCase):
         panel.stages.setCurrentIndex(0)
         self.app.processEvents()
 
+    def test_sidebar_uses_independent_tree_and_details_panes_without_outer_scroll(self):
+        view = self.view
+        self.assertNotIsInstance(view.inspector, QScrollArea)
+        self.assertIs(view.inspector_scroll, view.inspector)
+        self.assertEqual(view.sidebar_splitter.orientation(), Qt.Orientation.Vertical)
+        self.assertEqual(view.sidebar_splitter.count(), 2)
+        self.assertTrue(view.sidebar_splitter.widget(0).isAncestorOf(view.tasks))
+        self.assertTrue(view.sidebar_splitter.widget(1).isAncestorOf(view.inspector_tabs))
+        view.sidebar_splitter.setSizes([250, 300])
+        self.app.processEvents()
+        sizes = view.sidebar_splitter.sizes()
+        view.set_facts({'android': dict(status='running')})
+        self.app.processEvents()
+        self.assertEqual(view.sidebar_splitter.sizes(), sizes)
+
+    def test_single_task_card_stays_on_overview_with_its_own_card_and_task_details(self):
+        view = self.view
+        view.flow.canvas.cards['deliver.firebase'][0].click()
+        self.assertEqual(view.flow.pages.currentIndex(), 0)
+        self.assertTrue(view.graph.isHidden())
+        self.assertEqual(view.selected, 'firebase')
+        self.assertEqual(set(view.rows), {'firebase'})
+        self.assertEqual(view.tasks.topLevelItemCount(), 1)
+        self.assertIs(view.rows['firebase'].parent(), view.card_rows['deliver.firebase'])
+        self.assertIn('firebase:fixture', view.fact_values['Delivery'].text())
+        view.flow.canvas.cards['platform.android'][0].click()
+        self.assertEqual(view.flow.pages.currentIndex(), 1)
+        self.assertEqual(set(view.rows), {'environment', 'android'})
+        self.assertEqual(set(view.graph.canvas.cards), {'environment', 'android'})
+
+    def test_task_expands_reported_cases_and_keeps_selection_during_live_updates(self):
+        view = self.view
+        view.flow.open_group('platform.android')
+        case = dict(name='test_one', classname='Shared.Contracts', suite='shared',
+                    status='passed', seconds=.2, message='Measured case details')
+        fact = dict(status='running', tests_provisional=True, live_tests=[case])
+        view.set_facts({'android': fact})
+        row = view.rows['android']
+        self.assertEqual(row.childCount(), 1)
+        row.setExpanded(True)
+        child = row.child(0)
+        view.tasks.setCurrentItem(child)
+        self.assertEqual(view.selected, 'android')
+        self.assertIn('Measured case details', view.case_detail.text())
+        view.set_facts({'android': dict(fact, live_tests=[case, dict(case, name='test_two')])})
+        self.assertTrue(row.isExpanded())
+        self.assertIs(row.child(0), child)
+        self.assertIs(view.tasks.currentItem(), child)
+        self.assertEqual(row.childCount(), 2)
+        view.set_facts({'android': dict(status='passed', tests=[case], live_tests=[], tests_provisional=False)})
+        self.assertEqual(row.childCount(), 1)
+        self.assertEqual(child.text(1), 'Passed')
+
+    def test_files_group_into_folders_before_run_then_show_current_test_and_time_shares(self):
+        from datetime import datetime, timezone
+        phase = Phase('commonutils', (sys.executable, '-V'), str(self.root),
+            test_files=('appearance/test_theme.py', 'appearance/test_fonts.py', 'storage/test_cache.py'))
+        other = Phase('other', (sys.executable, '-V'), str(self.root))
+        plan = replace(self.plan, phases=(phase, other), journey={})
+        self.panel.present_plan(plan)
+        view = self.view
+        row = view.rows['commonutils']
+        self.assertEqual(row.childCount(), 2)
+        appearance = row.child(0)
+        self.assertEqual(appearance.text(0), 'appearance')
+        self.assertEqual(appearance.childCount(), 2)
+        self.assertEqual(appearance.child(0).text(0), 'test_theme.py')
+        self.assertEqual(appearance.child(0).childCount(), 0)
+        current = dict(name='test_current', classname='Shared.Theme', file='appearance/test_theme.py',
+                       status='running', started_at=datetime.now(timezone.utc).isoformat())
+        facts = {'commonutils': dict(status='running', seconds=20, current_test=current,
+                 test_files=[dict(name='appearance/test_theme.py', status='running', seconds=10)],
+                 live_tests=[dict(name='test_done', classname='Shared.Theme', file='appearance/test_theme.py',
+                                  status='passed', seconds=2, message='')], tests_provisional=True),
+                 'other': dict(status='passed', seconds=80)}
+        view.set_facts(facts)
+        self.assertIs(view.rows['commonutils'], row)
+        self.assertIs(row.child(0), appearance)
+        file = appearance.child(0)
+        self.assertEqual([file.child(i).text(0) for i in range(file.childCount())], ['test_done', 'test_current'])
+        self.assertEqual(file.child(1).text(1), 'Running')
+        row_bar = view.tasks.itemWidget(row, 2).bar
+        self.assertIsInstance(row_bar, QProgressBar)
+        self.assertEqual(row_bar.value(), 200)
+        self.assertIn('20%', row_bar.format())
+        # The folder/file use their measured time; the test is 2 / 10 seconds.
+        row.setExpanded(True)
+        appearance.setExpanded(True)
+        file.setExpanded(True)
+        test_bar = view.tasks.itemWidget(file.child(0), 2).bar
+        self.assertEqual(test_bar.value(), 200)
+        self.assertEqual(file.text(0), 'test_theme.py')
+
     def test_one_persistent_inspector_syncs_keyboard_card_task_and_dependency_selection(self):
         view = self.view
-        self.assertFalse(view.findChildren(QTabWidget))
+        self.assertEqual([view.inspector_tabs.tabText(i) for i in range(view.inspector_tabs.count())],
+                         ['Details', 'Command', 'Plan'])
         inspector = view.inspector_scroll
         self.assertTrue(inspector.isVisible())
         self.assertEqual(set(view.rows), {phase.id for phase in self.plan.phases})
@@ -89,7 +183,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.assertIn('separate approval', view.fact_values['Delivery'].text().lower())
         button = view.prerequisite_layout.itemAt(1).widget()
         button.click()
-        self.assertEqual(view.graph.selected, 'prepare')
+        self.assertEqual(view.selected, 'prepare')
         self.assertIs(view.tasks.currentItem(), view.rows['prepare'])
         view.flow.back.click()
         view.flow.open_group('source')
@@ -110,7 +204,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
             self.assertIn(key, row.toolTip(0))
         self.assertFalse(self.view.details.isVisible())
         self.assertTrue(self.view.error_panel.isHidden())
-        self.assertFalse(self.view.command_section.toggle.isChecked())
+        self.assertIs(self.view.inspector_tabs.currentWidget(), self.view.details_scroll)
         self.assertIn('Timeout:', self.view.command.toPlainText())
         self.assertTrue(self.view.graph.guidance.isHidden())
         self.assertTrue(self.view.graph.legend.isHidden())
@@ -147,11 +241,13 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.assertTrue(view.blocker.isVisible())
         view.blocker.click()
         self.assertEqual(view.selected, 'environment')
-        view.command_section.toggle.click()
+        view.inspector_tabs.setCurrentWidget(view.command)
         self.assertIn(sys.executable, view.command.toPlainText())
         self.assertIn(str(self.root), view.command.toPlainText())
-        view.technical_section.toggle.click()
+        view.inspector_tabs.setCurrentWidget(view.plan_tabs)
+        view.plan_tabs.setCurrentWidget(view.plan_data)
         self.assertEqual(json.loads(view.plan_data.toPlainText())['project'], self.plan.project)
+        view.inspector_tabs.setCurrentWidget(view.details_scroll)
         self.assertTrue(view.details.isVisible())
 
     def test_updates_keep_selected_evidence_and_scroll_and_reset_clears_old_failure(self):
@@ -169,7 +265,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
         view.set_facts(dict(facts, ios=dict(status='running')))
         self.assertEqual(bar.value(), value)
         self.assertEqual(view.details.textCursor().selectedText(), selected)
-        self.assertEqual(view.graph.selected, 'environment')
+        self.assertEqual(view.selected, 'environment')
         view.set_facts(dict(facts, environment=dict(facts['environment'], summary='More evidence')))
         self.assertEqual(bar.value(), value)
         self.panel.present_plan(self.plan)

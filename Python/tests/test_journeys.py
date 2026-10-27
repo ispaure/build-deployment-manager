@@ -190,6 +190,9 @@ class JourneyTests(unittest.TestCase):
             phase.pop('label')
             phase.pop('description')
             phase.pop('section')
+            phase.pop('test_files')
+            phase.pop('retry_exit_codes')
+            phase.pop('retry_delay')
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
 
     def test_step_display_metadata_round_trips_and_changes_review_identity(self):

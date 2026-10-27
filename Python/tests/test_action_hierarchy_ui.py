@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import QPoint
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFrame
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFrame, QPushButton
 
 from build_manager.app import ManagerWindow
 from build_manager.run_ui import RunView
@@ -34,6 +34,23 @@ class ActionHierarchyTests(unittest.TestCase):
         project.journey_capability = deepcopy(CAPABILITY)
         project.row = dict(trusted=True, selections={})
         return project
+
+    def test_primary_action_uses_current_palette_accent(self):
+        from build_manager.ui_components import style_button
+        original = self.app.palette()
+        self.addCleanup(self.app.setPalette, original)
+        for accent in ('#f47b20', '#8c4fc4'):
+            palette = QPalette(original)
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(accent))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor('#ffffff'))
+            self.app.setPalette(palette)
+            button = style_button(QPushButton('Continue'), 'primary')
+            self.addCleanup(button.close)
+            button.resize(240, 44)
+            button.show()
+            self.app.processEvents()
+            self.assertEqual(button.grab().toImage().pixelColor(8, 8).name(), accent)
+            button.close()
 
     def window(self):
         project = self.project()
