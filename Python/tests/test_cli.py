@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import sysconfig
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -314,7 +315,7 @@ print(json.dumps(dict(schema=1, result=result)))
         decoy = self.root / 'commonUtils'
         decoy.mkdir()
         (decoy / '__init__.py').write_text('raise AssertionError("foreign dependency must not load")')
-        console = Path(sys.executable).parent / ('build-manager.exe' if os.name == 'nt' else 'build-manager')
+        console = Path(sysconfig.get_path('scripts')) / ('build-manager.exe' if os.name == 'nt' else 'build-manager')
         self.assertTrue(console.is_file(), 'Run with the installed manager interpreter')
         process = subprocess.run([str(console), '--registry', str(self.registry), 'list'],
             cwd=self.root, env=environment, text=True, capture_output=True, timeout=15)

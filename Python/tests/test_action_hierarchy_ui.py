@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QColor, QFont, QPalette
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFrame, QPushButton
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QFrame, QPushButton, QWidget
 
 from build_manager.app import ManagerWindow
 from build_manager.run_ui import RunView
@@ -121,6 +121,29 @@ class ActionHierarchyTests(unittest.TestCase):
         self.assertIs(window.panel.action_footer.parentWidget(), window.panel)
         self.assertEqual([frame for frame in window.findChildren(QFrame, 'actionFooter') if frame.isVisible()],
                          [window.panel.action_footer])
+
+    def test_large_native_font_keeps_goals_presets_and_map_controls_in_viewport(self):
+        window = self.window()
+        panel = window.panel
+        panel.present_plan(self.plan)
+        panel.run_view.reset(self.plan)
+        # Apply actual pixel metrics to existing controls: QApplication font
+        # changes alone can leave explicitly inherited platform fonts unchanged.
+        font = QFont(self.app.font())
+        font.setPixelSize(28)
+        for widget in (window, *window.findChildren(QWidget)):
+            widget.setFont(font)
+        window.resize(1024, 700)
+        window.show()
+        for stage in range(4):
+            panel.stages.setCurrentIndex(stage)
+            for _ in range(5): self.app.processEvents()
+            self.assertEqual(window.width(), 1024, stage)
+        panel.stages.setCurrentIndex(0)
+        self.app.processEvents()
+        for control in (*panel.configuration.goal_buttons.values(), panel.saved_presets, panel.preset_menu):
+            self.assertTrue(control.isVisible())
+            self.assertTrue(window.rect().contains(control.rect().translated(control.mapTo(window, QPoint()))))
 
     def test_failure_without_case_reports_opens_failed_step_directly(self):
         view = self.view()

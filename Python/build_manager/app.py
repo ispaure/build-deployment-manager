@@ -313,7 +313,11 @@ class ManagerWindow(QWidget):
         self.set_active(False)
 
     def install_presets(self, key, panel):
-        row = panel.configuration.goal_row
+        # Native Windows fonts can make the goals plus preset picker wider than
+        # a laptop viewport. Keep the picker on its own row without truncating
+        # either the intent labels or saved preset names.
+        row = QHBoxLayout()
+        panel.configuration.intent_header.layout().addLayout(row)
         picker = panel.saved_presets = QComboBox()
         picker.setAccessibleName('Saved project run presets')
         picker.setMinimumContentsLength(32)
