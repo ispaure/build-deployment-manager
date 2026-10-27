@@ -197,9 +197,12 @@ class JourneyTests(unittest.TestCase):
         self.assertEqual(third['status'], 'unknown')
         self.assertEqual(third['phases'][-1]['status'], 'passed')
         before = (self.root / 'firebase.json').stat().st_mtime_ns
+        unknown = next(row for row in third['phases'] if row['id'] == 'firebase')
         blocked = executor.run(plan, self.root / 'result', resume=True)
         self.assertEqual(blocked['status'], 'unknown')
-        self.assertIn('reconciliation', blocked['error'])
+        self.assertEqual(next(row for row in blocked['phases'] if row['id'] == 'firebase'), unknown)
+        self.assertEqual({row['id']: row.get('operation_id') for row in blocked['phases']},
+                         {row['id']: row.get('operation_id') for row in third['phases']})
         self.assertEqual((self.root / 'firebase.json').stat().st_mtime_ns, before)
 
     def test_legacy_plan_serialization_keeps_original_identity(self):

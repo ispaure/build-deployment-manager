@@ -26,7 +26,7 @@ class VerifyContinuation(QRunnable):
 
     def run(self):
         from .history import load_run
-        from .workflows import recover, approve
+        from .workflows import recover, approve, ancestors
         from commonUtils.runtime.operations import check_cancelled
         try:
             check_cancelled(self.cancelled.is_set)
@@ -37,7 +37,14 @@ class VerifyContinuation(QRunnable):
                     plan.adapter.get('project_id') != self.descriptor['project_id']
                     or plan.adapter.get('checkout') != self.checkout):
                 raise ValueError('This run belongs to a different registered checkout.')
-            recover(plan, report, cancelled=self.cancelled.is_set, preserve_unknown=True)
+            recovered = recover(plan, report, cancelled=self.cancelled.is_set, preserve_unknown=True)
+            states = {row['id']: row['status'] for row in recovered}
+            unknown = {key for key, status in states.items() if status == 'unknown'}
+            independent = [phase for phase in plan.phases
+                           if states.get(phase.id) not in {'passed', 'unknown'}
+                           and (phase.always or not ancestors(plan, phase.id).intersection(unknown))]
+            if unknown and not independent:
+                raise ValueError('Uncertain effects require reconciliation; no independent steps remain to continue.')
             steps = tuple(row['id'] for row in report['phases'] if row['status'] == 'awaiting_review')
             approvals = tuple(approve(plan, step, report, cancelled=self.cancelled.is_set) for step in steps)
             check_cancelled(self.cancelled.is_set)
