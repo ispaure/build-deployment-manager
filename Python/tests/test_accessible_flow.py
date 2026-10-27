@@ -57,6 +57,17 @@ class AccessibleFlowTests(unittest.TestCase):
             self.assertIn('Average: 2.50s', view.timing_summary.text())
             self.assertIn('1 without duration', view.timing_summary.text())
             self.assertEqual(view.timings.topLevelItem(0).text(0), 'slow')
+            slow = view.timings.topLevelItem(0)
+            self.assertIsNone(view.timings.itemWidget(slow, 4))
+            from PySide6.QtCore import Qt
+            self.assertEqual(slow.data(4, Qt.ItemDataRole.UserRole), 1000)
+            self.assertEqual(slow.data(4, Qt.ItemDataRole.AccessibleTextRole), 'slow: 4.00s')
+            with patch.object(view.timings, 'clear', wraps=view.timings.clear) as clear:
+                view.update_phase(dict(id=plan.phases[0].id, status='failed', live_tests=[dict(name='interim')]))
+                clear.assert_not_called()
+            cases[0]['message'] = 'new failure details'
+            view.update_phase(dict(id=plan.phases[0].id, status='failed', tests=cases))
+            self.assertEqual(view.tests.topLevelItem(0).data(0, Qt.ItemDataRole.UserRole)['message'], 'new failure details')
             self.assertIn('View problems', view.next_action.text())
             view.reset(plan)
             self.assertEqual(view.timings.topLevelItemCount(), 0)

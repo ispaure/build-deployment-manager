@@ -12,6 +12,25 @@ class LiveResponsivenessTests(unittest.TestCase):
     setUpClass = classmethod(fixture.ReviewWorkspaceTests.setUpClass.__func__)
     setUp = fixture.ReviewWorkspaceTests.setUp
     tearDown = fixture.ReviewWorkspaceTests.tearDown
+    def test_growing_case_snapshots_are_coalesced_before_recursive_redaction(self):
+        panel = self.panel
+        panel.run_view.reset(self.plan)
+        events = [dict(type='phase', id='android', status='running',
+            live_tests=[dict(name=f'test_{case}', status='passed') for case in range(100)],
+            current_test=dict(name=f'active_{index}', status='running')) for index in range(100)]
+        raw = ('\n'.join(json.dumps(event) for event in events) + '\n').encode()
+        with patch.object(panel.process, 'readAllStandardOutput', side_effect=[raw] + [b''] * 1000), \
+             patch.object(panel, 'redacted_data', wraps=panel.redacted_data) as redact:
+            panel.read_output()
+            while '\n' in panel.session.buffer:
+                panel.read_output()
+            self.assertEqual(redact.call_count, 0)
+            panel.live_update_timer.stop()
+            panel.flush_live_updates()
+            self.assertEqual(sum(len(call.args) == 1 for call in redact.call_args_list), 1)
+            self.assertEqual(panel.run_view.facts['android']['current_test']['name'], 'active_99')
+            self.assertEqual(len(panel.run_view.facts['android']['live_tests']), 100)
+
     def test_stream_burst_yields_before_draining_and_coalesces_hidden_review(self):
         panel = self.panel
         panel.run_view.reset(self.plan)

@@ -50,6 +50,25 @@ class ReviewTests(unittest.TestCase):
             time.sleep(.005)
             self.assertLess(time.monotonic(), deadline)
 
+    def test_gui_continuation_reviews_and_forwards_changed_engine_identity(self):
+        from PySide6.QtWidgets import QMessageBox
+        from build_manager.identity import runtime_identity, engine_review_identity
+        result, report, _, effect = self.retained()
+        report['engine'] = dict(api=0, manager={'commit': 'old'}, commonUtils={'commit': 'old'})
+        result.write_text(json.dumps(report))
+        expected = engine_review_identity(report['engine'], runtime_identity())
+        panel = ManagerPanel(fixtures.OtherProject(self.root))
+        self.addCleanup(panel.close)
+        with patch('build_manager.ui.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes) as review, \
+                patch.object(panel, 'confirm_continuation', return_value=('upload',)), \
+                patch.object(panel.session, 'launch') as launch:
+            panel.resume_workflow(result)
+            self.wait_review(panel)
+            review.assert_called_once()
+            self.assertEqual(launch.call_args.kwargs['engine_review'], expected)
+            self.assertTrue(launch.call_args.kwargs['resume'])
+        self.assertFalse(effect.exists())
+
     def test_hashing_uses_bounded_shared_streams_and_checks_both_copies(self):
         _, report, artifact, _ = self.retained()
         with patch.object(Path, 'read_bytes', side_effect=AssertionError('whole file allocation')):

@@ -42,6 +42,8 @@ def validate_capability(value, capabilities):
                 not isinstance(backend, str) or not backend for host, backend in hosts.items())):
             raise ValueError('Journey host backends need explicit supported host names and nonempty labels.')
     for name, row in destinations.items():
+        if isinstance(row, dict) and type(row.get('testing_optional', False)) is not bool:
+            raise ValueError('Optional destination testing must be explicitly declared.')
         if (not _identifier(name) or not isinstance(row, dict) or not isinstance(row.get('label'), str)
                 or not row['label'] or not isinstance(row.get('platforms'), list) or not row['platforms']
                 or any(target not in platforms for target in row['platforms'])
@@ -102,8 +104,8 @@ def destination_package(row, values):
 def request(capability, goal, platforms, destinations, *, backends=None):
     if not capability:
         raise ValueError('This project has not declared integrated multi-platform workflows. Use an advanced operation.')
-    if goal not in {'validate', 'deliver'} or not platforms or len(set(platforms)) != len(platforms):
-        raise ValueError('Choose a goal and at least one distinct platform.')
+    if goal not in {'validate', 'deliver'} or len(set(platforms)) != len(platforms):
+        raise ValueError('Choose a goal and distinct test platforms.')
     if any(target not in capability['platforms'] for target in platforms):
         raise ValueError('Unsupported journey platform.')
     if len(set(destinations)) != len(destinations) or any(name not in capability.get('destinations', {}) for name in destinations):
@@ -112,19 +114,26 @@ def request(capability, goal, platforms, destinations, *, backends=None):
         raise ValueError('Validation cannot include delivery actions.')
     if goal == 'deliver' and not destinations:
         raise ValueError('Choose at least one delivery destination.')
+    if not platforms and (goal != 'deliver' or any(not capability['destinations'][name].get('testing_optional') for name in destinations)):
+        raise ValueError('Choose at least one test platform unless all selected destinations explicitly support delivery without tests.')
     for name in destinations:
         missing = set(capability['destinations'][name]['platforms']) - set(platforms)
-        if missing:
+        if missing and not capability['destinations'][name].get('testing_optional'):
             raise ValueError(capability['destinations'][name]['label'] + ' requires: ' + ', '.join(sorted(missing)) +
                              '. Select those platforms or remove this destination.')
     result = dict(schema=1, goal=goal, platforms=list(platforms), destinations=list(destinations))
+    optional = [name for name in destinations if capability['destinations'][name].get('testing_optional')]
+    if optional:
+        result['optional_testing_destinations'] = optional
     if backends is not None:
         if (not isinstance(backends, dict) or set(backends) != set(platforms)
                 or any(not isinstance(value, str) or not value for value in backends.values())):
             raise ValueError('Choose an execution location for every selected platform.')
         result['backends'] = dict(backends)
     if destinations:
-        result['destination_platforms'] = {name: list(capability['destinations'][name]['platforms']) for name in destinations}
+        result['destination_platforms'] = {name: (list(platforms) if capability['destinations'][name].get('testing_optional')
+            and not set(capability['destinations'][name]['platforms']).issubset(platforms)
+            else list(capability['destinations'][name]['platforms'])) for name in destinations}
     return result
 
 
@@ -135,7 +144,7 @@ def validate_plan(plan, intent=None):
     if not isinstance(data, dict) or data.get('schema') != 1 or data.get('goal') not in {'validate', 'deliver'}:
         raise ValueError('An integrated plan needs journey evidence schema 1.')
     platforms, destinations = data.get('platforms'), data.get('destinations')
-    if not isinstance(platforms, dict) or not platforms or not isinstance(destinations, dict):
+    if not isinstance(platforms, dict) or not isinstance(destinations, dict) or not platforms and not destinations:
         raise ValueError('Journey evidence must map platforms to checks and destinations to effects.')
     if intent and (data['goal'] != intent['goal'] or set(platforms) != set(intent['platforms'])
                    or set(destinations) != set(intent['destinations'])):
@@ -181,10 +190,13 @@ def validate_plan(plan, intent=None):
                 or not row['identity'].strip() or not isinstance(row.get('steps'), list) or not row['steps']):
             raise ValueError('Each destination needs its exact identity and external steps.')
         required_platforms = row.get('platforms', list(platforms))
-        if (not isinstance(required_platforms, list) or not required_platforms
+        if (not isinstance(required_platforms, list) or not required_platforms and not row.get('testing_optional')
                 or any(not isinstance(target, str) or target not in platforms for target in required_platforms)
                 or len(set(required_platforms)) != len(required_platforms)):
             raise ValueError('Destination platforms must name selected platforms without duplicates.')
+        if row.get('testing_optional') and (type(row['testing_optional']) is not bool or
+                intent is not None and name not in intent.get('optional_testing_destinations', ())):
+            raise ValueError('Delivery without tests must be declared by the trusted project.')
         expected = (intent or {}).get('destination_platforms', {}).get(name, [])
         if not set(expected).issubset(required_platforms):
             raise ValueError('Destination validation omits a platform required by its descriptor.')

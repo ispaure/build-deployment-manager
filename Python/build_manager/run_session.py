@@ -28,7 +28,7 @@ class RunSession(QObject):
         else:
             self.clock.stop()
 
-    def launch(self, interpreter, plan_path, output, *, resume=False, confirmed=False, approvals=()):
+    def launch(self, interpreter, plan_path, output, *, resume=False, confirmed=False, approvals=(), engine_review=None):
         suffix = '.resume-' + uuid4().hex + '.cancel' if resume else '.cancel'
         self.cancel_file = output.with_suffix(suffix)
         self.buffer = ''
@@ -40,6 +40,8 @@ class RunSession(QObject):
             arguments.append('--resume')
         if confirmed:
             arguments.append('--confirm')
+        if engine_review is not None:
+            arguments += ['--engine-review-identity', engine_review]
         for approval in approvals:
             arguments += ['--approve-step', approval.step,
                           '--approval-identity', approval.step + '=' + approval.identity]

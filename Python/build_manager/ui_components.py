@@ -6,6 +6,18 @@ from PySide6.QtWidgets import QDialogButtonBox, QPushButton, QSizePolicy, QWidge
 
 class ViewportStack(QStackedWidget):
     """Bound stage content to its viewport, independent of hidden-page text."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.currentChanged.connect(self.updateGeometry)
+
+    def minimumSizeHint(self):
+        page = self.currentWidget()
+        if page is None:
+            return QSize(0, 0)
+        hint = page.minimumSizeHint().expandedTo(page.minimumSize())
+        margins = self.contentsMargins()
+        return QSize(max(0, hint.width()) + margins.left() + margins.right(), 0)
+
     def hasHeightForWidth(self):
         return False
 

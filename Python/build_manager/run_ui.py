@@ -5,7 +5,8 @@ from collections import deque
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QStackedWidget, QVBoxLayout, QWidget, QFrame, QSizePolicy, QStyle)
+    QStackedWidget, QVBoxLayout, QWidget, QFrame, QSizePolicy, QStyle,
+    QStyledItemDelegate, QStyleOptionProgressBar)
 from .ui_components import style_button, ActionStrip, search_shortcut
 
 
@@ -50,6 +51,21 @@ def plan_overview(plan):
                   '   ' + ('External action: explicit review required.' if effect in {'upload', 'deploy', 'publish','dispatch'}
                             else 'Preparation / local execution.')]
     return '\n'.join(lines)
+
+
+class TimingBarDelegate(QStyledItemDelegate):
+    """Paint visible duration cells without allocating one QWidget per test."""
+    def paint(self, painter, option, index):
+        progress = index.data(Qt.ItemDataRole.UserRole)
+        if progress is None:
+            return super().paint(painter, option, index)
+        bar = QStyleOptionProgressBar()
+        bar.rect = option.rect.adjusted(3, 3, -3, -3)
+        bar.palette = option.palette
+        bar.state = option.state
+        bar.minimum, bar.maximum, bar.progress = 0, 1000, progress
+        bar.textVisible = False
+        option.widget.style().drawControl(QStyle.ControlElement.CE_ProgressBar, bar, painter, option.widget)
 
 
 class RunView(QWidget):
@@ -292,6 +308,7 @@ class RunView(QWidget):
         self.timings.setColumnWidth(2, 110)
         self.timings.setColumnWidth(3, 95)
         self.timings.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.timings.setItemDelegateForColumn(4, TimingBarDelegate(self.timings))
         timing_layout.addWidget(self.timings)
         note = QLabel('Reported test time is the sum of case durations. Parallel tests can overlap; this differs from active run time. Missing durations are excluded from averages.')
         note.setWordWrap(True)
@@ -326,9 +343,12 @@ class RunView(QWidget):
 
     def open_step_group(self, key):
         grouped = self.run_choices.flow
-        if key and (grouped.pages.currentIndex() == 0 or key not in self.flow.canvas.cards):
+        if key:
             group = next((group for group in grouped.grouped.members if key in grouped.group_keys(group)), '__unassigned__')
-            grouped.open_group(group)
+            members = grouped.grouped.members.get(group, grouped.grouped.unassigned)
+            if (grouped.selected != group or key not in self.flow.canvas.cards
+                    or grouped.pages.currentIndex() == 0 and len(members) > 1):
+                grouped.open_group(group)
 
     def live_facts(self):
         now = time.monotonic()
@@ -400,7 +420,7 @@ class RunView(QWidget):
         if self.plan is None:
             return {}
         grouped = self.run_choices.flow
-        keys = (self.selected,) if self.selected else grouped.group_keys(grouped.selected) if grouped.pages.currentIndex() == 1 else self.facts
+        keys = (self.selected,) if self.selected else grouped.group_keys(grouped.selected) if grouped.has_group_scope() else self.facts
         return {key: fact for key, fact in self.facts.items() if key in keys}
 
     def inspect_phase_problems(self, key):
@@ -518,7 +538,7 @@ class RunView(QWidget):
         self.external_prerequisites.setVisible(self.external_prerequisites.count() > 1)
         if not self.selected:
             grouped = self.run_choices.flow
-            in_group = grouped.pages.currentIndex() == 1
+            in_group = grouped.has_group_scope()
             self.selection_heading.setText(grouped.heading.text() if in_group else 'Whole workflow')
             self.selection_info.setText('Select a step to inspect its status, tests, timing and output.' if in_group else
                 'Open a workflow card to inspect its steps, tests, timing and output.')
@@ -675,6 +695,7 @@ class RunView(QWidget):
 
     def reset(self, plan, previous=(), *, fields=(), capability=None, proposal=None):
         self.pending_refresh = self.pending_tests = False
+        self.final_tests_signature = None
         self.plan = plan
         self.selected = ''
         self.flow.setParent(None)
@@ -727,7 +748,7 @@ class RunView(QWidget):
         if event['status'] != 'waiting_resource':
             event = dict(event, resource='', reason=event.get('reason', ''))
         self.facts.setdefault(key, {}).update(event)
-        self.rows[key].setText(1, event['status'].replace('_', ' '))
+        self.rows[key].setText(1, 'reused' if event.get('reused') else event['status'].replace('_', ' '))
         self.rows[key].setToolTip(1, event.get('reason') or event.get('error', ''))
         if event['status'] == 'running':
             self.started.setdefault(key, time.monotonic() - (event.get('seconds') or 0))
@@ -973,12 +994,28 @@ class RunView(QWidget):
         for artifact in fact.get('artifacts', []):
             lines += ['Artifact: ' + artifact['path'], 'SHA-256: ' + artifact['sha256']]
         grouped = self.run_choices.flow
-        if grouped.pages.currentIndex() == 1:
+        if grouped.has_group_scope():
             lines += ['', grouped.group_context()]
         # Caller supplies redacted plan data; report facts are redacted by executor.
         self.set_detail_text('\n'.join(lines), key)
 
     def refresh_tests(self):
+        scope = self.scoped_facts()
+        signature = tuple((key, tuple((case.get('name'), case.get('status'),
+                                      case.get('seconds'), case.get('message'),
+                                      case.get('suite'), case.get('classname'))
+                                     for case in fact.get('tests', ())))
+                          for key, fact in scope.items())
+        interim = sum(len(fact.get('live_tests', ())) for fact in scope.values())
+        if getattr(self, 'final_tests_signature', None) == signature:
+            # Interim case snapshots do not change final rows or timing bars.
+            # Rebuilding thousands of native items here stalls resize/input.
+            if interim:
+                final = sum(len(fact.get('tests', ())) for fact in scope.values())
+                self.result_counts.setText(f'{final} final test results · {interim} interim results\n'
+                    'Expand the execution step above to inspect live reports.')
+            return
+        self.final_tests_signature = signature
         current = self.tests.currentItem()
         previous = (current.text(4), current.data(0, Qt.ItemDataRole.UserRole)) if current else None
         self.test_detail.clear()
@@ -1019,13 +1056,9 @@ class RunView(QWidget):
             item = QTreeWidgetItem([case['name'], duration(seconds),
                 ' / '.join(filter(None, [case['suite'], case['classname']])), key, ''])
             self.timings.addTopLevelItem(item)
-            bar = QProgressBar()
-            bar.setRange(0, 1000)
-            bar.setValue(round(1000 * seconds / longest) if longest else 0)
-            bar.setTextVisible(False)
-            bar.setAccessibleName(case['name'] + ': ' + duration(seconds))
-            bar.setToolTip('Relative to the slowest reported test: ' + duration(longest))
-            self.timings.setItemWidget(item, 4, bar)
+            item.setData(4, Qt.ItemDataRole.UserRole, round(1000 * seconds / longest) if longest else 0)
+            item.setData(4, Qt.ItemDataRole.AccessibleTextRole, case['name'] + ': ' + duration(seconds))
+            item.setToolTip(4, 'Relative to the slowest reported test: ' + duration(longest))
         if measured:
             from statistics import median
             values = [row[0] for row in measured]

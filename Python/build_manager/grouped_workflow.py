@@ -119,6 +119,10 @@ def group_workflow(plan, capability=None, proposal=None):
         if phase.id in owners:
             continue
         downstream = {owners[key] for key in owners if phase.id in ancestors[key]}
+        recipients = [key for key in downstream if key.startswith('deliver.')]
+        if phase.kind == 'connection' and len(recipients) == 1:
+            attach(recipients[0], [phase.id])
+            continue
         package_cards = [node.id for node in packages if any(
             child.id in downstream and node.id in child.dependencies for child in nodes)]
         candidates = package_cards or [key for key in downstream if key.startswith(('package.', 'prepare.'))]

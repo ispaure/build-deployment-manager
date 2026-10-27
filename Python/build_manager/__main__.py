@@ -15,6 +15,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--confirm', action='store_true')
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--engine-review-identity', help='Explicitly reviewed old/current manager identity binding')
     parser.add_argument('--approval-identity', action='append', default=[], help='Reviewed STEP=SHA256 identity; rechecked before continuation')
     parser.add_argument('--approve-step', action='append', default=[])
     parser.add_argument('--cancel-file', type=Path, help='Owned cancellation request marker from a local UI')
@@ -57,7 +58,8 @@ def main():
             if any(item.step in identities and identities[item.step] != item.identity for item in approvals):
                 raise ValueError('Reviewed artifact identity changed; inspect and approve the current preparation.')
         report = Executor(cancelled=cancelled, event=event).run(
-            plan, args.output, confirmed=args.confirm, resume=args.resume, approvals=approvals)
+            plan, args.output, confirmed=args.confirm, resume=args.resume, approvals=approvals,
+            engine_review=args.engine_review_identity)
     except (OSError, ValueError, RuntimeError) as error:
         print(json.dumps(dict(type='error', error=str(error))), flush=True)
         return 1

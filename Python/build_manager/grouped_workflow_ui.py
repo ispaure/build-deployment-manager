@@ -26,6 +26,7 @@ class GroupedFlowView(QWidget):
         self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         overview = QWidget()
         body = QVBoxLayout(overview)
+        self.overview_layout = body
         body.setContentsMargins(0, 0, 0, 0)
         toolbar = QHBoxLayout()
         self.additional = QPushButton()
@@ -106,6 +107,7 @@ class GroupedFlowView(QWidget):
     def attach_inspector(self, graph, inspector=None):
         """Live runs have one graph and one inspector, shared by every card."""
         self.graph = graph
+        self.inspector = inspector
         self.splitter.addWidget(graph)
         if inspector is not None:
             self.splitter.addWidget(inspector)
@@ -146,6 +148,28 @@ class GroupedFlowView(QWidget):
         self.selected = key
         node = next((node for node in self.grouped.phases if node.id == key), None)
         keys = self.group_keys(key)
+        self.heading.setText((node.label if node else 'Other execution steps') +
+            f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))
+        owned = self.grouped.members.get(key, ()) if key != '__unassigned__' else keys
+        if len(owned) <= 1:
+            # Selecting a leaf scopes its inspector; it is not another page.
+            self.pages.setCurrentIndex(0)
+            if self.graph is not None:
+                self.graph.set_scope(keys)
+                self.graph.setVisible(False)
+            inspector = getattr(self, 'inspector', None)
+            if inspector is not None:
+                self.overview_layout.addWidget(inspector, 2)
+                inspector.show()
+            self.set_facts(self.facts)
+            self.group_selected.emit(key)
+            if self.graph is None and keys:
+                self.phase_selected.emit(keys[0])
+            return
+        inspector = getattr(self, 'inspector', None)
+        if inspector is not None:
+            self.splitter.addWidget(inspector)
+            inspector.show()
         if self.graph is not None:
             self.heading.setText((node.label if node else 'Other execution steps') +
                 f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))
@@ -192,6 +216,10 @@ class GroupedFlowView(QWidget):
 
     def close_group(self):
         key = self.selected
+        self.selected = ''
+        inspector = getattr(self, 'inspector', None)
+        if inspector is not None:
+            self.splitter.addWidget(inspector)
         self.pages.setCurrentIndex(0)
         if self.graph is not None:
             self.group_selected.emit('')
@@ -199,6 +227,9 @@ class GroupedFlowView(QWidget):
         self.timer.start(0)
         if key in self.canvas.cards:
             self.canvas.cards[key][0].setFocus()
+
+    def has_group_scope(self):
+        return bool(self.selected)
 
     def group_context(self):
         lines = []

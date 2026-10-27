@@ -39,7 +39,8 @@ class ResultsOverviewTests(unittest.TestCase):
         self.assertEqual(self.view.run_choices.flow.pages.currentIndex(), 0)
         self.view.inspect_summary_phase('android')
         self.view.complete(dict(status='passed'))
-        self.assertEqual(self.view.run_choices.flow.pages.currentIndex(), 1)
+        self.assertEqual(self.view.run_choices.flow.pages.currentIndex(), 0)
+        self.assertTrue(self.view.run_choices.flow.has_group_scope())
         self.assertEqual(self.view.selected, 'android')
 
     def test_prepared_files_keep_path_and_full_identity_in_evidence(self):

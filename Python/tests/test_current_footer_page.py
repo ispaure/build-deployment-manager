@@ -3,13 +3,25 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import unittest
 from PySide6.QtWidgets import QApplication, QWidget, QPushButton, QHBoxLayout, QVBoxLayout
-from build_manager.ui_components import CurrentPageStack
+from build_manager.ui_components import CurrentPageStack, ViewportStack
 
 
 class CurrentFooterPageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_hidden_stage_does_not_constrain_visible_viewport(self):
+        stack = ViewportStack()
+        self.addCleanup(stack.close)
+        short, wide = QWidget(), QWidget()
+        short.setMinimumWidth(120)
+        wide.setMinimumWidth(1400)
+        stack.addWidget(short)
+        stack.addWidget(wide)
+        self.assertEqual(stack.minimumSizeHint().width(), 120)
+        stack.setCurrentIndex(1)
+        self.assertEqual(stack.minimumSizeHint().width(), 1400)
 
     def test_hidden_wide_page_does_not_widen_short_page_or_discard_active_minima(self):
         window = QWidget()

@@ -212,6 +212,7 @@ class ManagerPanel(QWidget):
         self.overview = self.review_workspace.overview
         self.plan_data = self.review_workspace.plan_data
         self.review_summary = QLabel(review)
+        self.review_summary.setWordWrap(True)
         self.review_summary.hide()
         self.review_context = QLabel(review)
         self.review_context.hide()
@@ -518,10 +519,6 @@ class ManagerPanel(QWidget):
             from .journeys import request
             targets = [name for name, control in self.platform_checks.items() if control.isChecked()]
             destinations = [name for name, control in self.destination_checks.items() if control.isChecked()] if goal == 'deliver' else []
-            if not targets:
-                self.preparation_message('Select at least one platform above, then choose Next: review plan. No tests have started.')
-                self.readiness.setText(self.plan_feedback.text())
-                return
             try:
                 request(self.project.journey_capability, goal, targets, destinations)
             except ValueError as error:
@@ -683,6 +680,17 @@ class ManagerPanel(QWidget):
         result, plan, previous, steps = (continuation.path, continuation.plan,
                                          continuation.report, continuation.steps)
         try:
+            engine_change = getattr(continuation, 'engine_change', None)
+            if engine_change is not None:
+                answer = QMessageBox.question(self, 'Manager updated since this run',
+                    'This saved run used a different manager or commonUtils revision. '
+                    'Prepared artifacts and completed steps were verified and will be retained. '
+                    'Continue unfinished steps with the versions below?\n\n' +
+                    json.dumps(self.redacted_data(engine_change), indent=2),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
             self.present_plan(plan)
             self.seed_run(plan, previous['phases'])
             self.plan = None
@@ -707,7 +715,8 @@ class ManagerPanel(QWidget):
             self.stages.setCurrentIndex(2)
             self.set_busy(True)
             self.session.launch(self.project.interpreter, result.parent / 'plan.json', result.parent,
-                                resume=True, confirmed=confirmed, approvals=approvals)
+                                resume=True, confirmed=confirmed, approvals=approvals,
+                                engine_review=engine_change['identity'] if engine_change else None)
         except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
             self.status.setText(self.redact(str(error)))
 
@@ -817,8 +826,16 @@ class ManagerPanel(QWidget):
                     self.update_phase(dict(id=event['phase'], status='waiting_resource',
                                            reason=self.redact(reason), resource=self.redact(resource)), defer=True)
             elif event.get('type') == 'phase':
-                previous_status = self.run_view.facts.get(event['id'], {}).get('status')
-                self.update_phase(event, defer=True)
+                # A suite can emit several growing case inventories in one
+                # read. Merge before redaction/model work, not merely before
+                # painting the same data repeatedly on the GUI thread.
+                pending = getattr(self, 'pending_phase_events', None)
+                if pending is None:
+                    pending = self.pending_phase_events = {}
+                previous_status = pending.get(event['id'], self.run_view.facts.get(event['id'], {})).get('status')
+                pending.setdefault(event['id'], {}).update(event)
+                if not self.live_update_timer.isActive():
+                    self.live_update_timer.start()
                 if event['status'] == 'running' and previous_status != 'running':
                     self.session.phase_elapsed.start()
                 self.session.current_phase = event['id'] + ': ' + event['status']
@@ -838,6 +855,11 @@ class ManagerPanel(QWidget):
             self.review_live_dirty = False
 
     def flush_live_updates(self):
+        pending = getattr(self, 'pending_phase_events', {})
+        self.pending_phase_events = {}
+        for event in pending.values():
+            self.run_view.update_phase(self.redacted_data(event), refresh=False)
+            self.review_live_dirty = True
         self.run_view.flush_updates()
         if self.stages.currentIndex() == 1 and self.review_live_dirty:
             self.review_workspace.set_facts(self.run_view.live_facts())
@@ -900,10 +922,10 @@ class ManagerPanel(QWidget):
         counts = {effect: effects.count(effect) for effect in set(effects)}
         work = ' · '.join(f'{counts[effect]} {label}' for effect, label in
             (('test', 'check steps'), ('inspect', 'inspection steps'), ('build', 'build steps'),
-             ('upload', 'uploads requiring review'), ('deploy', 'deliveries requiring review'), ('publish', 'publication steps requiring review'), ('dispatch','GitHub test launches requiring review'))
+             ('upload', 'uploads requiring review'), ('deploy', 'device deliveries'), ('publish', 'publication steps requiring review'), ('dispatch','GitHub test launches requiring review'))
             if counts.get(effect))
         self.review_summary.setText(f'Project: {safe.project}\nSource: {source}\nPlatforms: {platforms}\nRuns on: {safe.backend}\n\n'
-            + ('Each destination waits for its required platform checks.\nIndependent preparation branches can proceed as their checks pass.\nDelivery pauses for your approval:\n' + destinations
+            + ('Each destination waits for its selected checks.\nIndependent preparation branches can proceed as their checks pass.\nSelected device deliveries proceed automatically; uploads and publication pause for review:\n' + destinations
                if destinations else 'This plan will run the selected checks. No delivery is selected.' if safe.effect == 'test' and all(phase.effect not in {'upload', 'deploy', 'publish'} for phase in safe.phases)
                else f'Operation: {safe.operation}\nEffect: {safe.effect}. Review technical steps before starting.')
             + f'\n\n{len(safe.phases)} steps in total: {work}.'
@@ -928,6 +950,8 @@ class ManagerPanel(QWidget):
             description = {'test': 'Run checks', 'inspect': 'Inspect local files', 'build': 'Prepare files',
                 'upload': 'Upload · separate approval', 'deploy': 'Deliver · separate approval',
                 'publish': 'Publish · separate approval','dispatch':'Start GitHub checks · separate approval'}[effect]
+            if effect == 'deploy' and not phase.approval_required:
+                description = 'Install on selected device'
             prerequisites = ', '.join(phase.dependencies)
             if getattr(phase, 'waits_for', ()):
                 prerequisites += ('; ' if prerequisites else '') + 'Completion only: ' + ', '.join(phase.waits_for)

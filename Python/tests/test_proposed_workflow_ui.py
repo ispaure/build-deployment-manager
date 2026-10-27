@@ -18,6 +18,47 @@ from test_journeys import CAPABILITY, integrated
 
 
 class ProposedWorkflowTests(unittest.TestCase):
+    def test_device_only_proposal_has_build_without_missing_test_platform_blockers(self):
+        capability = deepcopy(CAPABILITY)
+        capability['destinations']['device'] = dict(label='Device', platforms=['android'], testing_optional=True)
+        proposal = propose(capability=capability, goal='deliver', revision='HEAD',
+            platforms=[], destinations=['device'], backends={})
+        self.assertFalse(proposal.blockers)
+        nodes = {node.id: node for node in proposal.phases}
+        self.assertNotIn('choose-platforms', nodes)
+        self.assertNotIn('missing.android', nodes)
+        self.assertEqual(nodes['prepare.device'].dependencies, ('source',))
+
+    def test_optional_testing_package_keeps_source_or_selected_checks_as_input(self):
+        capability = deepcopy(CAPABILITY)
+        capability['packages'] = {
+            'debug': dict(label='Build Android Debug APK', platforms=['android']),
+        }
+        capability['destinations']['device'] = dict(
+            label='Device', platforms=['android'], testing_optional=True, package='debug')
+        for platforms, expected in (([], ('source',)), (['android'], ('platform.android',))):
+            with self.subTest(platforms=platforms):
+                proposal = propose(capability=capability, goal='deliver', revision='working-tree',
+                    platforms=platforms, destinations=['device'], backends={})
+                nodes = {node.id: node for node in proposal.phases}
+                self.assertFalse(proposal.blockers)
+                self.assertEqual(nodes['package.debug'].dependencies, expected)
+                self.assertEqual(nodes['deliver.device'].dependencies, ('package.debug',))
+
+    def test_optional_testing_package_chain_starts_at_source(self):
+        capability = deepcopy(CAPABILITY)
+        capability['packages'] = {
+            'debug': dict(label='Build Android Debug APK', platforms=['android']),
+            'bundle': dict(label='Bundle', platforms=['android'], dependencies=['debug']),
+        }
+        capability['destinations']['device'] = dict(
+            label='Device', platforms=['android'], testing_optional=True, package='bundle')
+        proposal = propose(capability=capability, goal='deliver', revision='HEAD',
+            platforms=[], destinations=['device'], backends={})
+        nodes = {node.id: node for node in proposal.phases}
+        self.assertEqual(nodes['package.debug'].dependencies, ('source',))
+        self.assertEqual(nodes['package.bundle'].dependencies, ('package.debug',))
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

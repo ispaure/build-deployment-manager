@@ -13,6 +13,7 @@ class Continuation:
     report: dict
     steps: tuple
     approvals: tuple
+    engine_change: object = None
 
 
 class VerifyContinuation(QRunnable):
@@ -40,7 +41,13 @@ class VerifyContinuation(QRunnable):
             steps = tuple(row['id'] for row in report['phases'] if row['status'] == 'awaiting_review')
             approvals = tuple(approve(plan, step, report, cancelled=self.cancelled.is_set) for step in steps)
             check_cancelled(self.cancelled.is_set)
-            value = Continuation(self.path, plan, report, steps, approvals)
+            from .identity import runtime_identity, engine_review_identity
+            current = runtime_identity()
+            change = None
+            if report.get('engine') is not None and report['engine'] != current:
+                change = dict(previous=report['engine'], current=current,
+                              identity=engine_review_identity(report['engine'], current))
+            value = Continuation(self.path, plan, report, steps, approvals, change)
             self.results.put((self.revision, value, None))
         except Exception as error:
             self.results.put((self.revision, None, str(error)))

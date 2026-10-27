@@ -22,6 +22,8 @@ def effect_label(phase, plan):
     if phase.always:
         return 'Cleanup · runs even after a failure' if phase.kind == 'cleanup' else 'Continue after completion · allows prior failure'
     effect = phase.effect if phase.effect != 'inherit' else plan.effect
+    if effect == 'deploy' and not getattr(phase, 'approval_required', True):
+        return 'Deliver to selected device'
     return {'test': 'Run checks', 'inspect': 'Inspect files', 'build': 'Build / package',
             'upload': 'Upload · approval required', 'deploy': 'Deliver · approval required',
             'publish': 'Publish · approval required', 'dispatch': 'Launch checks · approval required'}[effect]
@@ -100,7 +102,7 @@ class StageBrowser(QTreeWidget):
             parent.setText(1, ' · '.join(f'{count} {state.lower()}' for state, count in counts.items()))
             approvals = sum((phase.effect if phase.effect != 'inherit' else plan.effect) in
                 {'upload', 'deploy', 'publish', 'dispatch'} for phase in plan.phases
-                if self.steps[phase.id].parent() is parent)
+                if self.steps[phase.id].parent() is parent and getattr(phase, 'approval_required', True))
             parent.setText(2, (f'{approvals} action' + (' requires' if approvals == 1 else 's require') + ' separate approval')
                 if approvals else 'Expand to explore steps')
         self.blockSignals(True)

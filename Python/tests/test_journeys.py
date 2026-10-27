@@ -49,6 +49,26 @@ class JourneyTests(unittest.TestCase):
         self.temp = TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def test_explicit_optional_device_testing_keeps_selected_test_gates(self):
+        from copy import deepcopy
+        capability = deepcopy(CAPABILITY)
+        capability['destinations']['device'] = dict(label='Device', platforms=['android'], testing_optional=True)
+        intent = request(capability, 'deliver', [], ['device'], backends={})
+        self.assertEqual(intent['destination_platforms']['device'], [])
+        prepare = Phase('prepare', (sys.executable, '-c', 'pass'), str(self.root), kind='build', effect='build')
+        deploy = Phase('device', (sys.executable, '-c', 'pass'), str(self.root),
+                       dependencies=('prepare',), effect='deploy')
+        data = dict(schema=1, goal='deliver', platforms={}, executions={}, destinations={
+            'device': dict(identity='selected exact device', steps=['device'], platforms=[], testing_optional=True)})
+        plan = Plan('Fixture', 'Build and deploy', {}, (prepare, deploy), str(self.root), journey=data)
+        validate_plan(plan, intent)
+        with self.assertRaises(ValueError):
+            request(capability, 'deliver', [], ['firebase'])
+        selected = request(capability, 'deliver', ['ios'], ['device'], backends={'ios': 'Local'})
+        self.assertEqual(selected['destination_platforms']['device'], ['ios'])
+        with self.assertRaises(ValueError):
+            validate_plan(plan, selected)
+
     def test_explicit_host_mappings_do_not_mutate_or_fall_back_to_hosted_execution(self):
         from copy import deepcopy
         capability = deepcopy(CAPABILITY)
@@ -193,6 +213,8 @@ class JourneyTests(unittest.TestCase):
             phase.pop('test_files')
             phase.pop('retry_exit_codes')
             phase.pop('retry_delay')
+            phase.pop('reuse_key')
+            phase.pop('approval_required')
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
 
     def test_step_display_metadata_round_trips_and_changes_review_identity(self):

@@ -244,3 +244,28 @@ Executable phases can provide optional `label`, `description`, and `section`
 Empty metadata is omitted from serialization to preserve legacy plan identities.
 The map reads left to right; sibling order follows the adapter's dependencies,
 and later columns stay near their parents. These positions do not alter scheduling.
+
+## Optional testing and selected device installation
+
+A destination may declare `testing_optional: true`. Only a delivery journey whose
+selected destinations all declare this may select zero test platforms. If tests
+are selected, their required gates remain prerequisites of dependent delivery.
+Projects retain package policy: Logistics permits explicit Debug device builds
+without tests, while Release device packages retain native acceptance.
+
+An explicit `deploy` phase may set `approval_required=False` for an already
+selected device. The flag is rejected for uploads, publication, dispatch and
+other effects; omission preserves the existing review boundary and legacy plan
+identity. Artifact verification and durable operation intent still precede the
+installation. Unknown outcomes still require reconciliation; disabling the prompt
+does not permit repeating an uncertain effect. Captured older plans retain their
+original review requirement.
+
+Single-task and empty overview cards select their inspector without opening an
+empty nested page. Connection tasks belong with their recipient, rather than the
+package compilation card, when the dependency graph identifies one recipient.
+
+GUI continuation verifies retained artifacts in a worker. If the engine changed,
+it presents previous/current manager and commonUtils identities and forwards the
+explicitly accepted binding to the child executor. A further edit invalidates the
+binding and requires a new review; completed steps and prepared bytes are retained.
