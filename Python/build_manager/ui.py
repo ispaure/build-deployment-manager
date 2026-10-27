@@ -247,6 +247,7 @@ class ManagerPanel(QWidget):
         self.run_problems = QPushButton('View problems', self)
         self.run_problems.clicked.connect(self.run_view.show_problems)
         self.run_view.review_requested.connect(self.continue_run.click)
+        self.run_view.run_choices.flow.card_action_requested.connect(self.retry_device_install)
         self.run_view.attention_changed.connect(self.update_run_actions)
         self.stages.addWidget(run_page)
         history_page = QWidget()
@@ -461,8 +462,11 @@ class ManagerPanel(QWidget):
         self.run_view.set_review_available(review)
         problems = self.run_view.has_problems()
         from .device_retry import candidates
-        retryable = bool(self.run_view.plan and candidates(self.run_view.plan,
-            dict(status=self.run_view.outcome, phases=list(self.run_view.facts.values()))))
+        retry_phases = candidates(self.run_view.plan,
+            dict(status=self.run_view.outcome, phases=list(self.run_view.facts.values()))) if self.run_view.plan else []
+        retryable = bool(retry_phases)
+        self.run_view.run_choices.flow.set_card_actions(
+            {phase.id: 'Retry install' for phase in retry_phases} if not getattr(self, 'is_busy', False) else {})
         self.retry_device.setVisible(retryable)
         self.retry_device.setEnabled(retryable and not getattr(self, 'is_busy', False))
         self.run_problems.setVisible(problems)
@@ -579,6 +583,8 @@ class ManagerPanel(QWidget):
         except Empty:
             return
         self.preparation_timer.stop()
+        device_retry = getattr(self, 'preparing_device_retry', False)
+        self.preparing_device_retry = False
         self.preparing = False
         self.set_busy(False)
         if error is not None:
@@ -614,6 +620,8 @@ class ManagerPanel(QWidget):
                            else 'Start validation' if self.goal.currentData() == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
         self.status.clear()
+        if device_retry:
+            self.run_plan()
 
     def verify_settings(self):
         if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
@@ -657,7 +665,7 @@ class ManagerPanel(QWidget):
         self.status.setText('Queued…')
         self.session.launch(self.project.interpreter, path, run, confirmed=confirmed)
 
-    def retry_device_install(self):
+    def retry_device_install(self, step=None):
         from functools import partial
         from .device_retry import candidates, prepare
         from .history import load_run
@@ -672,23 +680,20 @@ class ManagerPanel(QWidget):
             if not phases:
                 raise ValueError('No uncertain device installation is eligible for an explicit retry.')
             labels = [phase.id for phase in phases]
-            step, accepted = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(
-                self, 'Choose device installation', 'Retry only this installation:', labels, 0, False)
+            if not isinstance(step, str) or not step:
+                step, accepted = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(
+                    self, 'Choose device installation', 'Retry only this installation:', labels, 0, False)
+            else:
+                accepted = step in labels
             if not accepted:
                 return
-            if QMessageBox.warning(self, 'Retry uncertain device installation?',
-                    'The earlier installation may have completed. Install the same prepared app again on this device?\n\n'
-                    + step + '\n\nThe original outcome and receipts will remain unchanged. '
-                    'A separate attempt will require prepared-artifact review. Other deliveries will not repeat.',
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
-                return
+            self.preparing_device_retry = True
             self.preparation_revision = self.selection_revision
             self.preparing_proposal = None
             self.preparing, self.preparing_verification = True, True
             self.set_busy(True)
             self.status.setText('Verifying the prepared app for a separate device retry…')
-            QThreadPool.globalInstance().start(PreparePlan(partial(prepare, self.result.parent, step), self.prepared))
+            QThreadPool.globalInstance().start(PreparePlan(partial(prepare, self.result.parent, step, authorized=True), self.prepared))
             self.preparation_timer.start()
         except (OSError, ValueError, RuntimeError, KeyError) as error:
             self.status.setText(self.redact(str(error)))

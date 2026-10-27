@@ -107,12 +107,13 @@ files require a fresh preparation. Each external phase can require its own revie
 
 An unknown upload/deployment outcome needs provider reconciliation before retry.
 
-For an uncertain device installation, **Retry uncertain device install…** offers
-an explicit reinstallation of the same prepared app on one selected device.
-The earlier installation may have completed: acknowledge the warning, review
-the new plan, start it, then review its verified artifacts before approving the
-installation. A separate run and new receipt preserve the original unknown
-outcome. Successful deliveries, uploads and release actions do not repeat.
+For an uncertain device installation, click **Retry install** on that device's
+workflow card, or **Retry uncertain device install…** in the footer. Clicking
+authorizes reinstallation of the same prepared app on that device; no additional
+approval dialog is required. The earlier installation may have completed.
+The manager verifies the prepared files before starting. A separate run and new
+receipt preserve the original unknown outcome. Successful deliveries, uploads
+and release actions do not repeat.
 This option requires passed preparation and declared receipt output paths; it
 does not repair a disconnected device or rebuild the app.
 

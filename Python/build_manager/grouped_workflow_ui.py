@@ -10,6 +10,7 @@ from .ui_components import style_button, ViewportStack
 
 
 class GroupedFlowView(QWidget):
+    card_action_requested = Signal(str)
     phase_selected = Signal(str)
     blocker_selected = Signal(str)
     problems_selected = Signal(str)
@@ -40,6 +41,7 @@ class GroupedFlowView(QWidget):
         toolbar.addStretch()
         map_options = QHBoxLayout()
         self.canvas = FlowCanvas()
+        self.canvas.card_action_requested.connect(self.card_action_requested.emit)
         self.canvas.selected.connect(self.open_group)
         self.map = FitMapView(self.canvas)
         self.orientation = orientation_picker(self.map)
@@ -150,6 +152,15 @@ class GroupedFlowView(QWidget):
         self.map.reset_view()
         self.set_facts({})
         self.timer.start(0)
+
+    def set_card_actions(self, actions):
+        grouped = {}
+        if self.plan is not None:
+            for key, members in self.grouped.members.items():
+                matches = [step for step in members if step in actions]
+                if len(matches) == 1:
+                    grouped[key] = (actions[matches[0]], matches[0])
+        self.canvas.set_card_actions(grouped)
 
     def fit(self):
         self.map._end_pointer_follow()

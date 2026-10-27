@@ -83,3 +83,10 @@ class DeviceRetryTests(unittest.TestCase):
         result = run_plan(retry, self.root / 'retry', confirmed=True)
         self.assertEqual(result['status'], 'failed')
         self.assertFalse(Path(retry.phases[-1].artifacts[0]).exists())
+
+    def test_explicit_click_authorized_attempt_needs_no_second_approval(self):
+        retry = prepare(self.output, 'install-ipad', authorized=True)
+        result = run_plan(retry, self.root / 'clicked-retry', confirmed=True)
+        self.assertEqual(result['status'], 'passed')
+        self.assertEqual(self.intent.read_text(), 'unknown original intent')
+        self.assertFalse(self.receipt.exists())

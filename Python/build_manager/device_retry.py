@@ -37,7 +37,7 @@ def inspect(output, step, expected=None):
     return plan, phase, rows, digest
 
 
-def prepare(output, step):
+def prepare(output, step, *, authorized=False):
     """Produce a fresh plan with fresh receipt paths and an input-verification gate."""
     plan, phase, rows, digest = inspect(output, step)
     workspace = Path(plan.workspace) / 'explicit-device-retries' / uuid4().hex
@@ -54,7 +54,7 @@ def prepare(output, step):
     retry = replace(phase, dependencies=(verify.id,), waits_for=(),
         argv=tuple(paths.get(arg, arg) for arg in phase.argv), artifacts=tuple(paths.values()),
         artifact_types={paths.get(key, key): value for key, value in phase.artifact_types.items()},
-        approval_required=True, label='Explicit retry: ' + (phase.label or phase.id))
+        approval_required=not authorized, label='Explicit retry: ' + (phase.label or phase.id))
     return Plan(plan.project, 'Explicit device install retry', plan.source, (verify, retry), str(workspace),
         backend=plan.backend, effect='deploy', secret_environment=plan.secret_environment,
         resource_locks=tuple(dict.fromkeys((*plan.resource_locks, str(Path(plan.workspace) / 'operation.lock')))),

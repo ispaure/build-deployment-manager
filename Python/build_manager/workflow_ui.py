@@ -546,6 +546,7 @@ def update_test_children(row, key, fact, phase=None, *, force=False):
 
 class FlowCanvas(QWidget):
     selected = Signal(str)
+    card_action_requested = Signal(str)
     focused = Signal(str)
     sections_changed = Signal()
 
@@ -583,6 +584,32 @@ class FlowCanvas(QWidget):
                 background: palette(base); color: palette(text); text-align: center; }
             QProgressBar#cardProgress::chunk { background: #69acd5; }
         ''')
+
+    def set_card_actions(self, actions):
+        """Attach explicit caller-owned actions without changing card navigation."""
+        changed = False
+        for key, (card, _, _) in self.cards.items():
+            button = card.findChild(QPushButton, 'cardAction')
+            action = actions.get(key)
+            if button is None and action:
+                button = QPushButton(card)
+                button.setObjectName('cardAction')
+                button.clicked.connect(lambda checked=False, control=button:
+                    self.card_action_requested.emit(control.property('actionKey')))
+                card.layout().addWidget(button)
+            if button is not None:
+                visible = bool(action)
+                changed |= button.isHidden() == visible
+                button.setVisible(visible)
+                if action:
+                    label, target = action
+                    button.setText(label)
+                    button.setProperty('actionKey', target)
+                    button.setAccessibleName(label + ': ' + target)
+                    button.setToolTip('Retry the same prepared app on this device. The earlier installation may have completed; its result is preserved.')
+        if changed:
+            self.adjustSize()
+            self.updateGeometry()
 
     def style_card(self, card, status):
         dark = self.palette().window().color().lightness() < 128
