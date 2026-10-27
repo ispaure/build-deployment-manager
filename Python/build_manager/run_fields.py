@@ -17,6 +17,8 @@ def validate_fields(fields, capabilities, journey=None):
         for key in ('operations','destinations'):
             if not isinstance(row.get(key,[]),list) or any(not isinstance(v,str) for v in row.get(key,[])):
                 raise ValueError('Run field applicability must be declared as lists of names.')
+        if type(row.get('workflow_option', False)) is not bool:
+            raise ValueError('Workflow-wide input applicability must be a boolean.')
         if any(value not in capabilities['operations'] for value in row.get('operations',[])):
             raise ValueError('Run field has an unsupported operation.')
         if any(value not in (journey or {}).get('destinations',{}) for value in row.get('destinations',[])):

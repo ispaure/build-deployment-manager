@@ -319,6 +319,9 @@ class ConfigurationView(QWidget):
         from .run_fields_ui import RunFieldsView
         self.run_fields = RunFieldsView(project, self)
         self.run_fields.set_destination_forms(self.destination_forms)
+        workflow_form = QFormLayout()
+        self.sections['validation'].body.addLayout(workflow_form)
+        self.run_fields.set_workflow_form(workflow_form)
         delivery.body.addWidget(self.run_fields)
         advanced = section('advanced', 'Advanced options · focused checks and build numbers', expanded=False)
         self.advanced_toggle = advanced.toggle

@@ -47,6 +47,7 @@ class RunFieldsView(QWidget):
         self.controls,self.labels,self.edited={},{},set()
         self.defaults = {}
         self.destination_forms, self.field_forms, self.active_fields = {}, {}, set()
+        self.workflow_form = None
         self.form=QFormLayout(self)
         self.form.setContentsMargins(0,0,0,0)
         self.form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -133,16 +134,22 @@ class RunFieldsView(QWidget):
     def set_destination_forms(self, forms):
         self.destination_forms = forms
 
+    def set_workflow_form(self, form):
+        self.workflow_form = form
+
     def update_context(self, goal, destinations, operation):
         visible=False
         self.active_fields.clear()
         for row in self.fields:
-            active=(goal=='deliver' and bool(set(row.get('destinations',[])) & set(destinations))
+            active=(row.get('workflow_option', False)
+                    or goal=='deliver' and bool(set(row.get('destinations',[])) & set(destinations))
                     or goal=='advanced' and operation in row.get('operations',[]))
             name = row['id']
             destination = row.get('destinations', [])
             target = (self.destination_forms.get(destination[0], self.form)
                       if goal == 'deliver' and len(destination) == 1 else self.form)
+            if row.get('workflow_option') and self.workflow_form is not None and goal != 'advanced':
+                target = self.workflow_form
             if self.field_forms[name] is not target:
                 self.field_forms[name].takeRow(self.labels[name])
                 target.addRow(self.labels[name], self.controls[name])
@@ -158,6 +165,11 @@ class RunFieldsView(QWidget):
         from .run_fields import validate_overrides
         # Ignore fields removed by a newer project descriptor.
         values = {name: value for name, value in values.items() if name in self.controls}
+        # A preset saved before an option existed uses its declared default;
+        # it must not inherit the previous preset's debug-only override.
+        for row in self.fields:
+            if row.get('workflow_option'):
+                values.setdefault(row['id'], row.get('default', ''))
         validate_overrides(self.fields, values)
         for name, value in values.items():
             self.edited.add(name)  # Pending defaults must not overwrite restored choices.

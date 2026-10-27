@@ -1,5 +1,12 @@
 # Adapter contract and ownership
 
+Run-field descriptors may set `workflow_option: true` for a non-secret choice
+that applies to validation, delivery and advanced workflows. Guided views place
+these controls with validation settings. They use the existing per-preset
+`run_overrides` storage. Restoring a preset without a newly introduced workflow
+option resets it to its declared default, rather than inheriting a prior preset's
+debug override. Projects own the choice's meaning and enforcement.
+
 Adapter API 1 returns immutable `Plan`/`Phase` data. Plans declare structured
 commands, source identity, dependencies, timeouts, cleanup and owned artifacts.
 The headless engine imports neither Qt nor project code. Projects retain their
