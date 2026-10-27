@@ -40,10 +40,22 @@ def stop_process(process, *, grace=1):
             signal_group(process.pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-    try:
-        process.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        pass
+    if os.name == 'nt':
+        try:
+            process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            pass
+    else:
+        # The wrapper can exit before a descendant finishes cooperative guest
+        # cleanup. Its exit must not discard the declared process-group grace.
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline:
+            process.poll()  # Reap the wrapper so it doesn't keep the group alive.
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(min(.02, max(0, deadline - time.monotonic())))
     # A parent can exit before its descendants, leaving inherited output pipes
     # open. Always retire the owned process group, even after parent exit.
     if os.name == 'nt':
@@ -57,10 +69,11 @@ def stop_process(process, *, grace=1):
 
 
 class Executor:
-    def __init__(self, *, cancelled=None, event=None, resource_directory=None):
+    def __init__(self, *, cancelled=None, event=None, resource_directory=None, evidence_directory=None):
         self.cancelled = cancelled if cancelled is not None else Event()
         self.event = event or (lambda value: None)
         self.resource_directory = resource_directory
+        self.evidence_directory = evidence_directory
 
     def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None):
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
@@ -130,7 +143,10 @@ class Executor:
                         BUILD_MANAGER_OPERATION_ID=rows[phase.id]['operation_id']))
                 with resources.acquire(phase.resources, plan.capacities, cancelled=self.cancelled,
                         timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always):
-                    return self.run_phase(phase, output, plan.secret_environment)
+                    from .evidence import EvidenceCache
+                    return EvidenceCache(self.evidence_directory).execute(phase, output,
+                        lambda: self.run_phase(phase, output, plan.secret_environment),
+                        cancelled=self.cancelled.is_set)
             except (OSError, ValueError, RuntimeError) as error:
                 return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() else 'failed',
                             error=Redactor()(str(error)),seconds=0)
@@ -180,7 +196,7 @@ class Executor:
                                     for dependency in phase.dependencies:verify_artifacts(rows[dependency])
                                     if phase.effect in EXTERNAL:
                                         identity = review_identity(plan,phase.id,list(rows.values()))
-                                        if not any(a.step==phase.id and a.identity==identity for a in approvals):
+                                        if phase.approval_required and not any(a.step==phase.id and a.identity==identity for a in approvals):
                                             row = dict(id=phase.id,required=phase.required,status='awaiting_review',
                                                        reason='Review exact retained artifacts and destination before this effect.',seconds=0)
                                 except (OSError,ValueError) as error:

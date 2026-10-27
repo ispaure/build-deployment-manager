@@ -16,6 +16,23 @@ class WorkflowTests(unittest.TestCase):
 
     def phase(self,name,code,**kwargs):return Phase(name,(sys.executable,'-c',code),str(self.root),**kwargs)
 
+    def test_explicit_device_deployment_runs_once_without_separate_approval(self):
+        artifact = self.root / 'app'
+        installed = self.root / 'installed'
+        plan = Plan('Fixture', 'selected device', {}, (
+            self.phase('prepare', f'from pathlib import Path;Path({str(artifact)!r}).write_text("package")',
+                       effect='build', artifacts=(str(artifact),)),
+            self.phase('install', f'from pathlib import Path;Path({str(installed)!r}).write_text("installed")',
+                       dependencies=('prepare',), effect='deploy', approval_required=False)), str(self.root / 'workspace'))
+        first = Executor().run(plan, self.root / 'result')
+        self.assertEqual(first['status'], 'passed')
+        self.assertEqual(installed.read_text(), 'installed')
+        second = Executor().run(plan, self.root / 'result', resume=True)
+        self.assertEqual(second['phases'][1]['started_at'], first['phases'][1]['started_at'])
+        for effect in ('upload', 'publish', 'dispatch', 'test'):
+            with self.assertRaises(ValueError):
+                self.phase('effect', 'pass', effect=effect, approval_required=False)
+
     def test_prepare_review_resume_reuses_exact_artifact_and_effect_once(self):
         artifact=self.root/'prepared.txt';counter=self.root/'counter'
         prepare=self.phase('prepare',f'from pathlib import Path;Path({str(artifact)!r}).write_text("exact candidate")',artifacts=(str(artifact),))

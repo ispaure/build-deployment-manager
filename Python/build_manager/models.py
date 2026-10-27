@@ -31,8 +31,16 @@ class Phase:
     test_files: tuple[str, ...] = ()
     retry_exit_codes: tuple[int, ...] = ()
     retry_delay: float = 30
+    reuse_key: str = ''
+    approval_required: bool = True
 
     def __post_init__(self):
+        if type(self.approval_required) is not bool or not self.approval_required and self.effect != 'deploy':
+            raise ValueError('Only explicit device deployment may omit a separate approval.')
+        if (not isinstance(self.reuse_key, str) or self.reuse_key and
+                (not re.fullmatch(r'[0-9a-f]{64}', self.reuse_key) or self.always
+                 or self.effect != 'test' or self.kind != 'test')):
+            raise ValueError('Only explicit test steps may declare an input-bound evidence reuse key.')
         if (not isinstance(self.retry_exit_codes, (tuple, list)) or
                 any(type(code) is not int or not 1 <= code <= 255 for code in self.retry_exit_codes) or
                 type(self.retry_delay) not in (int, float) or not .1 <= self.retry_delay <= 3600 or
@@ -103,10 +111,12 @@ class Plan:
         data = asdict(self)
         # Keep legacy plan hashes stable when scheduling-only edges are absent.
         for phase in data['phases']:
+            if phase['approval_required']:
+                phase.pop('approval_required')
             if not phase['retry_exit_codes']:
                 phase.pop('retry_exit_codes')
                 phase.pop('retry_delay')
-            for key in ('label', 'description', 'section', 'test_files'):
+            for key in ('label', 'description', 'section', 'test_files', 'reuse_key'):
                 if not phase[key]:
                     phase.pop(key)
             if not phase['waits_for']:

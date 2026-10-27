@@ -43,7 +43,28 @@ build slots remain exclusive, and scoped cleanup does not stall on an unrelated
 branch. These portable contracts do not establish native simultaneous iOS/Android
 acceptance or authorize starting a VM, simulator or personal device.
 
-POSIX phases may declare a bounded `stop_grace` (default one second, at most thirty)
+POSIX phases may declare a bounded `stop_grace` (default one second, at most three hundred)
 before group escalation. Logistics mobile helpers use five seconds so their nested
 native-tool cleanup can retire its owned groups. Windows uses job termination;
 POSIX signal-grace evidence does not establish a Windows graceful-stop path.
+
+## Test evidence and live presentation
+
+Trusted project adapters may give an explicit test phase a 64-hex `reuse_key`
+covering its complete input contract. The manager stores authenticated receipts
+in its private configuration directory. Only successful test outcomes are reused;
+retained and original artifact hashes must still match. Misses execute normally.
+A hit records original run/step/duration provenance and is displayed as reused,
+rather than newly executed. Effects and cleanup cannot declare reuse. Projects
+own source, dependency, toolchain and suite identity; the manager never infers
+that a changed source is equivalent. Legacy results without such keys are not
+automatically imported.
+
+Growing phase snapshots are coalesced before recursive UI redaction and model
+updates. Interim-only changes do not rebuild final test/timing trees. Relative
+duration bars use a view delegate instead of allocating one widget per case; all
+case durations remain available. Native macOS synthetic profiling and portable
+contracts cover these paths, not general acceptance of every live provider.
+
+POSIX cancellation retains the declared process-group grace even if its wrapper
+exits first, allowing descendants to finish owned cleanup before escalation.
