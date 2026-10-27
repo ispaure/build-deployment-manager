@@ -12,6 +12,31 @@ from test_journeys import integrated, CAPABILITY
 
 
 class GroupedWorkflowTests(unittest.TestCase):
+    def test_explicit_recipient_ids_keep_other_devices_out_of_selected_card(self):
+        import json
+        from build_manager.journeys import validate_plan
+        with TemporaryDirectory() as directory:
+            phases = [Phase('build', (sys.executable, '-V'), directory, effect='build', kind='build')]
+            recipients = {}
+            for device in ('boox-id', 'samsung-id'):
+                ready, install = device + '.connect', device + '.install'
+                phases += [Phase(ready, (sys.executable, '-V'), directory, effect='inspect', kind='connection', dependencies=('build',)),
+                           Phase(install, (sys.executable, '-V'), directory, effect='deploy', approval_required=False, dependencies=('build', ready))]
+                recipients[device] = dict(steps=[ready, install])
+            plan = Plan('Fixture', 'devices', {}, tuple(phases), directory, journey=dict(schema=1, goal='deliver', platforms={},
+                destinations={'devices':dict(identity='Selected Android devices', platforms=[], testing_optional=True,
+                    steps=['boox-id.install', 'samsung-id.install'], recipients=recipients)}))
+            capability = dict(schema=1, platforms=CAPABILITY['platforms'], destinations={'devices':dict(
+                label='Android', platforms=['android'], testing_optional=True, approval_required=False, recipient_field='ids')})
+            proposal = propose(capability=capability, goal='deliver', revision='HEAD', platforms=[], destinations=['devices'], backends={},
+                recipients={'ids':['NoteAir5C', 'SM-G955W']}, values={'ids':json.dumps(['boox-id','samsung-id'])})
+            grouped = group_workflow(plan, capability, proposal)
+            self.assertEqual(grouped.members['deliver.devices.0'], ('boox-id.connect', 'boox-id.install'))
+            self.assertEqual(grouped.members['deliver.devices.1'], ('samsung-id.connect', 'samsung-id.install'))
+            self.assertFalse(grouped.references['deliver.devices.0'])
+            self.assertFalse(proposal.phases[-1].approval_required)
+            validate_plan(plan)
+
     def test_overview_retains_identical_cards_edges_and_shared_preparation(self):
         with TemporaryDirectory() as directory:
             plan = integrated(Path(directory))

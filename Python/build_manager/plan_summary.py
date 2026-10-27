@@ -6,6 +6,13 @@ def phase_title(phase):
     return getattr(phase, 'label', '') or phase.id.replace('.', ' · ').replace('_', ' ').replace('-', ' ').capitalize()
 
 
+def destination_identity(destination, step):
+    for key, row in destination.get('recipients', {}).items():
+        if step in row['steps']:
+            return row.get('label', key) + ' [' + key + ']'
+    return destination['identity']
+
+
 def captured_choices(plan):
     source = plan.source
     identity = source.get('commit') or source.get('fingerprint') or source.get('revision', 'See exact plan')
@@ -54,18 +61,30 @@ def summary_rows(plan, fields=()):
     for phase in plan.phases:
         effect = phase.effect if phase.effect != 'inherit' else plan.effect
         if phase.id in deferred:
-            lines = [labels[effect] + (' · separate approval required' if effect in EXTERNAL else ' · after prerequisites')]
+            lines = [labels[effect] + (' · separate approval required' if effect in EXTERNAL and getattr(phase, 'approval_required', True) else ' · after prerequisites')]
             if plan.effect in EXTERNAL and phase.effect == 'inherit':
                 lines = [labels[effect] + ' · confirmation before Start']
             for name, destination in destinations.items():
                 if phase.id not in destination['steps']:
                     continue
-                lines += ['Destination: ' + destination['identity'],
+                recipient = next(((key, row) for key, row in destination.get('recipients', {}).items()
+                                  if phase.id in row['steps']), None)
+                identity = destination_identity(destination, phase.id)
+                lines += ['Destination: ' + identity,
                           'Requires platforms: ' + ', '.join(destination.get('platforms', list(getattr(plan, 'journey', {}).get('platforms', {}))))]
                 for field in fields:
                     scope = set(field.get('destinations', ())) & set(destinations)
                     if scope == {name} and field['id'] in values:
-                        lines.append(field['label'] + ': ' + str(values[field['id']]))
+                        value = values[field['id']]
+                        if recipient:
+                            import json
+                            try:
+                                selected = json.loads(value) if isinstance(value, str) else value
+                            except ValueError:
+                                selected = None
+                            if isinstance(selected, list) and recipient[0] in selected:
+                                value = identity
+                        lines.append(field['label'] + ': ' + str(value))
             if phase.dependencies:
                 lines.append('Waits for: ' + ', '.join(phase_title(phases[key]) for key in phase.dependencies))
             later.append(dict(title=phase_title(phase), detail='\n'.join(lines), keys=(phase.id,)))
@@ -91,7 +110,8 @@ def start_scope(plan):
     if plan.effect in EXTERNAL:
         return 'Start asks for confirmation of this external operation before running it.'
     effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
-    if effects & EXTERNAL:
+    if any((phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL
+           and getattr(phase, 'approval_required', True) for phase in plan.phases):
         return 'Start runs eligible checks and preparation. External actions pause for separate approval; their dependent work waits too.'
     if effects <= {'test', 'inspect'}:
         return 'Start runs the reviewed checks and inspections. No delivery is selected.'

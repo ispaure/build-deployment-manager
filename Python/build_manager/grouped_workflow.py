@@ -1,5 +1,5 @@
 """Attach exact tasks to the chosen journey without changing its overview graph."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from .proposed_workflow import propose
 
@@ -42,7 +42,7 @@ def retained_proposal(plan, capability=None):
             label=capability.get('destinations', {}).get(key, {}).get('label', key.title()),
             platforms=destinations[key].get('platforms', list(targets))) for key in selected_destinations})
     recipients = {}
-    for destination in resolved['destinations'].values():
+    for destination_id, destination in resolved['destinations'].items():
         name = destination.get('recipient_field')
         if name and values.get(name):
             try:
@@ -50,7 +50,8 @@ def retained_proposal(plan, capability=None):
             except (ValueError, TypeError):
                 people = []
             if isinstance(people, list) and all(isinstance(person, str) for person in people):
-                recipients[name] = people
+                declared = destinations[destination_id].get('recipients', {})
+                recipients[name] = [declared.get(person, {}).get('label', person) for person in people]
     return propose(capability=resolved, goal=journey['goal'],
         revision=str(plan.source.get('selection') or plan.source.get('revision') or 'working-tree'),
         platforms=selected_targets, destinations=selected_destinations,
@@ -98,7 +99,12 @@ def group_workflow(plan, capability=None, proposal=None):
         cards = [node.id for node in nodes if node.id.startswith('deliver.' + destination + '.') or node.id == 'deliver.' + destination]
         if not cards:
             continue
-        if len(cards) == 1:
+        if row.get('recipients'):
+            for node in nodes:
+                if node.id in cards:
+                    recipient = row['recipients'].get(getattr(node, 'recipient', ''), {})
+                    attach(node.id, recipient.get('steps', ()))
+        elif len(cards) == 1:
             attach(cards[0], row['steps'])
         else:
             # No action-to-recipient mapping is promised by the journey contract.
@@ -135,6 +141,17 @@ def group_workflow(plan, capability=None, proposal=None):
         attach('operation', [phase.id for phase in plan.phases if phase.id not in owners])
     # Display tasks in actual plan order even when assigned by reverse ancestry.
     order = {phase.id: index for index, phase in enumerate(plan.phases)}
+    # Resolved cards describe the captured actions, not today's descriptor policy.
+    # In particular a selected-device install can already be approved by Start.
+    nodes = list(nodes)
+    for index, node in enumerate(nodes):
+        if not node.id.startswith('deliver.'):
+            continue
+        actions = [phases[key] for key in (*members[node.id], *references[node.id])
+                   if (phases[key].effect if phases[key].effect != 'inherit' else plan.effect)
+                   in {'upload', 'deploy', 'publish', 'dispatch'}]
+        if actions:
+            nodes[index] = replace(node, approval_required=any(action.approval_required for action in actions))
     return GroupedWorkflow(tuple(nodes),
         {key: tuple(sorted(value, key=order.get)) for key, value in members.items()},
         {key: tuple(sorted(value, key=order.get)) for key, value in references.items()},

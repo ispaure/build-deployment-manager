@@ -644,6 +644,7 @@ class FlowCanvas(QWidget):
                     body.addWidget(label)
             external = phase.id.startswith('deliver.') if compact else (
                 phase.effect if phase.effect != 'inherit' else plan.effect) in {'upload', 'deploy', 'publish', 'dispatch'}
+            external = external and getattr(phase, 'approval_required', True)
             if external:
                 badge = QLabel('Approval required')
                 badge.setObjectName('approvalBadge')

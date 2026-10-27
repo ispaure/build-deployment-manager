@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QLabel, QPla
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .grouped_workflow_ui import GroupedFlowView
-from .plan_summary import captured_choices, phase_title, summary_rows
+from .plan_summary import captured_choices, phase_title, summary_rows, destination_identity
 from .workflow_ui import WorkflowFlow, blocking_prerequisite, display_states, state_label, step_time, update_test_children, time_share
 from .ui_components import style_tabs
 
@@ -524,10 +524,10 @@ class ReviewPlanView(QWidget):
         self.set_fact('Outputs', '\n'.join(path.replace('\\', '/').rsplit('/', 1)[-1] for path in phase.artifacts) or 'No output files declared')
         self.fact_values['Outputs'].setToolTip('\n'.join(phase.artifacts))
         effect = phase.effect if phase.effect != 'inherit' else self.plan.effect
-        destinations = [destination['identity'] for destination in getattr(self.plan, 'journey', {}).get('destinations', {}).values()
+        destinations = [destination_identity(destination, key) for destination in getattr(self.plan, 'journey', {}).get('destinations', {}).values()
                         if key in destination['steps']]
         delivery = '\n'.join(destinations)
-        if effect in {'upload', 'deploy', 'publish', 'dispatch'}:
+        if effect in {'upload', 'deploy', 'publish', 'dispatch'} and getattr(phase, 'approval_required', True):
             delivery += ('\n' if delivery else '') + 'Separate approval required'
         self.set_fact('Delivery', delivery)
         _, later, shared = summary_rows(self.plan, self.fields)

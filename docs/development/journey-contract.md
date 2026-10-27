@@ -269,3 +269,12 @@ GUI continuation verifies retained artifacts in a worker. If the engine changed,
 it presents previous/current manager and commonUtils identities and forwards the
 explicitly accepted binding to the child executor. A further edit invalidates the
 binding and requires a new review; completed steps and prepared bytes are retained.
+
+Destinations may retain `recipients`, mapping canonical recipient IDs to a label
+and unique `steps`. The required external actions must all be mapped, and extra
+mapped work may only be connection inspections upstream of those actions. The
+project supplies this relationship; the manager does not parse tool arguments or
+guess identities from display names. Proposal cards retain canonical IDs separately
+from labels. Opening a device card then scopes its graph, progress and destination
+details to that device; shared compilation remains in its package card. Captured
+action policy determines approval badges even if today's descriptor differs.

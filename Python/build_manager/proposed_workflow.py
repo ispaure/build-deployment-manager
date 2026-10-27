@@ -1,5 +1,6 @@
 """Non-executable workflow sketches from UI choices, without adapter calls or I/O."""
 from dataclasses import dataclass, replace
+import json
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,8 @@ class ProposedStep:
     always: bool = False
     platforms: tuple[str, ...] = ()
     backend: str = ''
+    recipient: str = ''
+    approval_required: bool = True
 
 
 @dataclass(frozen=True)
@@ -121,9 +124,17 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                 blockers.append(ChoiceBlocker('recipients.' + name, 'Choose ' + label + ' recipients…',
                     'delivery', name, row['recipient_field']))
             if row.get('recipient_field') and people:
+                raw = (values or {}).get(row['recipient_field'], [])
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except ValueError:
+                        raw = []
                 for index, person in enumerate(people):
+                    recipient = raw[index] if isinstance(raw, list) and len(raw) == len(people) and isinstance(raw[index], str) else person
                     nodes.append(ProposedStep('deliver.' + name + '.' + str(index), person,
-                        'Install on this selected device', (prepare,), 'delivery', name, bool(missing), platforms=tuple(row['platforms'])))
+                        'Install on this selected device', (prepare,), 'delivery', name, bool(missing), platforms=tuple(row['platforms']),
+                        recipient=recipient, approval_required=row.get('approval_required', True)))
             else:
                 issue = bool(missing) or bool(row.get('recipient_field'))
                 nodes.append(ProposedStep('deliver.' + name, label,

@@ -179,7 +179,8 @@ class RunView(QWidget):
         self.blocking_step.clicked.connect(self.show_blocking_step)
         inspector_layout.addWidget(self.blocking_step)
         self.external_prerequisites = QComboBox()
-        self.external_prerequisites.setAccessibleName('Open prerequisite outside this workflow card')
+        self.external_prerequisites.setAccessibleName('View prerequisite task')
+        self.external_prerequisites.setToolTip('Show a task this step depends on. This only opens its details; it starts no work.')
         self.external_prerequisites.activated.connect(lambda index:
             self.inspect_blocking_phase(self.external_prerequisites.itemData(index)) if index else None)
         self.external_prerequisites.hide()
@@ -531,7 +532,7 @@ class RunView(QWidget):
         if external != getattr(self, 'external_dependency_keys', None):
             self.external_dependency_keys = external
             self.external_prerequisites.clear()
-            self.external_prerequisites.addItem('Open prerequisite in another card…', '')
+            self.external_prerequisites.addItem('View prerequisite task…', '')
             from .workflow_ui import title
             for key in external:
                 self.external_prerequisites.addItem(title(self.phases[key]), key)

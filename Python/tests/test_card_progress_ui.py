@@ -16,6 +16,15 @@ class CardProgressTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_automatic_device_card_has_no_approval_badge(self):
+        from PySide6.QtWidgets import QLabel
+        with TemporaryDirectory() as directory:
+            phase = Phase('install', (sys.executable, '-V'), directory, effect='deploy', approval_required=False)
+            canvas = FlowCanvas()
+            self.addCleanup(canvas.close)
+            canvas.reset(Plan('Fixture', 'device', {}, (phase,), directory))
+            self.assertIsNone(canvas.cards['install'][0].findChild(QLabel, 'approvalBadge'))
+
     def test_time_share_text_remains_above_bar_at_larger_font_sizes(self):
         from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
         from build_manager.workflow_ui import time_share

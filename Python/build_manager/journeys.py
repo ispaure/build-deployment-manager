@@ -44,6 +44,8 @@ def validate_capability(value, capabilities):
     for name, row in destinations.items():
         if isinstance(row, dict) and type(row.get('testing_optional', False)) is not bool:
             raise ValueError('Optional destination testing must be explicitly declared.')
+        if isinstance(row, dict) and type(row.get('approval_required', True)) is not bool:
+            raise ValueError('Destination approval policy must be explicitly declared.')
         if (not _identifier(name) or not isinstance(row, dict) or not isinstance(row.get('label'), str)
                 or not row['label'] or not isinstance(row.get('platforms'), list) or not row['platforms']
                 or any(target not in platforms for target in row['platforms'])
@@ -201,6 +203,22 @@ def validate_plan(plan, intent=None):
         if not set(expected).issubset(required_platforms):
             raise ValueError('Destination validation omits a platform required by its descriptor.')
         required_gates = {gate for target in required_platforms for gate in platforms[target]}
+        recipients = row.get('recipients', {})
+        if not isinstance(recipients, dict):
+            raise ValueError('Recipient execution mapping must be a mapping.')
+        owned = set()
+        for recipient, details in recipients.items():
+            if (not isinstance(recipient, str) or not recipient or not isinstance(details, dict)
+                    or not isinstance(details.get('steps'), list) or not details['steps']):
+                raise ValueError('Recipients need exact identities and execution steps.')
+            for step in details['steps']:
+                if step not in phases or step in owned or (step not in row['steps'] and
+                        not (phases[step].effect == 'inspect' and phases[step].kind == 'connection'
+                             and any(step in ancestors(plan, action) for action in row['steps']))):
+                    raise ValueError('Recipient steps must identify unique delivery or connection work.')
+                owned.add(step)
+        if recipients and not set(row['steps']).issubset(owned):
+            raise ValueError('Recipient mapping omits a delivery action.')
         for step in row['steps']:
             if step not in external or step in declared:
                 raise ValueError('Delivery steps must belong to exactly one selected destination.')

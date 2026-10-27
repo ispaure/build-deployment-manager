@@ -330,7 +330,7 @@ There is no separate results browser or stage list in the run view.
 Shared preparation stays in the chosen package cards, with shared task references
 where needed. Other resolved subtasks exposes work the project did not map to a
 chosen card. Dependencies outside the open card remain in the step's details;
-Open prerequisite in another card navigates to their original card. Dotted arrows
+View prerequisite task opens the task's original card without starting work. Dotted arrows
 wait for completion without requiring success. View blocking step opens the
 recorded failed prerequisite even when it belongs to another card. View problems
 opens the relevant card and failing step, selecting its reported failure message
@@ -348,6 +348,12 @@ batches so input and resizing can run between updates. Hidden Review maps refres
 when opened rather than redrawing for every running test.
 
 Card text and colored edges identify running, passed, failed and approval states.
+When the project records each device's execution steps, a device card summarizes
+only that device's connection and installation. A completed install remains green
+while another device waits to reconnect. Approval badges follow the captured
+actions' approval policy. Older plans without per-device mappings show shared
+destination work; preparing a new plan with a project adapter that supplies those
+mappings is required for separate device status.
 Execution cards reserve space for live status and progress so their size and map
 position stay stable as tests change. Long activity labels end with an ellipsis;
 hover for the full text or inspect the test tree and Details.
