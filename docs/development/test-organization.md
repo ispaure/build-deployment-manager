@@ -179,3 +179,22 @@ These headless APIs establish the signing boundary. They do not automatically
 publish evidence, install a trusted signer, restore reports or skip hosted jobs.
 Projects own transport, signer enrollment and workflow integration; that policy
 must be reviewed separately before using an envelope as a hosted release gate.
+
+## Reviewing selected retained checks
+
+`python -m build_manager.retained_checks --output RUN --plan-identity SHA
+--step CHECK` reviews an original passed check and its dependency closure.
+Repeat `--step` to select multiple checks. It verifies the original source/plan
+binding, passed prerequisites, complete declared artifact inventory, both original
+and retained bytes, and step logs. External effects are rejected even when their
+recorded status is passed. Failed siblings and an unknown aggregate outcome stay
+unchanged. Missing evidence fails the review.
+
+The resulting identity binds the original engine, source, report, logs and artifact
+hashes. Supply `--expect-review ID` for a subsequent verification that must match
+that review. This reads existing records without executing their commands or
+writing outcomes. It is neither a fresh test result nor a source-reuse approval.
+Projects must separately verify coverage, changed inputs, platform/toolchain
+applicability and cleanup before composing a new continuation plan. An undeclared
+temporary binary is not certified merely because the check's retained reports
+remain available. Provider and device outcomes require their own reconciliation.
