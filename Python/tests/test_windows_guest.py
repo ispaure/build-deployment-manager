@@ -14,6 +14,25 @@ from build_manager.windows_guest import WindowsGuest
 
 
 class WindowsEvidenceTests(unittest.TestCase):
+    def test_waiting_heartbeat_keeps_exact_completion_and_adds_no_guest_calls(self):
+        from build_manager.parallels import Parallels
+        guest = WindowsGuest(Parallels('/fixture/prlctl'), '00000000-0000-0000-0000-000000000001',
+                             'workspace', 'token', 'operation')
+        receipt = json.dumps(dict(exit=7, token='token', operation='operation', invocation='current')).encode()
+        import subprocess
+        process = Mock(returncode=0)
+        process.communicate.side_effect = [subprocess.TimeoutExpired('fixture', .2), (receipt, b'')]
+        process.poll.return_value = 0
+        rows = []
+        with patch('build_manager.windows_guest.uuid4', return_value=Mock(hex='current')), \
+             patch('build_manager.windows_guest.subprocess.Popen', return_value=process), \
+             patch('build_manager.windows_guest.time.monotonic', side_effect=[0, 0, 31, 31]), \
+             patch.object(guest, 'call') as transport:
+            self.assertEqual(guest.run('python', ['fixture'], 'source', 'reports', {}, Event(),
+                                      timeout=100, progress=rows.append), 7)
+        transport.assert_not_called()
+        self.assertEqual(rows, [dict(state='waiting', seconds=0), dict(state='waiting', seconds=31)])
+
     def test_lost_job_handle_recovers_exit_without_replaying_guest_work(self):
         from build_manager.parallels import Parallels
         guest = WindowsGuest(Parallels('/fixture/prlctl'), '00000000-0000-0000-0000-000000000001',

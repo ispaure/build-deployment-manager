@@ -74,3 +74,12 @@ before receipt lookup. A failed or differing probe executes tests afresh without
 certifying the stale key. Equivalent keyed phases in one plan wait in the pending
 queue while the first runs; they do not consume workers blocked on the same
 evidence lock. Other independent branches can use those workers.
+
+Owned Windows and Linux guest transports accept an optional advisory `progress`
+callback. Host-side heartbeats report elapsed waiting at most every 30 seconds;
+a change to Windows receipt reconciliation is reported immediately. These updates
+make no additional guest calls, do not invent test counts or guest activity, and
+cannot authorize a pass. The exact worker exit/receipt and collected reports stay
+authoritative. Presenter failures do not interrupt worker cleanup or change its
+outcome. Projects supply user-facing stage labels; headless waiting remains
+distinct from observed per-test progress.

@@ -175,7 +175,7 @@ class Parallels:
         self.execute_idempotent(selector, ['python3', '-c', WRITE, workspace, token,
             filename, str(uid), str(gid)], data=base64.b64encode(data))
 
-    def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout):
+    def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout, progress=None):
         payload = base64.b64encode(json.dumps(dict(argv=argv, environment=environment)).encode()).decode()
         command = ['python3', workspace + '/.manager-guest.py', workspace, token, str(uid)]
         # Parallels guest tools impose a command-line limit even for Linux.
@@ -186,8 +186,11 @@ class Parallels:
         finally:
             process.stdin.close()
         started = time.monotonic()
+        from .guest_progress import GuestHeartbeat
+        heartbeat = GuestHeartbeat(progress, started)
         try:
             while process.poll() is None:
+                heartbeat.emit('waiting')
                 if cancelled.is_set() or time.monotonic() - started > timeout:
                     self.cancel(vm, workspace, token)
                     try:

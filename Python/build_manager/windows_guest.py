@@ -162,7 +162,7 @@ class WindowsGuest:
     def write(self, relative, data):
         self.call(WRITE, values=dict(file=relative), data=data)
 
-    def run(self, python, argv, directory, reports, environment, cancelled, *, timeout):
+    def run(self, python, argv, directory, reports, environment, cancelled, *, timeout, progress=None):
         invocation = uuid4().hex
         values = dict(self.values, python=python, command_line=subprocess.list2cmdline(argv),
                       directory=directory, reports=reports, environment=environment, invocation=invocation)
@@ -170,6 +170,9 @@ class WindowsGuest:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         payload = self.client.powershell_payload(RUN, values)
         started = time.monotonic()
+        from .guest_progress import GuestHeartbeat
+        heartbeat = GuestHeartbeat(progress, started)
+        heartbeat.emit('waiting')
         try:
             while True:
                 try:
@@ -177,6 +180,7 @@ class WindowsGuest:
                     break
                 except subprocess.TimeoutExpired:
                     payload = None
+                    heartbeat.emit('waiting')
                     if cancelled.is_set() or time.monotonic() - started > timeout:
                         self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
                         try:
@@ -189,7 +193,8 @@ class WindowsGuest:
                 if process.returncode == 255 and any(detail in stderr for detail in
                         (b'PrlJob_GetRetCode: Invalid argument', b'PrlJob_GetResult: Invalid argument')):
                     # Read proof from this invocation, never rerun accepted work.
-                    recovered = self.recover_completion(reports, invocation, started, timeout, cancelled)
+                    recovered = self.recover_completion(reports, invocation, started, timeout, cancelled,
+                                                        progress=heartbeat.emit)
                     if recovered is not None:
                         return recovered
                 # Prevent an admitted-but-delayed invocation from starting work
@@ -203,9 +208,11 @@ class WindowsGuest:
                 process.terminate()
                 process.wait(timeout=3)
 
-    def recover_completion(self, reports, invocation, started, timeout, cancelled):
+    def recover_completion(self, reports, invocation, started, timeout, cancelled, *, progress=None):
         absent_since = time.monotonic()
         while True:
+            if progress is not None:
+                progress('reconciling')
             if cancelled.is_set() or time.monotonic() - started > timeout:
                 self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
                 return 130 if cancelled.is_set() else 124
