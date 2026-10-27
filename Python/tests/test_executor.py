@@ -38,6 +38,18 @@ class ExecutionTests(unittest.TestCase):
         self.assertNotIn('mobile.app', sys.modules)
         self.assertNotIn('features.application', sys.modules)
 
+    def test_large_result_discovers_secrets_per_save_not_per_text_field(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from build_manager.redaction import Redactor
+        plan = replace(self.plan(self.phase('work', 'print("finished")')),
+                       source={'inventory': ['fixture ' + str(index) for index in range(2000)]})
+        with patch('build_manager.executor.Redactor', wraps=Redactor) as redactor:
+            report = self.run_plan(plan)
+        self.assertEqual(report['status'], 'passed')
+        self.assertLess(redactor.call_count, 20)
+        self.assertEqual(report['source'], plan.source)
+
     def test_literal_arguments_and_unicode_working_directory_survive_transport(self):
         folder = self.root / 'space café & literal'
         folder.mkdir()

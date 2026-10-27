@@ -94,15 +94,19 @@ class Executor:
                              reviewed_at=timestamp())
         elif engine_review is not None:
             raise ValueError('Engine review does not match a pending engine change.')
-        def sanitize(value):
+        def sanitize(value, redact):
             if isinstance(value, str):
-                return Redactor(os.environ.get(name) for name in plan.secret_environment)(value)
-            if isinstance(value, dict):return {key:sanitize(item) for key,item in value.items()}
-            if isinstance(value, (tuple,list)):return [sanitize(item) for item in value]
+                # Serialized values are independent strings, not consecutive
+                # lines of a PEM stream. Discover inherited secrets once per
+                # report, rather than scanning the environment for every field.
+                redact.private_key = False
+                return redact(value)
+            if isinstance(value, dict):return {key:sanitize(item, redact) for key,item in value.items()}
+            if isinstance(value, (tuple,list)):return [sanitize(item, redact) for item in value]
             return value
         def save():
             from .profiles import save_json
-            save_json(output/'result.json',sanitize(report))
+            save_json(output/'result.json',sanitize(report, Redactor(os.environ.get(name) for name in plan.secret_environment)))
         started = time.monotonic()
         from .history import valid_seconds
         previous_seconds = report.get('seconds', 0) if resume else 0
