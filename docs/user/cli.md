@@ -10,6 +10,17 @@ The manager owns process supervision, logs, dependency gates, cleanup and recove
 so a caller does not need to reconstruct commands or parse entire build logs.
 Commands never prompt for interactive input.
 
+To explicitly retry an uncertain device installation, prepare a separate plan:
+
+```sh
+build-manager retry-device /path/to/original-run --step DEVICE_INSTALL_STEP --output /path/to/new-retry-plan.json
+```
+
+Inspect it with `show-plan`, then use the normal `run --confirm`, `review` and
+`resume --confirm --approval-identity STEP=SHA256` sequence. This reuses the exact
+prepared app and creates fresh receipts. The original unknown result stays
+unchanged; other deliveries do not repeat. This command does not retry uploads.
+
 ## Discover supported work
 
 ```sh

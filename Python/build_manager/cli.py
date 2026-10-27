@@ -100,6 +100,10 @@ def parser_for_cli():
         command.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
         command.add_argument('--output', type=Path, required=True, help='Prepared plan JSON file')
     sub.add_parser('show-plan', help='Read a trusted plan without executing it').add_argument('plan', type=Path)
+    retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
+    retry.add_argument('run', type=Path)
+    retry.add_argument('--step', required=True)
+    retry.add_argument('--output', type=Path, required=True, help='New plan file; does not execute the install')
     save = sub.add_parser('save-preset', help='Save project choices in the existing GUI/CLI registry')
     save.add_argument('name')
     save.add_argument('--project')
@@ -191,6 +195,13 @@ def execute(args, api):
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
     if command == 'show-plan':
         return plan_info(Plan.load(args.plan))
+    if command == 'retry-device':
+        from .device_retry import prepare
+        if args.output.exists():
+            raise ValueError('Choose a new retry plan path; preserve existing evidence.')
+        prepared = prepare(args.run, args.step)
+        prepared.save(args.output)
+        return dict(plan=str(args.output.resolve()), identity=prepared.identity, warning=prepared.settings['warning'])
     if command == 'status':
         return read_status(args.output, full=args.full)
     if command == 'logs':

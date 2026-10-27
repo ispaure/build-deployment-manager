@@ -8,7 +8,7 @@ from uuid import uuid4
 from PySide6.QtCore import Qt, QElapsedTimer, QProcess, QRunnable, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel,
+    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QInputDialog,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QTreeWidget,
     QTreeWidgetItem, QTabBar, QTabWidget, QStackedWidget, QSplitter, QSizePolicy, QFrame,
 )
@@ -241,6 +241,9 @@ class ManagerPanel(QWidget):
         self.continue_run.setEnabled(False)
         self.continue_run.hide()
         self.continue_run.clicked.connect(lambda: self.resume_workflow(self.result))
+        self.retry_device = QPushButton('Retry uncertain device install…', self)
+        self.retry_device.hide()
+        self.retry_device.clicked.connect(self.retry_device_install)
         self.run_problems = QPushButton('View problems', self)
         self.run_problems.clicked.connect(self.run_view.show_problems)
         self.run_view.review_requested.connect(self.continue_run.click)
@@ -272,7 +275,7 @@ class ManagerPanel(QWidget):
         for left, right in (
                 ((), (self.prepare,)),
                 ((self.back,), (self.start,)),
-                ((self.cancel,), (self.open_results, self.run_problems, self.continue_run)),
+                ((self.cancel,), (self.open_results, self.run_problems, self.retry_device, self.continue_run)),
                 ((self.refresh_history_button, self.resume), (self.view_history_button,))):
             page = QWidget()
             actions = QHBoxLayout(page)
@@ -457,6 +460,11 @@ class ManagerPanel(QWidget):
         review = self.continue_run.isEnabled() and not self.continue_run.isHidden()
         self.run_view.set_review_available(review)
         problems = self.run_view.has_problems()
+        from .device_retry import candidates
+        retryable = bool(self.run_view.plan and candidates(self.run_view.plan,
+            dict(status=self.run_view.outcome, phases=list(self.run_view.facts.values()))))
+        self.retry_device.setVisible(retryable)
+        self.retry_device.setEnabled(retryable and not getattr(self, 'is_busy', False))
         self.run_problems.setVisible(problems)
         self.run_problems.setText(self.run_view.attention_problems.text())
         approval = review and (self.run_view.outcome == 'awaiting_review' or any(
@@ -648,6 +656,42 @@ class ManagerPanel(QWidget):
         self.set_busy(True)
         self.status.setText('Queued…')
         self.session.launch(self.project.interpreter, path, run, confirmed=confirmed)
+
+    def retry_device_install(self):
+        from functools import partial
+        from .device_retry import candidates, prepare
+        from .history import load_run
+        if getattr(self, 'is_busy', False) or not self.result:
+            return
+        try:
+            plan, report = load_run(self.result)
+            if plan.project != self.project.descriptor['name'] or (plan.adapter and
+                    plan.adapter.get('checkout') != str(self.project.root)):
+                raise ValueError('Choose a run from this registered project checkout.')
+            phases = candidates(plan, report)
+            if not phases:
+                raise ValueError('No uncertain device installation is eligible for an explicit retry.')
+            labels = [phase.id for phase in phases]
+            step, accepted = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(
+                self, 'Choose device installation', 'Retry only this installation:', labels, 0, False)
+            if not accepted:
+                return
+            if QMessageBox.warning(self, 'Retry uncertain device installation?',
+                    'The earlier installation may have completed. Install the same prepared app again on this device?\n\n'
+                    + step + '\n\nThe original outcome and receipts will remain unchanged. '
+                    'A separate attempt will require prepared-artifact review. Other deliveries will not repeat.',
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
+            self.preparation_revision = self.selection_revision
+            self.preparing_proposal = None
+            self.preparing, self.preparing_verification = True, True
+            self.set_busy(True)
+            self.status.setText('Verifying the prepared app for a separate device retry…')
+            QThreadPool.globalInstance().start(PreparePlan(partial(prepare, self.result.parent, step), self.prepared))
+            self.preparation_timer.start()
+        except (OSError, ValueError, RuntimeError, KeyError) as error:
+            self.status.setText(self.redact(str(error)))
 
     def resume_workflow(self, retained=None):
         from pathlib import Path
