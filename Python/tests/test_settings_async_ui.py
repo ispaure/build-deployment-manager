@@ -6,7 +6,7 @@ from threading import Event
 import time
 import unittest
 from unittest.mock import patch
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, QThreadPool
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 from build_manager.settings_ui import SettingsDialog
 from build_manager.ui import ManagerPanel
@@ -115,6 +115,8 @@ class SettingsAsyncTests(unittest.TestCase):
             last = finish(); self.assertEqual(last['status'], 'passed')
             self.assertFalse(panel.continue_run.isEnabled())
             self.assertIn('firebase:fixture/app/testers: passed', panel.run_view.destinations.text())
+            panel.close()
+            self.assertTrue(QThreadPool.globalInstance().waitForDone(5000))
 
     def test_group_approval_requires_selection_and_keeps_cancel_default(self):
         from build_manager.ui import EffectReviewDialog

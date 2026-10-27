@@ -10,6 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from PySide6.QtCore import QThreadPool
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from build_manager import Phase, Plan
@@ -44,6 +45,10 @@ class ManagerUITests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory(prefix='manager-ui-')
         self.addCleanup(temporary.cleanup)
+        # Closing a panel cancels its asynchronous history reads; completion
+        # arrives later. Windows forbids deleting result.json while a reader
+        # still owns it, unlike POSIX unlink. Finish readers before the fixture.
+        self.addCleanup(lambda: self.assertTrue(QThreadPool.globalInstance().waitForDone(5000)))
         self.root = Path(temporary.name)
 
     def test_idle_panel_and_application_shutdown_exit_cleanly(self):
