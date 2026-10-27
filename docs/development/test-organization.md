@@ -172,6 +172,8 @@ completion and envelope issuance must be within one day; exporting an older
 receipt again cannot extend its lifetime. Wrong source, platform, toolchain,
 coverage, signature or freshness rejects the proof. Callers run fresh checks on
 rejection. A valid signature by itself does not establish equivalent coverage.
+The receiver may explicitly allow extra signed tests when checking a nonempty
+required subset; every required input identity must still match independently.
 
 These headless APIs establish the signing boundary. They do not automatically
 publish evidence, install a trusted signer, restore reports or skip hosted jobs.

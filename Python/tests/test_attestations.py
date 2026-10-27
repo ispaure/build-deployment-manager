@@ -72,6 +72,23 @@ class AttestationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.export()
 
+    def test_additional_signed_tests_require_opt_in_and_matching_required_inputs(self):
+        from dataclasses import replace
+        extra = replace(self.phase, id='extra', reuse_key='e' * 64)
+        self.cache.execute(extra, self.root, lambda: dict(self.row, id='extra'))
+        envelope = export_receipts(self.cache, [self.phase, extra], self.bindings,
+                                   self.private, now=self.now)
+        with self.assertRaises(ValueError):
+            self.verify(envelope)
+        self.assertEqual(len(self.verify(envelope, allow_additional_tests=True)['tests']), 2)
+        for expected in ({'missing': 'a' * 64}, {'suite': 'f' * 64}):
+            with self.subTest(expected=expected), self.assertRaises(ValueError):
+                verify_export(envelope, self.allowed, 'release-local', self.bindings,
+                              expected, now=self.now, allow_additional_tests=True)
+        envelope['payload']['tests'].append(envelope['payload']['tests'][0])
+        with self.assertRaises(ValueError):
+            self.verify(envelope, allow_additional_tests=True)
+
     def test_stale_future_or_different_required_coverage_runs_fresh(self):
         envelope = self.export()
         for now in (self.now + timedelta(days=2), self.now - timedelta(seconds=1)):
@@ -94,3 +111,4 @@ class AttestationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 verify_export(envelope, self.allowed, 'release-local', expected,
                               {'suite': 'a' * 64}, now=self.now)
+

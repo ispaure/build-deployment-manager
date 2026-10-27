@@ -64,10 +64,12 @@ def export_receipts(cache, phases, bindings, private_key, *, now=None):
 
 
 def verify_export(envelope, allowed_signers, signer, expected_bindings, expected_tests,
-                  *, now=None, max_age=timedelta(hours=24)):
+                  *, now=None, max_age=timedelta(hours=24), allow_additional_tests=False):
     """Return verified proof or raise; callers run fresh checks on rejection.
 
     expected_tests maps each required step to its independently derived input key.
+    A receiver checking one suite in a larger export may explicitly permit extra
+    signed tests; its required subset must still match exactly and be nonempty.
     A signature alone never establishes equivalent coverage. Both the envelope
     and each original test completion must be recent (re-export cannot renew it).
     """
@@ -84,7 +86,9 @@ def verify_export(envelope, allowed_signers, signer, expected_bindings, expected
         raise ValueError('Evidence source, dependencies or coverage changed.')
     tests = payload['tests']
     actual = {item['step']: item['inputs'] for item in tests}
-    if len(actual) != len(tests) or actual != expected_tests:
+    matches = (all(actual.get(step) == key for step, key in expected_tests.items())
+               if allow_additional_tests else actual == expected_tests)
+    if len(actual) != len(tests) or not matches:
         raise ValueError('Evidence test inputs do not match required coverage.')
     if any(not re.fullmatch(r'[0-9a-f]{64}', value) for value in actual.values()):
         raise ValueError('Evidence input identities must be SHA-256 hashes.')
