@@ -90,6 +90,11 @@ the manager makes a bounded, read-only session query and reports a missing login
 when confirmed. Sign in to the selected test VM before retrying; the manager does
 not switch the test command to the SYSTEM account.
 
+Recovery can inspect one exact token-owned workspace without an interactive login.
+This fixed, read-only service-account query verifies the namespace and ownership
+marker; it does not execute project code, run tests or remove files. Projects use
+its receipt to reconcile failed setup separately from the original attempt.
+
 ## Readiness and testing
 
 Projects that support automatic dedicated-machine selection can fill empty Fedora

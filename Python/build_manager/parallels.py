@@ -159,6 +159,51 @@ class Parallels:
             raise RuntimeError(f'Windows guest command failed ({result.returncode}): ' + detail)
         return result.stdout
 
+    def inspect_windows_workspace(self, selector, token):
+        """Read one token-owned namespace without requiring an interactive login.
+
+        This fixed inspection is separate from command execution: no caller code,
+        tests, writes or automatic cleanup run under the guest service account.
+        """
+        import re
+        if not isinstance(token, str) or not re.fullmatch(r'[a-f0-9]{32}', token):
+            raise ValueError('Invalid workspace ownership token.')
+        script = r'''
+$common=[Environment]::GetFolderPath('CommonDocuments')
+if (![IO.Path]::IsPathRooted($common)) { throw 'Common Documents namespace is unavailable.' }
+$parent=Join-Path $common 'bm'
+$root=Join-Path $parent $p.token
+foreach($path in @($common,$parent,$root)) {
+ if ((Test-Path -LiteralPath $path) -and
+     ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+  throw 'Owned workspace namespace cannot be a reparse point.'
+ }
+}
+$exists=Test-Path -LiteralPath $root
+if ($exists) {
+ $marker=Join-Path $root '.manager-owned.json'
+ if (!(Test-Path -LiteralPath $marker) -or
+     ((Get-Item -LiteralPath $marker -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+  throw 'Workspace ownership marker is missing or linked.'
+ }
+ $owner=Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
+ if ($owner.token -ne $p.token) { throw 'Workspace ownership mismatch.' }
+}
+@{token=$p.token;workspace=$root;exists=[bool]$exists;owner_verified=[bool]$exists}|ConvertTo-Json -Compress
+'''
+        command = self.powershell_command(selector)
+        command.remove('--current-user')
+        result = subprocess.run(command, input=self.powershell_payload(script, dict(token=token)),
+                                capture_output=True, timeout=20, check=True)
+        record = json.loads(result.stdout)
+        from pathlib import PureWindowsPath
+        workspace = PureWindowsPath(record.get('workspace', ''))
+        if (record.get('token') != token or type(record.get('exists')) is not bool
+                or record.get('owner_verified') is not record['exists']
+                or not workspace.is_absolute() or workspace.name != token or workspace.parent.name != 'bm'):
+            raise ValueError('Invalid owned workspace inspection receipt.')
+        return record
+
     def execute(self, selector, argv, *, data=None, timeout=60):
         result = subprocess.run(self.command(selector, argv), input=data, capture_output=True, timeout=timeout)
         if result.returncode:

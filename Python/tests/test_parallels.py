@@ -49,6 +49,31 @@ class ParallelsTransportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.command('--help', ['true'])
 
+    def test_fixed_workspace_inspection_checks_only_the_exact_namespace_without_login(self):
+        client = Parallels('/fixture/prlctl')
+        token = 'a' * 32
+        receipt = dict(token=token, workspace='C:\\Public\\bm\\' + token,
+                       exists=False, owner_verified=False)
+        with patch('build_manager.parallels.subprocess.run', return_value=
+                   subprocess.CompletedProcess([], 0, json.dumps(receipt).encode(), b'')) as execute:
+            self.assertEqual(client.inspect_windows_workspace(VM, token), receipt)
+            self.assertNotIn('--current-user', execute.call_args.args[0])
+            envelope = json.loads(execute.call_args.kwargs['input'])
+            self.assertEqual(envelope['values'], dict(token=token))
+            self.assertIn('ReparsePoint', envelope['script'])
+            self.assertIn('Workspace ownership mismatch', envelope['script'])
+            for forbidden in ('Remove-Item', 'Set-Content', 'Start-Process', 'New-Item'):
+                self.assertNotIn(forbidden, envelope['script'])
+        with patch('build_manager.parallels.subprocess.run') as execute:
+            with self.assertRaises(ValueError):
+                client.inspect_windows_workspace(VM, '../foreign')
+            execute.assert_not_called()
+        receipt['token'] = 'b' * 32
+        with patch('build_manager.parallels.subprocess.run', return_value=
+                   subprocess.CompletedProcess([], 0, json.dumps(receipt).encode(), b'')):
+            with self.assertRaisesRegex(ValueError, 'inspection receipt'):
+                client.inspect_windows_workspace(VM, token)
+
     def test_empty_current_user_failure_diagnoses_signin_without_replaying_script(self):
         client = Parallels('/fixture/prlctl')
         failure = subprocess.CompletedProcess([], 1, b'', b'')
