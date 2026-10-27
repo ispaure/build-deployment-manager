@@ -1,11 +1,12 @@
 """Disposable upstream CPython testbed setup, independent of project acceptance."""
-import hashlib
 import importlib.util
 from pathlib import Path
 import plistlib
 import re
 import shutil
 import sys
+
+from commonUtils.runtime.streams import file_sha256
 
 
 def scene_source(scene_class, *, comment='CPython testbed scene compatibility.'):
@@ -28,7 +29,7 @@ def scene_source(scene_class, *, comment='CPython testbed scene compatibility.')
 
 
 def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return file_sha256(path)
 
 
 def modernize(testbed, *, scene_class, scene_source, deployment_target, adapter_sha256):

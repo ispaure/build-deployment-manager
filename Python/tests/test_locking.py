@@ -1,27 +1,18 @@
-"""Windows lock acquisition must not touch another process's byte range."""
-from types import SimpleNamespace
+"""Workspace adapters retain their contention message and directory policy."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import MagicMock, Mock, patch
 
-from build_manager import locking
+from build_manager.locking import workspace_lock
 
 
-class WindowsLockTests(unittest.TestCase):
-    def test_initialization_cannot_write_into_another_process_lock(self):
-        stream = MagicMock()
-        stream.write.side_effect = PermissionError('fixture: byte already locked')
-        stream.flush.side_effect = PermissionError('fixture: byte already locked')
-        path = MagicMock()
-        path.open.return_value.__enter__.return_value = stream
-        api = SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2,
-                              locking=Mock(side_effect=[OSError('busy'), None, None]))
-        with patch.object(locking, 'Path', return_value=path), \
-                patch.object(locking, 'os', SimpleNamespace(name='nt')), \
-                patch.object(locking.time, 'sleep'), \
-                patch.dict('sys.modules', msvcrt=api):
-            with locking.workspace_lock('fixture', timeout=1):
-                self.assertEqual(api.locking.call_count, 2)
-        self.assertEqual(api.locking.call_count, 3)
-        stream.write.assert_not_called()
-        stream.flush.assert_not_called()
-        self.assertEqual(api.locking.call_args.args[1:], (api.LK_UNLCK, 1))
+class WorkspaceLockTests(unittest.TestCase):
+    def test_contention_and_release(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / 'nested/workspace.lock'
+            with workspace_lock(path):
+                with self.assertRaisesRegex(RuntimeError, 'Another operation owns this workspace'):
+                    with workspace_lock(path):
+                        self.fail('must not acquire')
+            with workspace_lock(path):
+                self.assertTrue(path.exists())

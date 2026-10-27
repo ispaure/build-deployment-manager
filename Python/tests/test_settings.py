@@ -38,7 +38,7 @@ class SettingsTests(unittest.TestCase):
             store=SettingsStore(directory)
             store.account('first',provider='github',reference='GH_TOKEN',kind='environment-name')
             original=store.path.read_bytes()
-            with patch('pathlib.Path.replace',side_effect=OSError('interrupted atomic save')):
+            with patch('commonUtils.persistence.atomic.os.replace',side_effect=OSError('interrupted atomic save')):
                 with self.assertRaises(OSError):store.account('second',provider='github',reference='OTHER',kind='environment-name')
             self.assertEqual(store.path.read_bytes(),original)
             store.path.write_text('{"schema":99,"values":{}}')

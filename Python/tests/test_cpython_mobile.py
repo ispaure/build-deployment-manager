@@ -8,8 +8,15 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
+from commonUtils.runtime.streams import downloads
 from build_manager import cpython_mobile as runtime
 from build_manager import cpython_testbed as testbed
+
+
+class Response(io.BytesIO):
+    headers = {}
+    def geturl(self):
+        return 'https://example.invalid/fixture'
 
 
 class CacheTests(unittest.TestCase):
@@ -26,7 +33,7 @@ class CacheTests(unittest.TestCase):
             root = Path(directory)
             archive, pin = self.archive(root)
             cache = root / 'source'
-            with patch.object(runtime.urllib.request, 'urlopen', side_effect=AssertionError('offline')):
+            with patch.object(downloads, 'urlopen', side_effect=AssertionError('offline')):
                 runtime.source(cache, pin)
                 (cache / 'cross-build').mkdir()
                 (cache / 'cross-build/generated').write_bytes(b'generated')
@@ -44,13 +51,13 @@ class CacheTests(unittest.TestCase):
             archive, pin = self.archive(root)
             content = archive.read_bytes()
             archive.unlink()
-            with patch.object(runtime.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')):
-                with self.assertRaisesRegex(ValueError, 'archive digest mismatch'):
+            with patch.object(downloads, 'urlopen', return_value=Response(b'wrong')):
+                with self.assertRaisesRegex(ValueError, 'SHA-256 verification'):
                     runtime.source(root / 'source', pin)
             self.assertFalse(archive.exists())
             self.assertFalse((root / 'source').exists())
             self.assertFalse(archive.with_suffix('.download').exists())
-            with patch.object(runtime.urllib.request, 'urlopen', return_value=io.BytesIO(content)):
+            with patch.object(downloads, 'urlopen', return_value=Response(content)):
                 runtime.source(root / 'source', pin)
             self.assertEqual((root / 'source/README').read_bytes(), b'upstream')
 
@@ -59,17 +66,17 @@ class CacheTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             cache = Path(directory)
             pin = dict(filename='fixture.whl', sha256=hashlib.sha256(b'wheel').hexdigest(), url='https://example.invalid/wheel')
-            with patch.object(runtime.urllib.request, 'urlopen') as network:
+            with patch.object(downloads, 'urlopen') as network:
                 with self.assertRaisesRegex(ValueError, 'Prepare'):
                     runtime.runtime_wheels(cache, [pin])
                 network.assert_not_called()
-            with patch.object(runtime.urllib.request, 'urlopen', return_value=io.BytesIO(b'wrong')):
-                with self.assertRaisesRegex(ValueError, 'download digest differs'):
+            with patch.object(downloads, 'urlopen', return_value=Response(b'wrong')):
+                with self.assertRaisesRegex(ValueError, 'SHA-256 verification'):
                     runtime.runtime_wheels(cache, [pin], download=True)
-            with patch.object(runtime.urllib.request, 'urlopen', return_value=io.BytesIO(b'wheel')):
+            with patch.object(downloads, 'urlopen', return_value=Response(b'wheel')):
                 folder = runtime.runtime_wheels(cache, [pin], download=True)
             (folder / 'fixture.whl').write_bytes(b'changed')
-            with patch.object(runtime.urllib.request, 'urlopen') as network:
+            with patch.object(downloads, 'urlopen') as network:
                 with self.assertRaisesRegex(ValueError, 'Prepare'):
                     runtime.runtime_wheels(cache, [pin], download=True)
                 network.assert_not_called()

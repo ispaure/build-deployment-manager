@@ -127,3 +127,20 @@ from its parent. Raw logs, screenshots and timing reports stay under ignored
 - [UX redesign: implementation audit and second pass](ux-redesign-audit.md)
 - [UX redesign brief: validation and coordinated delivery](ux-redesign-brief.md)
 - [Clearer plan review and run progress brief](second-stage-ui-brief.md)
+
+## commonUtils primitive ownership
+
+Workspace contention policy wraps `commonUtils.persistence.locking.file_lock`;
+the shared implementation owns OS lock acquisition/release. Manager JSON state
+keeps its schema, indentation, newline and private parent-directory policy while
+delegating atomic byte publication with explicit private permissions and bounded
+Windows sharing retries. `Redactor` retains environment-secret selection around
+the shared line filter. CPython archive/wheel downloads and file/member hashing
+use commonUtils verified provisioning and bounded streams; compiler and cache
+policy remain here. An existing corrupt cache is still rejected, not replaced.
+
+Shared APIs are documented in commonUtils' persistence and diagnostics guides.
+The local changes must be committed and their dependency pins updated together
+before distribution. Portable/offscreen fixtures exercise these paths, including
+synthetic Windows failures; they do not claim new native Windows acceptance.
+Windows process jobs and the existing process shutdown contracts remain separate.

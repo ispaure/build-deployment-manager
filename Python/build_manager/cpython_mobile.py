@@ -4,7 +4,6 @@ Cache paths and receipts remain caller-owned. Preparation never selects a projec
 payload, accepts a device result or installs packages into the host interpreter.
 Call preparation serially: upstream compiler tools require a process environment.
 """
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,26 +11,27 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import urllib.request
+
+from commonUtils.runtime.streams import file_sha256, stream_signature
+from commonUtils.runtime.streams.downloads import DownloadSpec, provision
 
 from .locking import workspace_lock
 from .profiles import save_json
 
 
 def checksum(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return file_sha256(path)
+
+
+def _download(url, sha256, destination, *, name, version):
+    provision(DownloadSpec(name, version, url, sha256, sha256), destination)
 
 
 def source(cache, pin):
     archive = cache.parent/('cpython-'+pin['revision']+'.tar.gz')
     if not archive.exists():
-        partial = archive.with_suffix('.download')
-        with urllib.request.urlopen(pin['archive'],timeout=60) as incoming, partial.open('wb') as output:
-            shutil.copyfileobj(incoming,output)
-        if checksum(partial)!=pin['sha256']:
-            partial.unlink()
-            raise ValueError('Pinned CPython archive digest mismatch.')
-        partial.rename(archive)
+        _download(pin['archive'], pin['sha256'], archive, name='Pinned CPython archive',
+                  version=pin['revision'])
     if checksum(archive)!=pin['sha256']:
         raise ValueError('Pinned CPython cache archive digest differs.')
     if not cache.exists():
@@ -48,7 +48,7 @@ def source(cache, pin):
             relative = Path(*Path(item.name).parts[1:])
             if item.isfile():
                 with stream.extractfile(item) as incoming:
-                    expected = hashlib.sha256(incoming.read()).hexdigest()
+                    expected = stream_signature(incoming)[1]
                 if not (cache/relative).is_file() or checksum(cache/relative)!=expected:
                     raise ValueError('Pinned CPython source cache changed: '+str(relative))
 
@@ -62,13 +62,7 @@ def runtime_wheels(cache, pins, *, download=False):
             raise ValueError('Runtime wheel filename must be a single filename.')
         path = folder/pin['filename']
         if not path.exists() and download:
-            temporary = path.with_suffix('.download')
-            with urllib.request.urlopen(pin['url'], timeout=60) as incoming, temporary.open('wb') as output:
-                shutil.copyfileobj(incoming, output)
-            if checksum(temporary) != pin['sha256']:
-                temporary.unlink()
-                raise ValueError('Runtime wheel download digest differs: '+pin['filename'])
-            temporary.replace(path)
+            _download(pin['url'], pin['sha256'], path, name='Runtime wheel', version=pin['filename'])
         if not path.is_file() or checksum(path) != pin['sha256']:
             raise ValueError('Prepare the pinned runtime wheel cache before testing: '+pin['filename'])
     return folder

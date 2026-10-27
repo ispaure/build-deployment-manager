@@ -1,9 +1,7 @@
 """Non-secret profile values and explicit precedence; providers own credentials."""
 import json
 import os
-import time
 from pathlib import Path
-from tempfile import mkstemp
 
 
 def effective(defaults, profile=None, environment=None, overrides=None, *, variables=None):
@@ -37,32 +35,12 @@ def save_profile(path, values, *, allowed):
 
 def save_json(path, data):
     """Publish manager state privately; project schema and writer locks stay external."""
-    encoded = json.dumps(data, indent=2) + '\n'
+    from commonUtils.persistence import atomic_write_bytes
+    encoded = (json.dumps(data, indent=2) + '\n').replace('\n', os.linesep).encode('utf-8')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    descriptor, name = mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
-    temporary = Path(name)
-    try:
-        with os.fdopen(descriptor, 'w') as stream:
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if os.name != 'nt':
-            temporary.chmod(0o600)
-        # Windows readers (including child processes) can briefly deny replacement.
-        # Keep publication atomic and bounded; permanent failures still propagate.
-        deadline = time.monotonic() + 2
-        while True:
-            try:
-                temporary.replace(path)
-                break
-            except OSError as error:
-                if (os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32, 33)
-                        or time.monotonic() >= deadline):
-                    raise
-                time.sleep(0.02)
-    finally:
-        temporary.unlink(missing_ok=True)
+    atomic_write_bytes(path, encoded, file_mode=0o600 if os.name != 'nt' else None,
+                       replace_timeout=2)
 
 
 def load_profile(path):

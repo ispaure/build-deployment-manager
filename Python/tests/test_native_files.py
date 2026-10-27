@@ -15,7 +15,7 @@ class NativeFileTests(unittest.TestCase):
     def test_atomic_publication_retries_only_transient_windows_sharing_errors(self):
         with TemporaryDirectory() as folder:
             target = Path(folder) / 'state.json'
-            real_replace = Path.replace
+            real_replace = os.replace
             sharing = PermissionError('reader holds destination')
             sharing.winerror = 32
             calls = []
@@ -26,11 +26,23 @@ class NativeFileTests(unittest.TestCase):
                 return real_replace(source, destination)
             windows = Mock(wraps=os)
             windows.name = 'nt'
-            with patch('build_manager.profiles.os', windows), patch.object(Path, 'replace', replace):
+            with patch('commonUtils.persistence.atomic.os', windows), patch.object(windows, 'replace', replace):
                 save_json(target, {'published': True})
             self.assertEqual(len(calls), 2)
             self.assertIn('true', target.read_text())
             self.assertEqual(list(Path(folder).glob('*.tmp')), [])
+
+    def test_json_format_and_private_permissions_are_retained(self):
+        with TemporaryDirectory() as folder:
+            target = Path(folder) / 'state.json'
+            target.write_text('old')
+            if os.name != 'nt':
+                target.chmod(0o644)
+            save_json(target, {'text': '\u00e9'})
+            expected = '{\n  "text": "\\u00e9"\n}\n'.replace('\n', os.linesep).encode('utf-8')
+            self.assertEqual(target.read_bytes(), expected)
+            if os.name != 'nt':
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
     def test_cancelled_history_does_not_open_another_report(self):
         with TemporaryDirectory() as folder:
