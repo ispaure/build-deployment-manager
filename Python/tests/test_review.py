@@ -69,6 +69,28 @@ class ReviewTests(unittest.TestCase):
             self.assertTrue(launch.call_args.kwargs['resume'])
         self.assertFalse(effect.exists())
 
+    def test_legacy_device_history_omits_default_approval_field_and_still_opens(self):
+        from dataclasses import replace
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QTreeWidgetItem
+        result, report, _, effect = self.retained()
+        plan = Plan.load(result.parent / 'plan.json')
+        plan = replace(plan, phases=(*plan.phases[:-1], replace(plan.phases[-1], effect='deploy')))
+        plan.save(result.parent / 'plan.json')
+        self.assertNotIn('approval_required', plan.data()['phases'][-1])
+        report['plan_identity'] = plan.identity
+        result.write_text(json.dumps(report))
+        panel = ManagerPanel(fixtures.OtherProject(self.root))
+        self.addCleanup(panel.close)
+        item = QTreeWidgetItem()
+        item.setData(0, Qt.ItemDataRole.UserRole, str(result))
+        panel.open_history(item, in_tab=True)
+        self.assertEqual(panel.result, result)
+        self.assertIn('Viewing retained run:', panel.status.text())
+        self.assertEqual(panel.run_view.plan.project, plan.project)
+        self.assertTrue(panel.safe_plan(plan).phases[-1].approval_required)
+        self.assertFalse(effect.exists())
+
     def test_hashing_uses_bounded_shared_streams_and_checks_both_copies(self):
         _, report, artifact, _ = self.retained()
         with patch.object(Path, 'read_bytes', side_effect=AssertionError('whole file allocation')):

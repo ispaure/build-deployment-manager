@@ -42,6 +42,18 @@ class ScopedRunTests(unittest.TestCase):
     def tearDown(self):
         self.assertEqual(self.plan.data(), self.original)
 
+    def test_leaf_and_expanded_cards_keep_the_same_right_hand_inspector(self):
+        self.view.resize(1200, 780)
+        self.view.show()
+        for key in ('deliver.testflight', 'platform.android', 'deliver.testflight'):
+            self.grouped.open_group(key)
+            self.app.processEvents()
+            self.assertIs(self.grouped.content_splitter.widget(1), self.view.inspector)
+            self.assertIs(self.grouped.content_splitter.widget(0), self.grouped.pages)
+            self.assertTrue(self.view.inspector.isVisible())
+            if key == 'deliver.testflight':
+                self.assertEqual(self.grouped.pages.currentIndex(), 0)
+
     def test_keyboard_card_opens_only_its_graph_and_shared_inspector(self):
         self.view.resize(1200, 780)
         self.view.show()
@@ -52,7 +64,7 @@ class ScopedRunTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(set(self.view.flow.canvas.cards), {'env', 'android'})
         self.assertEqual(self.view.flow.canvas.edges, [('env', 'android')])
-        self.assertIs(self.grouped.splitter.widget(1), self.view.inspector)
+        self.assertIs(self.grouped.content_splitter.widget(1), self.view.inspector)
         self.assertTrue(self.view.inspector.isVisible())
         self.assertTrue(self.view.flow.scroll.isVisible())
         self.assertTrue(self.view.steps.isHidden())
@@ -169,7 +181,7 @@ class ScopedRunTests(unittest.TestCase):
             self.assertEqual(self.view.tests.currentItem().text(0), 'broken')
             self.assertIn('Expected success', self.view.test_detail.toPlainText())
             self.assertEqual(set(self.view.flow.canvas.cards), {'env', 'android'})
-            self.assertIs(self.view.run_choices.flow.splitter.widget(1), self.view.inspector)
+            self.assertIs(self.view.run_choices.flow.content_splitter.widget(1), self.view.inspector)
             self.app.processEvents()
         self.view.reset(self.plan)
         self.view.run_choices.flow.open_group('source')

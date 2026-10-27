@@ -97,7 +97,10 @@ class GroupedFlowView(QWidget):
             actions.addWidget(self.inspect)
             inner.addLayout(actions)
         self.pages.addWidget(inside)
-        layout.addWidget(self.pages, 1)
+        self.content_splitter = QSplitter()
+        self.content_splitter.setChildrenCollapsible(False)
+        self.content_splitter.addWidget(self.pages)
+        layout.addWidget(self.content_splitter, 1)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.fit)
@@ -110,8 +113,10 @@ class GroupedFlowView(QWidget):
         self.inspector = inspector
         self.splitter.addWidget(graph)
         if inspector is not None:
-            self.splitter.addWidget(inspector)
-        self.splitter.setSizes([600, 500])
+            self.content_splitter.addWidget(inspector)
+            self.content_splitter.setSizes([600, 500])
+            self.content_splitter.setStretchFactor(0, 3)
+            self.content_splitter.setStretchFactor(1, 2)
         self.splitter.setChildrenCollapsible(False)
         graph.show()
         if inspector is not None:
@@ -157,19 +162,11 @@ class GroupedFlowView(QWidget):
             if self.graph is not None:
                 self.graph.set_scope(keys)
                 self.graph.setVisible(False)
-            inspector = getattr(self, 'inspector', None)
-            if inspector is not None:
-                self.overview_layout.addWidget(inspector, 2)
-                inspector.show()
             self.set_facts(self.facts)
             self.group_selected.emit(key)
             if self.graph is None and keys:
                 self.phase_selected.emit(keys[0])
             return
-        inspector = getattr(self, 'inspector', None)
-        if inspector is not None:
-            self.splitter.addWidget(inspector)
-            inspector.show()
         if self.graph is not None:
             self.heading.setText((node.label if node else 'Other execution steps') +
                 f' · {len(keys)} execution step' + ('s' if len(keys) != 1 else ''))
@@ -217,9 +214,6 @@ class GroupedFlowView(QWidget):
     def close_group(self):
         key = self.selected
         self.selected = ''
-        inspector = getattr(self, 'inspector', None)
-        if inspector is not None:
-            self.splitter.addWidget(inspector)
         self.pages.setCurrentIndex(0)
         if self.graph is not None:
             self.group_selected.emit('')

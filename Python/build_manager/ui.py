@@ -884,6 +884,8 @@ class ManagerPanel(QWidget):
         from types import SimpleNamespace
         data = self.redacted_data(plan.data())
         data.setdefault('journey', {})
+        for phase in data['phases']:
+            phase.setdefault('approval_required', True)
         data['phases'] = [SimpleNamespace(**phase) for phase in data['phases']]
         return SimpleNamespace(**data)
 
@@ -950,7 +952,7 @@ class ManagerPanel(QWidget):
             description = {'test': 'Run checks', 'inspect': 'Inspect local files', 'build': 'Prepare files',
                 'upload': 'Upload · separate approval', 'deploy': 'Deliver · separate approval',
                 'publish': 'Publish · separate approval','dispatch':'Start GitHub checks · separate approval'}[effect]
-            if effect == 'deploy' and not phase.approval_required:
+            if effect == 'deploy' and not getattr(phase, 'approval_required', True):
                 description = 'Install on selected device'
             prerequisites = ', '.join(phase.dependencies)
             if getattr(phase, 'waits_for', ()):
