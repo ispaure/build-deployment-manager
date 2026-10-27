@@ -68,6 +68,40 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual([row['status'] for row in result['phases']], ['failed', 'skipped', 'passed', 'passed'])
         self.assertEqual(result['status'], 'failed')
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX process groups')
+    def test_transient_permission_denied_probe_waits_for_group_reaping(self):
+        import signal
+        from unittest.mock import Mock, patch
+        from build_manager.executor import stop_process
+        process = Mock(pid=12345)
+        probes = []
+        def signal_owned(group, sig):
+            self.assertEqual(group, process.pid)
+            if sig == 0:
+                probes.append(sig)
+                if len(probes) == 1:
+                    raise PermissionError('orphan reaping in progress')
+                raise ProcessLookupError('reaped')
+            if sig == signal.SIGKILL:
+                raise ProcessLookupError('reaped')
+        with patch('build_manager.executor.os.killpg', side_effect=signal_owned):
+            stop_process(process, grace=.2)
+        self.assertEqual(len(probes), 2)
+        process.wait.assert_called_once_with(timeout=5)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX process groups')
+    def test_persistent_permission_denial_after_probe_grace_is_not_hidden(self):
+        import signal
+        from unittest.mock import Mock, patch
+        from build_manager.executor import stop_process
+        process = Mock(pid=12345)
+        def signal_owned(group, sig):
+            if sig != signal.SIGTERM:
+                raise PermissionError('persistent cleanup denial')
+        with patch('build_manager.executor.os.killpg', side_effect=signal_owned):
+            with self.assertRaisesRegex(PermissionError, 'persistent cleanup denial'):
+                stop_process(process, grace=.02)
+
     def test_timeout_terminates_real_child_and_still_writes_result(self):
         result = self.run_plan(self.plan(self.phase('stalled', 'import time; time.sleep(30)', timeout=.1)))
         self.assertEqual(result['phases'][0]['status'], 'timeout')

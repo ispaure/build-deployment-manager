@@ -55,6 +55,11 @@ def stop_process(process, *, grace=1):
                 os.killpg(process.pid, 0)
             except ProcessLookupError:
                 break
+            except PermissionError:
+                # Darwin may report EPERM while terminated descendants are
+                # being reaped. Keep waiting within the declared grace; the
+                # final kill still exposes a persistent permission failure.
+                pass
             time.sleep(min(.02, max(0, deadline - time.monotonic())))
     # A parent can exit before its descendants, leaving inherited output pipes
     # open. Always retire the owned process group, even after parent exit.
