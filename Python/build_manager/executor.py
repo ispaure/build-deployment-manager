@@ -167,8 +167,8 @@ class Executor:
                     event=lambda value:self.event(dict(value,phase='workflow'))))
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
-                previous = recover(plan,report,reconcile=reconcile) if resume else []
-                rows = {row['id']:row for row in previous if row['status']=='passed'}
+                previous = recover(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []
+                rows = {row['id']:row for row in previous if row['status'] in {'passed','unknown'}}
                 if migration is not None:
                     migration['retained_phases'] = list(rows)
                     report.setdefault('engine_history', []).append(migration)

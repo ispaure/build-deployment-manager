@@ -114,6 +114,34 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result['status'],'passed')
         self.assertEqual(result['phases'][1]['started_at'],partial['phases'][1]['started_at'])
 
+    def test_independent_reviewed_delivery_continues_without_repeating_unknown_device(self):
+        from build_manager.api import review_run, run_plan
+        attempted, delivered, forbidden = (self.root / name for name in ('attempted', 'delivered', 'forbidden'))
+        plan = Plan('Fixture', 'independent recipients', {}, (
+            self.phase('prepare', 'pass', effect='build'),
+            self.phase('device', f'from pathlib import Path;p=Path({str(attempted)!r});'
+                       'p.write_text(p.read_text()+"attempt" if p.exists() else "attempt");raise SystemExit(3)',
+                       dependencies=('prepare',), effect='deploy', approval_required=False),
+            self.phase('device-consumer', f'from pathlib import Path;Path({str(forbidden)!r}).touch()',
+                       dependencies=('device',)),
+            self.phase('provider', f'from pathlib import Path;Path({str(delivered)!r}).write_text("accepted")',
+                       dependencies=('prepare',), effect='upload')), str(self.root / 'workspace'))
+        output = self.root / 'result'
+        first = Executor().run(plan, output)
+        original = next(row for row in first['phases'] if row['id']=='device')
+        review = review_run(output)
+        self.assertEqual(review['unresolved_steps'], ['device'])
+        self.assertEqual([row['step'] for row in review['approvals']], ['provider'])
+        result = run_plan(plan, output, resume=True, confirmed=True, expected_identity=plan.identity,
+                          approval_identities={row['step']:row['identity'] for row in review['approvals']})
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(attempted.read_text(), 'attempt')
+        self.assertEqual(delivered.read_text(), 'accepted')
+        self.assertFalse(forbidden.exists())
+        self.assertEqual(next(row for row in result['phases'] if row['id']=='device'), original)
+        with self.assertRaisesRegex(ValueError, 'pending external step'):
+            run_plan(plan, output, resume=True, confirmed=True, approval_identities={'device':'0'*64})
+
     def test_effect_intent_and_operation_id_are_durable_before_child_starts(self):
         output=self.root/'result'
         code=f'import json;from pathlib import Path;r=json.loads(Path({str(output/"result.json")!r}).read_text());s=[p for p in r["phases"] if p["id"]=="effect"][0];assert s["status"]=="running" and s["operation_id"]'

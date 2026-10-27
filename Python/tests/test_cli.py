@@ -176,10 +176,12 @@ print(json.dumps(dict(schema=1, result=result)))
         artifact.write_text('candidate')
         self.assertEqual(self.invoke('resume', output, '--confirm', '--approval-identity', 'deliver=' + digest,
                                      code=1)['status'], 'unknown')
-        attempts = self.invoke('status', output, '--full')['attempts']
+        before = self.invoke('status', output, '--full')
         result = self.invoke('resume', output, '--confirm', code=1)
-        self.assertIn('reconciliation', result['error']['message'])
-        self.assertEqual(self.invoke('status', output, '--full')['attempts'], attempts)
+        self.assertEqual(result['status'], 'unknown')
+        after = self.invoke('status', output, '--full')
+        self.assertEqual(after['phases'], before['phases'])
+        self.assertEqual(self.invoke('review', output)['unresolved_steps'], ['deliver'])
 
     def test_external_plan_needs_confirmation_before_creating_output(self):
         plan, path = self.plan(self.phase('external', 'pass'), effect='dispatch')

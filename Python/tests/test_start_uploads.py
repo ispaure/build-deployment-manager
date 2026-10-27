@@ -113,7 +113,8 @@ class StartUploadTests(unittest.TestCase):
         before = (self.root / 'firebase.json').read_bytes()
         resumed = Executor().run(plan, output, resume=True)
         self.assertEqual(resumed['status'], 'unknown')
-        self.assertIn('reconciliation', resumed['error'])
+        self.assertEqual(next(row for row in resumed['phases'] if row['id']=='firebase'),
+                         next(row for row in report['phases'] if row['id']=='firebase'))
         self.assertEqual((self.root / 'firebase.json').read_bytes(), before)
 
     def test_only_declared_tester_uploads_gain_start_authorization(self):

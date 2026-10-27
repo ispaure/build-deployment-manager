@@ -1061,11 +1061,12 @@ class ManagerPanel(QWidget):
             self.seed_run(plan, report['phases'])
             self.run_view.complete(report)
             self.run_view.set_output(self.redact(json.dumps(report, indent=2)))
-            self.resumable = report['status'] in {'awaiting_review', 'failed', 'cancelled'}
+            self.resumable = report['status'] in {'awaiting_review', 'failed', 'cancelled', 'unknown'}
             self.continue_run.setEnabled(self.resumable)
             self.continue_run.setVisible(self.resumable)
             self.continue_run.setText('Review and start GitHub checks…' if report['status']=='awaiting_review' and any(
                 row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in report['phases'])
+                else 'Continue independent steps…' if report['status'] == 'unknown'
                 else 'Review and continue delivery…' if report['status'] == 'awaiting_review' else 'Retry unfinished steps…')
             self.update_run_actions()
             self.open_results.setEnabled(True)
@@ -1170,11 +1171,12 @@ class ManagerPanel(QWidget):
             self.run_view.unverified(self.redact(str(error)))
             self.run_view.append_output(None, 'Result/evidence could not be verified: ' + self.redact(str(error)))
         self.open_results.setEnabled(bool(self.result and self.result.parent.is_dir()))
-        self.resumable = status in {'awaiting_review', 'failed', 'cancelled'} and bool(self.result and self.result.is_file())
+        self.resumable = status in {'awaiting_review', 'failed', 'cancelled', 'unknown'} and bool(self.result and self.result.is_file())
         self.continue_run.setEnabled(self.resumable)
         self.continue_run.setVisible(self.resumable)
         self.continue_run.setText('Review and start GitHub checks…' if status=='awaiting_review' and any(
             row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in self.run_view.facts.values())
+            else 'Continue independent steps…' if status == 'unknown'
             else 'Review and continue delivery…' if status == 'awaiting_review' else 'Retry unfinished steps…')
         self.update_run_actions()
         self.refresh_history()

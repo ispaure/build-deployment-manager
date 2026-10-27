@@ -69,7 +69,7 @@ def approve(plan,step,report,*,cancelled=lambda: False):
     return Approval(step,review_identity(plan,step,report['phases'],cancelled=cancelled))
 
 
-def recover(plan,report,*,reconcile=None,cancelled=lambda: False):
+def recover(plan,report,*,reconcile=None,cancelled=lambda: False,preserve_unknown=False):
     if report.get('schema')!=1 or report.get('plan_identity')!=plan.identity:
         raise ValueError('Result schema or plan identity changed; preserve the original run.')
     effects={phase.id:phase.effect if phase.effect!='inherit' else plan.effect for phase in plan.phases}
@@ -82,6 +82,9 @@ def recover(plan,report,*,reconcile=None,cancelled=lambda: False):
         if row['status']=='passed':verify_artifacts(row,cancelled=cancelled)
         if row['status']=='unknown':
             if reconcile is None:
+                if preserve_unknown:
+                    rows.append(row)
+                    continue  # Retain the intent; never schedule it or its consumers.
                 raise ValueError('Uncertain external operation requires reconciliation before retry: '+row['id'])
             receipt=reconcile(row['id'],row)
             if receipt.get('status') not in {'passed','not-performed'}:

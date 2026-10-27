@@ -89,8 +89,10 @@ Details text selection and scroll position.
 Interrupted harmless work is retryable. A running/failed/timeout external effect
 has an unknown outcome until its provider reconciles the recorded operation.
 The recovery API accepts a project reconciler that returns a verified receipt or
-confirms no effect occurred. The GUI refuses unknown remote outcomes; it never
-blindly repeats them. Each destination retains its own outcome even if another
+confirms no effect occurred. Unknown effects and their consumers stay frozen;
+Continue independent steps can run other eligible branches with their ordinary
+artifact reviews. It never retries an unknown action or marks it passed. Each
+destination retains its own outcome even if another
 branch fails or the workflow is cancelled.
 
 Application close offers cancellation and waits for owned cleanup. Continuing

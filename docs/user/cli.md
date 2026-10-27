@@ -156,8 +156,11 @@ build-manager resume /tmp/delivery-run --confirm \
 Repeat `--approval-identity` for independently reviewed pending steps. `--confirm`
 alone does not approve these steps. Review identities bind the retained plan and
 artifacts and are rechecked immediately before continuation. Copying an identity
-is not authorization from the user. Changed artifacts, mismatched plans, unpassed
-gates and uncertain external outcomes block continuation. Read the
+is not authorization from the user. Changed artifacts, mismatched plans and unpassed
+gates block their dependent actions. An uncertain external outcome stays frozen,
+including its consumers; independent reviewed actions can continue. Review lists
+these steps in `unresolved_steps`, and the run remains unknown until reconciled.
+Read the
 [recovery contract](workflows.md) before retrying external work.
 
 A harmless failed run can use `build-manager resume /tmp/check-run`; passed gates

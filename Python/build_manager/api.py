@@ -132,7 +132,7 @@ def review_run(output, *, cancelled=None):
     """Verify retained gates/artifacts and return identities, without executing."""
     cancelled = cancelled or Event()
     plan, report = load_run(Path(output) / 'result.json')
-    recover(plan, report, cancelled=cancelled.is_set)
+    recover(plan, report, cancelled=cancelled.is_set, preserve_unknown=True)
     pending = {row['id'] for row in report['phases'] if row['status'] == 'awaiting_review'}
     steps = []
     needed = set()
@@ -150,7 +150,8 @@ def review_run(output, *, cancelled=None):
         change = dict(previous=report['engine'], current=engine,
                       identity=engine_review_identity(report['engine'], engine))
     return dict(**plan_info(plan), status=report['status'], approvals=steps,
-                prerequisites=artifacts, engine_change=change)
+                prerequisites=artifacts, engine_change=change,
+                unresolved_steps=[row['id'] for row in report['phases'] if row['status']=='unknown'])
 
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
@@ -178,7 +179,7 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
         retained, previous = load_run(Path(output) / 'result.json')
         if retained.identity != plan.identity:
             raise ValueError('Retained plan identity changed; preserve the original run.')
-        recover(plan, previous, cancelled=cancelled.is_set)
+        recover(plan, previous, cancelled=cancelled.is_set, preserve_unknown=True)
         pending = {row['id'] for row in previous['phases'] if row['status'] == 'awaiting_review'}
         external = {phase.id for phase in plan.phases if phase.effect in EXTERNAL}
         for step, digest in identities.items():

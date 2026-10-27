@@ -91,6 +91,35 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(panel.safe_plan(plan).phases[-1].approval_required)
         self.assertFalse(effect.exists())
 
+    def test_unknown_device_history_can_review_only_independent_upload(self):
+        from dataclasses import replace
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QTreeWidgetItem
+        import sys
+        result, report, _, effect = self.retained()
+        plan = Plan.load(result.parent / 'plan.json')
+        device = Phase('device', (sys.executable, '-c', 'raise SystemExit(9)'),
+                       str(self.root), effect='deploy')
+        plan = replace(plan, phases=(*plan.phases, device))
+        plan.save(result.parent / 'plan.json')
+        report.update(status='unknown', plan_identity=plan.identity)
+        report['phases'].append(dict(id='device', status='unknown', operation_id='uncertain-device'))
+        result.write_text(json.dumps(report))
+        panel = ManagerPanel(fixtures.OtherProject(self.root))
+        self.addCleanup(panel.close)
+        item = QTreeWidgetItem()
+        item.setData(0, Qt.ItemDataRole.UserRole, str(result))
+        panel.open_history(item, in_tab=True)
+        self.assertTrue(panel.continue_run.isEnabled())
+        self.assertEqual(panel.continue_run.text(), 'Continue independent steps…')
+        with patch.object(panel, 'confirm_continuation', return_value=('upload',)), \
+                patch.object(panel.session, 'launch') as launch:
+            panel.resume_workflow(result)
+            self.wait_review(panel)
+            self.assertEqual([a.step for a in launch.call_args.kwargs['approvals']], ['upload'])
+        self.assertFalse(effect.exists())
+        self.assertEqual(json.loads(result.read_text())['phases'][-1]['operation_id'], 'uncertain-device')
+
     def test_hashing_uses_bounded_shared_streams_and_checks_both_copies(self):
         _, report, artifact, _ = self.retained()
         with patch.object(Path, 'read_bytes', side_effect=AssertionError('whole file allocation')):
