@@ -870,7 +870,7 @@ class FitMapView(QGraphicsView):
         super().__init__()
         self.canvas, self.fit_mode = canvas, True
         self._fitted = None
-        self.orientation = 'best'
+        self.orientation = 'horizontal'
         self._fitting = False
         self.anchor = ''
         scene = QGraphicsScene(self); self.setScene(scene); self.proxy = scene.addWidget(canvas)
@@ -895,8 +895,7 @@ class FitMapView(QGraphicsView):
             self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             self.canvas.adapt_to(self.viewport().size(), self.orientation)
-        self.setAlignment(Qt.AlignmentFlag.AlignHCenter | (
-            Qt.AlignmentFlag.AlignTop if self.canvas.adaptive else Qt.AlignmentFlag.AlignVCenter))
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.canvas.adjustSize()
         rect = self.proxy.boundingRect().adjusted(-4, -4, 4, 4)
         self.setSceneRect(rect)
@@ -960,6 +959,7 @@ def orientation_picker(view):
     control.setAccessibleName('Workflow orientation')
     for label, key in (('Best fit', 'best'), ('Horizontal', 'horizontal'), ('Vertical', 'vertical')):
         control.addItem(label, key)
+    control.setCurrentIndex(control.findData(view.orientation))
     control.currentIndexChanged.connect(lambda _: view.set_orientation(control.currentData()))
     return control
 

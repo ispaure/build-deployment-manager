@@ -119,6 +119,11 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         view.select('build')
         for _ in range(5):
             self.app.processEvents()
+        self.assertEqual(view.orientation.currentData(), 'horizontal')
+        self.assertFalse(view.canvas.vertical)
+        view.orientation.setCurrentIndex(view.orientation.findData('best'))
+        for _ in range(5):
+            self.app.processEvents()
         cards = {key: value[0] for key, value in view.canvas.cards.items()}
         edges = list(view.canvas.edges)
         self.assertTrue(view.canvas.vertical)
@@ -135,6 +140,31 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         self.assertTrue(cards['build'].isChecked())
         for source, target in edges:
             self.assertLess(cards[source].geometry().right(), cards[target].geometry().left())
+
+    def test_proposed_overview_is_centred_in_tall_and_wide_viewports(self):
+        from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
+        from build_manager.workflow_ui import WorkflowFlow
+        plan = ProposedWorkflow((
+            ProposedStep('source', 'Source', 'Current files', section='source'),
+            ProposedStep('test', 'Tests', 'Required checks', ('source',)),
+            ProposedStep('deliver', 'Deliver', 'Review before delivery', ('test',), section='delivery')))
+        view = WorkflowFlow(graph_only=True)
+        self.addCleanup(view.close)
+        view.reset(plan)
+        view.show()
+        for orientation in ('horizontal', 'vertical', 'best'):
+            view.orientation.setCurrentIndex(view.orientation.findData(orientation))
+            for width, height in ((500, 900), (1200, 400)):
+                view.resize(width, height)
+                for _ in range(5):
+                    self.app.processEvents()
+                view.fit_button.click()
+                self.app.processEvents()
+                bounds = view.scroll.mapFromScene(view.scroll.proxy.sceneBoundingRect()).boundingRect()
+                viewport = view.scroll.viewport().rect()
+                self.assertTrue(viewport.contains(bounds), (orientation, bounds, viewport))
+                self.assertAlmostEqual(bounds.center().x(), viewport.center().x(), delta=2)
+                self.assertAlmostEqual(bounds.center().y(), viewport.center().y(), delta=2)
 
     def test_exact_map_orientation_and_fit_contain_the_entire_plan(self):
         from build_manager.workflow_ui import WorkflowFlow
@@ -160,6 +190,9 @@ class ChooseWorkLayoutTests(unittest.TestCase):
             for card, _, _ in view.canvas.cards.values():
                 rect = view.scroll.mapFromScene(view.scroll.proxy.mapRectToScene(QRectF(card.geometry()))).boundingRect()
                 self.assertTrue(view.scroll.viewport().rect().contains(rect), (orientation, rect))
+            view.reset(plan, preview=True)
+            self.assertEqual(view.scroll.orientation, orientation)
+            self.assertEqual(view.orientation.currentData(), orientation)
         view.set_scope({'step-6', 'step-7'})
         self.assertEqual(view.scroll.orientation, 'best')
         self.assertEqual(plan.data(), before)

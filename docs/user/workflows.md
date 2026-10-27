@@ -58,6 +58,10 @@ invented percentage. Waiting cards stay neutral; cards blocked by a failed
 prerequisite are greyed out and remain available for inspection. Status text
 also describes the outcome.
 
+Workflow maps start in Horizontal orientation. Use the orientation selector to
+choose Vertical or Best fit; your choice stays in effect as the view refreshes
+or resizes. Fit keeps the selected orientation.
+
 During a live or retained run, opening a main workflow card shows its relevant
 dependency graph. Selecting a step opens the shared inspector alongside the graph;
 there is no separate run results browser. Details shows state, waiting reasons,
