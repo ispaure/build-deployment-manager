@@ -84,6 +84,12 @@ is in the protected `VM/windows-login.json`, outside Git. Do not share that file
 or the setup ISO. Never attach this automated disk-partitioning seed to another
 guest or a reused installation.
 
+Windows tests run as the signed-in interactive user. A running VM without a
+signed-in session cannot run these checks. If guest tools return an empty failure,
+the manager makes a bounded, read-only session query and reports a missing login
+when confirmed. Sign in to the selected test VM before retrying; the manager does
+not switch the test command to the SYSTEM account.
+
 ## Readiness and testing
 
 Projects that support automatic dedicated-machine selection can fill empty Fedora

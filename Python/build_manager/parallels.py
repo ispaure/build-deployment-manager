@@ -145,6 +145,17 @@ class Parallels:
                                 input=self.powershell_payload(script, values, data), capture_output=True, timeout=timeout)
         if result.returncode:
             detail = Redactor()(result.stderr.decode('utf-8', errors='replace')[-3000:])
+            if result.returncode == 1 and not result.stdout.strip() and not detail.strip():
+                # Guest tools return an empty failure when --current-user has
+                # no interactive session. Diagnose read-only; never execute the
+                # requested script as SYSTEM or retry a possibly applied write.
+                try:
+                    session = subprocess.run([self.executable, 'exec', selector, 'query.exe', 'user'],
+                                             capture_output=True, timeout=min(timeout, 10))
+                    if session.returncode == 1 and b'No User exists' in session.stderr:
+                        detail = 'No interactive Windows user is signed in; sign in to the selected test VM.'
+                except (OSError, subprocess.SubprocessError):
+                    pass  # Preserve the original transport failure if diagnosis is unavailable.
             raise RuntimeError(f'Windows guest command failed ({result.returncode}): ' + detail)
         return result.stdout
 

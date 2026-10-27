@@ -49,6 +49,23 @@ class ParallelsTransportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             client.command('--help', ['true'])
 
+    def test_empty_current_user_failure_diagnoses_signin_without_replaying_script(self):
+        client = Parallels('/fixture/prlctl')
+        failure = subprocess.CompletedProcess([], 1, b'', b'')
+        absent = subprocess.CompletedProcess([], 1, b'', b'No User exists for *\r\n')
+        with patch('build_manager.parallels.subprocess.run', side_effect=[failure, absent]) as execute:
+            with self.assertRaisesRegex(RuntimeError, 'No interactive Windows user'):
+                client.powershell(VM, 'potentially-mutating-script', timeout=30)
+            self.assertEqual(execute.call_count, 2)
+            self.assertEqual(execute.call_args.args[0], ['/fixture/prlctl', 'exec', VM, 'query.exe', 'user'])
+            self.assertEqual(execute.call_args.kwargs['timeout'], 10)
+        for diagnosis in (subprocess.CompletedProcess([], 0, b'active user', b''),
+                          subprocess.TimeoutExpired('query', 10)):
+            with self.subTest(diagnosis=diagnosis), patch(
+                    'build_manager.parallels.subprocess.run', side_effect=[failure, diagnosis]):
+                with self.assertRaisesRegex(RuntimeError, r'failed \(1\): $'):
+                    client.powershell(VM, 'potentially-mutating-script')
+
     def test_selected_guest_is_explicit_and_suspended_vm_is_not_resumed(self):
         client = Parallels('/fixture/prlctl')
         row = dict(uuid=VM, name='Synthetic Linux', status='suspended')
