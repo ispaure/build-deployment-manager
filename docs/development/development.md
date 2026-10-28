@@ -1,5 +1,15 @@
 # Developing the build manager
 
+New here? Read [architecture and terms](architecture.md) for the three-repository
+boundary and the path from a button to a retained result. Then complete the
+harmless example below. You do not need a Logistics checkout, provider account
+or mobile SDK to learn the engine.
+
+For a first change, choose one behavior and follow its source owner in the table.
+Read the owning contract, make the change, run its focused tests, and update the
+matching operator guide. The [validation guide](validation.md) records historical
+acceptance; its test counts are records of those runs, not a current suite total.
+
 Start with [setup](../user/setup.md) to create this checkout's locked environment.
 The manager's source root is `Python`; import `build_manager`, never
 `Python.build_manager`. Its commonUtils submodule is independent of the one in
@@ -9,7 +19,7 @@ the project being built. Keep each project's interpreter and dependency pins.
 
 | Stage | Source owner | Important boundary |
 | --- | --- | --- |
-| Register/inspect/trust a checkout | `registry.py`, `cli.py` | Parse descriptors before executing adapter code; trust is checkout-specific |
+| Register/inspect a trusted checkout | `registry.py`, `cli.py` | Parse descriptors before executing adapter code; trust is checkout-specific |
 | Ask the project for a plan | `bridge.py` | Project interpreter, structured stdin/stdout JSON, no in-process project import |
 | Describe work | `models.py` | Versioned Plan/Phase data, declared effects/dependencies/resources |
 | Execute it | `executor.py`, `resources.py`, `locking.py` | Process ownership, dependency gates, bounded concurrency, cleanup |
@@ -113,6 +123,15 @@ review, retries or troubleshooting. Keep every folder's same-named landing linke
 from its parent. Raw logs, screenshots and timing reports stay under ignored
 `test-results/`; public pages explain reproducible scope instead of linking them.
 
+Write each task guide for a reader with a concrete goal: state prerequisites and
+working directory, show a short sequence, then describe success and likely recovery.
+Define terms before using them. Keep learning examples, task instructions,
+reference and architectural explanation distinct and linked. This follows
+[Diátaxis](https://www.diataxis.fr/start-here/) and
+[Write the Docs](https://www.writethedocs.org/guide/writing/beginners-guide-to-docs/);
+[Google's writing guidance](https://developers.google.com/tech-writing/one/clear-sentences)
+provides useful sentence-level checks.
+
 - [Current refactoring audit](refactoring.md)
 - [Documentation home](../docs.md)
 
@@ -144,3 +163,17 @@ The local changes must be committed and their dependency pins updated together
 before distribution. Portable/offscreen fixtures exercise these paths, including
 synthetic Windows failures; they do not claim new native Windows acceptance.
 Windows process jobs and the existing process shutdown contracts remain separate.
+
+## Results-view composition
+
+`RunView` retains workflow selection, live facts, timers, subtests and coordination.
+`run_inspector_ui.RunInspectorView` renders a selected phase from explicit plan,
+phase, captured facts and state/reason values, and preserves text selection/scroll
+for unchanged detail identity. `run_output_ui.RunOutputView` owns bounded redacted
+output and receives the selected phase, allowed phase keys and retained-log reader.
+Neither view reaches back into its parent panel for hidden state. Retained log
+read errors remain empty-output results, and current selection determines the
+scope after navigation. The dormant nested workflow browser remains disconnected.
+
+See [adapter boundaries and consumer acceptance](adapters.md#boundaries-when-adding-another-project)
+for generic command/source owners and the explicit cross-consumer test plan.

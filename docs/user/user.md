@@ -1,22 +1,24 @@
 # Using the build manager
 
 The manager helps you inspect and run a project's declared test, build and
-delivery workflow. The project defines what those steps mean. Passing tests does
-not automatically upload, install or publish anything.
+delivery workflow. The project defines what those steps mean. Review plan states
+which selected effects Start authorizes and which require later approval.
 
 ## First run: choose the checkout before the operation
 
-Complete [setup](setup.md) and open the platform launcher. Add the project
-checkout. Adding it authorizes its adapter to load settings and prepare work
-without a separate trust prompt. Project code runs in its declared interpreter. If you have
-two checkouts, register them separately so history and settings remain distinct.
+Complete [setup](setup.md) and open the platform launcher. Use **Add your first
+project** or **More → Add project** in a run tab. Choose or paste a trusted project
+folder, inspect its preview, then add it. Adding authorizes its adapter to prepare
+work in the project's declared interpreter. Two checkouts have separate
+registrations, settings and history.
 
-Use Add project at the top of the window. Choose or paste the project folder,
-check its preview, then add it. The manager selects that project and explains the
-next setup step. Project settings contains categories and search; App settings
-controls the manager's appearance. Missing project environments have setup guidance.
-The **?** at the upper right opens the manager's searchable Markdown documentation,
-including this user guide and the developer guide. It stays available during runs.
+**Project settings** edits the selected project's configuration. **More** contains
+manager setup and app settings; **Help** opens the searchable documentation.
+A setup notice explains any missing project environment.
+
+For a first run, choose a local check with no delivery destination. Success means
+the run records passed steps and retained evidence. It does not install an app.
+The [guided UI reference](guided-ui.md) describes tabs and individual controls.
 
 For command-line registration, use the manager environment:
 
@@ -33,10 +35,10 @@ project or its results. Descriptor updates retain access; invalid descriptors an
 
 ## Run a focused check, then broaden it
 
-In Choose work, select Validate and choose supported platforms. Projects with
+In Choose work, select **Run checks** and choose supported platforms. Projects with
 combined workflow support offer several platform checkboxes; older projects show
-one platform per run. Use Advanced operation for a project's suggested workflow
-or specialist platform, operation and backend selection.
+one platform per run. Use **Project operation** for a project's
+specialist operation and backend selection.
 For an everyday code change, select a relevant project-declared suite if one is
 available. The default uses the project's complete declared suite. Advanced
 options include the source revision and focused pattern. A focused pass does
@@ -62,9 +64,11 @@ run inputs, option toggles and build-number overrides. Project defaults remain
 owned by the project; remembered inputs override them for your next run.
 Saved device selections do not prove that a device is currently connected.
 
-Use **Save preset…** to name the current choices within the selected project.
-Choose a saved preset and **Load preset** to restore those choices, or
-**Delete preset** to remove it. Saving with an existing name replaces that preset.
+Use the preset menu's **Save preset** action to name the current choices.
+Selecting a preset restores its choices; **Delete preset** removes it.
+Editing choices marks the preset Modified. Newly introduced options inherit their
+declared defaults without marking an older preset Modified. Saving with an
+existing name replaces that preset.
 Presets belong to each registered checkout. Loading one invalidates the old plan;
 review a new plan before starting. It never restores execution approvals.
 
@@ -99,7 +103,14 @@ Keep the result folder when reporting a problem.
 
 ## Continue a prepared delivery
 
-An integrated workflow may stop at Awaiting review after successful tests/builds.
+Read the authorization scope in Review plan before starting. For a fresh GUI
+plan, Start authorizes selected Firebase/TestFlight uploads and GitHub actions to
+follow their required successful checks and preparation. It does not authorize
+all possible future deliveries. CLI and older saved plans retain their declared
+review requirements. See [execution and review](workflows.md#execution-and-review).
+
+Other effects, including device installs, may stop at Awaiting review after
+successful tests/builds.
 Choose Review and continue delivery. Check the exact source/settings, verified
 artifact identities and destination shown in that dialog. Declining leaves the
 prepared run available. Approval applies to those outputs; changed or missing
@@ -163,3 +174,12 @@ native paths from unavailable platforms.
 
 - [CLI for automation and AI agents](cli.md)
 - [Dedicated Fedora and Windows test machines](virtual-machines.md)
+
+## Build artifacts without delivery
+
+Choose **Build only**, then a supported platform and execution host. Review the
+plan and choose **Start build**. This uses the project’s existing `Build` operation;
+platforms without that operation report an unsupported combination. Build-only
+review accepts build and inspection steps and rejects tests, installation, upload,
+publication and hosted dispatch. Remembered delivery selections are inactive.
+Build-only choices can be saved in a preset like other goals.

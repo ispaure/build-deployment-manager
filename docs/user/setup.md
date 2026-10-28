@@ -1,56 +1,113 @@
-# Setup and launch
+# Set up and launch the manager
 
-Initialize the pinned dependency with `git submodule update --init --recursive`.
-Install Python 3.12.2 and uv, then run `UV_PROJECT_ENVIRONMENT=../.venv uv sync --project Python --locked`
-from the repository root. On PowerShell, set `$env:UV_PROJECT_ENVIRONMENT="../.venv"`
-then run `uv sync --project Python --locked`. The project metadata, lockfile and
-Python version pin live in `Python/`; the shared launchers keep using the root `.venv`.
-The `.venv` belongs to this manager. No project or Blender environment is used
-for manager dependencies. Ordinary setup uses the lockfile and never pulls Git
-or changes a branch. Preserve local submodule changes before initialization.
+Use this guide to open the manager from a Git checkout. You need Git, Python
+3.12.2 and uv, plus internet access for packages not already cached. The GUI
+requires a graphical desktop. Project SDKs and provider accounts are needed only
+for the project operations that use them.
 
-For authorized local Fedora/Windows testing, use the manager's
-[dedicated test machines](virtual-machines.md) controls. Their VM bundles and
-private installation state stay in the ignored checkout-local `VM/` directory.
+Run commands from the **build-deployment-manager repository root**, the folder
+containing this README and the platform launchers. The commands below create the
+manager's root `.venv`; each registered project keeps its own environment.
 
-Use `build-manager` in the activated manager environment for
-[argument-based planning, execution and evidence](cli.md), or invoke
-`.venv/bin/python -m build_manager.cli` directly.
-The existing `.venv/bin/python -m build_manager PLAN --output RESULTS` interface
-remains available for headless plan execution.
-Plans are trusted executable configuration, not incoming documents. Inspect the
-source, commands and destinations first. External effects require `--confirm`.
-On Windows use `.venv\Scripts\python.exe`. An explicit editable installation
-with `python -m pip install --no-deps -e /path/to/manager/Python` supplies the headless
-engine to an existing project interpreter without changing its dependencies.
+## 1. Initialize the shared dependency
 
-Run generic contracts with `.venv/bin/python -m build_manager.contracts`.
+For a fresh checkout, run:
 
-## GUI launchers
+```sh
+git submodule update --init --recursive
+```
 
-Double-click `LaunchBuildManager_MAC.command`, run
-`bash LaunchBuildManager_LINUX.sh`, or use `LaunchBuildManager_WIN.bat`.
-The wrappers delegate runtime/environment setup to pinned commonUtils with
-`launch_config.ini`. They resolve their checkout from their own location, pass
-application arguments separately and return the application's exit code.
-`--smoke-exit --registry PATH` performs a harmless GUI startup/normal-close check.
-Native Linux/Windows acceptance requires permitted real hosts; syntax and portable
-fixtures alone do not establish it. Missing config/submodule diagnostics stop
-before dependency setup. For per-machine launch overrides, set
-`COMMONUTILS_PERSONAL_CONFIG_FILE` to a private INI; see commonUtils' launcher guide.
+This checks out the pinned commonUtils dependency; it is not a command to upgrade
+it to the newest revision. In an existing working copy, preserve any local
+submodule changes before running it. A missing `Python/commonUtils` usually means
+this initialization has not completed.
 
-Execution uses an identifiable Git checkout and initialized commonUtils so results
-can record both revisions and dirty identities. Use editable installation for
-project integration; an installation without those Git identities stops with a
-setup message before executing work. This does not require a manager release or
-self-update service.
+## 2. Install the locked environment
 
-## Local checkout cleanup
+On macOS or Linux:
 
-Python/tool caches and setuptools `build/` output are regenerable. Preserve
-`.venv/` and editable-install `.egg-info/` metadata while using an installed
-checkout. Keep root `Scripts/` paths for computers that call them directly.
-Project-owned build retention belongs to each adapter; the manager provides
-lease, pin and pruning mechanics. Do not sweep `VM/`, credentials, application
-data or `test-results/` as caches. VM installation media, access material and
-ownership receipts support the dedicated guests' recovery lifecycle.
+```sh
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv sync --project Python --locked --python 3.12.2
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = "$PWD/.venv"
+uv sync --project Python --locked --python 3.12.2
+```
+
+The manifest, lockfile and Python version pin live in `Python/`. The explicit
+environment path keeps the installed interpreter at the repository root. Setup
+uses the lockfile; it does not pull Git changes or switch branches.
+
+Check the command-line installation without registering or executing a project:
+
+```sh
+.venv/bin/python -m build_manager.cli --help
+```
+
+On Windows use `.venv\Scripts\python.exe` in place of `.venv/bin/python`.
+Expected result: command help listing registration, planning and run commands.
+If Python cannot import `build_manager`, check the working directory and repeat
+locked setup using this checkout's environment.
+
+## 3. Open the GUI and add a project
+
+| Platform | Launcher in the repository root |
+| --- | --- |
+| macOS | Double-click `LaunchBuildManager_MAC.command` |
+| Linux | Run `bash LaunchBuildManager_LINUX.sh` |
+| Windows | Open `LaunchBuildManager_WIN.bat` |
+
+The wrappers delegate environment setup to pinned commonUtils using
+`launch_config.ini`. They resolve the checkout from their own location and return
+the application's exit status. Missing configuration or shared files stops setup
+with a diagnostic. For private machine-specific launcher overrides, use
+`COMMONUTILS_PERSONAL_CONFIG_FILE` as described in commonUtils' launcher guide.
+
+In the window, use **Add your first project** or **More → Add project**. Choose a
+trusted checkout containing `build-project.json`, inspect the preview and add it.
+Adding it authorizes its adapter to prepare work in its own interpreter. A project
+with a missing environment shows setup guidance; installing its packages in the
+manager environment will not repair it.
+
+You should now see the selected project's work choices. Continue with
+[your first workflow](user.md) or the [control reference](guided-ui.md).
+
+## Command-line use and development
+
+Use `.venv/bin/build-manager` on macOS/Linux, or activate the manager environment
+and use `build-manager`. `python -m build_manager.cli` exposes the same interface
+when `python` is this installed interpreter. See the [CLI guide](cli.md).
+The older `python -m build_manager PLAN --output RESULTS` interface executes an
+already prepared plan. Plans contain executable commands: inspect the source,
+commands and destinations before running one. External effects need confirmation.
+
+For development, start with the [harmless plan example](../development/development.md#run-a-harmless-plan-before-changing-an-adapter).
+The full generic suite is `.venv/bin/python -m build_manager.contracts`; it
+includes GUI contracts and uses `QT_QPA_PLATFORM=offscreen` on headless hosts.
+Execution requires manager and submodule Git identities so results can record
+revisions and local edits. An archive without those identities is insufficient.
+
+A consumer can explicitly install this reviewed engine in its existing interpreter
+with `python -m pip install --no-deps -e /path/to/manager/Python`. This preserves
+that consumer's dependency policy; it is separate from manager GUI setup.
+
+## Troubleshooting and local files
+
+| Symptom | Check |
+| --- | --- |
+| `uv` or Python unavailable | Install the prerequisites, then rerun locked setup |
+| Missing shared launcher or commonUtils | Check submodule initialization; do not point at an unrelated checkout |
+| Project interpreter unavailable | Follow that project's setup instructions |
+| Native backend unavailable | Read [host requirements](hosts.md); a portable test pass cannot make a backend available |
+
+Manager preferences and registrations live outside the checkout; see
+[stored settings](user.md#remember-choices-and-save-run-presets). Preserve `.venv/`
+and editable-install `.egg-info/` metadata while using the installed checkout.
+Build retention belongs to project policy, using manager lease/pin mechanisms.
+Do not sweep `VM/`, credentials, application data or `test-results/` as caches.
+Dedicated [test machines](virtual-machines.md) have a separate authorized lifecycle.
+
+[User guide](user.md)

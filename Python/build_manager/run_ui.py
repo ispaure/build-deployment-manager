@@ -1,6 +1,5 @@
 """Qt-only workflow board shared by live execution and retained results."""
 import time
-from collections import deque
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -80,7 +79,6 @@ class RunView(QWidget):
         self.cancelling = False
         self.selected = ''
         self.pending_refresh = self.pending_tests = False
-        self.output_lines = deque(maxlen=6000)
         self.phase_log_reader = None
         self.review_available = False
         layout = QVBoxLayout(self)
@@ -149,15 +147,11 @@ class RunView(QWidget):
         self.inspector = inspector
         inspector_layout = QVBoxLayout(inspector)
         inspector_layout.setContentsMargins(4, 0, 0, 0)
-        self.selection_heading = QLabel('Whole workflow')
-        self.selection_heading.setTextFormat(Qt.TextFormat.PlainText)
-        self.selection_heading.setWordWrap(True)
-        self.selection_heading.setStyleSheet('font-weight: 600; font-size: 14pt;')
-        self.selection_info = QLabel('Select a workflow card to inspect its progress, tests, timing and output.')
-        self.selection_info.setTextFormat(Qt.TextFormat.PlainText)
-        self.selection_info.setWordWrap(True)
-        inspector_layout.addWidget(self.selection_heading)
-        inspector_layout.addWidget(self.selection_info)
+        from .run_inspector_ui import RunInspectorView
+        self.step_inspector = RunInspectorView(inspector)
+        self.selection_heading = self.step_inspector.selection_heading
+        self.selection_info = self.step_inspector.selection_info
+        inspector_layout.addWidget(self.step_inspector)
         self.substeps = QTreeWidget()
         self.substeps.setHeaderLabels(['Task / test', 'State', 'Time'])
         self.substeps.setAccessibleName('Expand the selected execution step to inspect reported tests')
@@ -229,9 +223,7 @@ class RunView(QWidget):
             totals.addWidget(card)
         results_layout.addLayout(totals)
         results_layout.addWidget(self.result_counts)
-        self.next_action = QLabel()
-        self.next_action.setWordWrap(True)
-        self.next_action.setTextFormat(Qt.TextFormat.PlainText)
+        self.next_action = self.step_inspector.next_action
         results_layout.addWidget(self.next_action)
         result_actions = QHBoxLayout()
         problems = self.problems_button = QPushButton('Show failed tests')
@@ -257,9 +249,7 @@ class RunView(QWidget):
         # The graph is the step browser; this hidden model tracks evidence selection.
         self.steps.setParent(steps)
         self.steps.hide()
-        self.detail = QPlainTextEdit()
-        self.detail.setReadOnly(True)
-        self.detail.setAccessibleName('Selected step details and evidence')
+        self.detail = self.step_inspector.detail
         step_layout.addWidget(self.detail, 1)
         self.tabs.addTab(steps, 'Details')
         tests = QWidget()
@@ -315,16 +305,10 @@ class RunView(QWidget):
         note.setWordWrap(True)
         timing_layout.addWidget(note)
         self.tabs.addTab(timing, 'Timing')
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(6000)
-        self.log.setAccessibleName('Live redacted execution output')
-        log_page = QWidget()
-        log_layout = QVBoxLayout(log_page)
-        self.log_notice = QLabel('Output for the whole workflow.')
-        self.log_notice.setWordWrap(True)
-        log_layout.addWidget(self.log_notice)
-        log_layout.addWidget(self.log)
+        from .run_output_ui import RunOutputView
+        self.output = RunOutputView(self)
+        self.log, self.log_notice = self.output.log, self.output.notice
+        log_page = self.output
         self.tabs.addTab(log_page, 'Output')
         self.tabs.addTab(self.delivery_page, 'Files and deliveries')
         # The same persistent overview/task/detail workspace owns review and run.
@@ -390,20 +374,7 @@ class RunView(QWidget):
             not self.delivered.topLevelItem(index).isHidden() for index in range(self.delivered.topLevelItemCount())))
 
     def set_detail_text(self, text, key):
-        if self.detail.toPlainText() != text:
-            cursor = self.detail.textCursor()
-            position, anchor = cursor.position(), cursor.anchor()
-            bar = self.detail.verticalScrollBar()
-            offset = bar.value()
-            same = getattr(self, 'detail_key', None) == key
-            self.detail.setPlainText(text)
-            if same:
-                last = self.detail.document().characterCount() - 1
-                cursor.setPosition(min(anchor, last))
-                cursor.setPosition(min(position, last), cursor.MoveMode.KeepAnchor)
-                self.detail.setTextCursor(cursor)
-                bar.setValue(offset)
-        self.detail_key = key
+        self.step_inspector.set_detail_text(text, key)
 
     def inspect_summary_phase(self, key):
         tab = self.tabs.currentWidget()
@@ -548,74 +519,27 @@ class RunView(QWidget):
         if not self.selected:
             grouped = self.run_choices.flow
             in_group = grouped.has_group_scope()
-            self.selection_heading.setText(grouped.heading.text() if in_group else 'Whole workflow')
-            self.selection_info.setText('Select a step to inspect its status, tests, timing and output.' if in_group else
+            information = ('Select a step to inspect its status, tests, timing and output.' if in_group else
                 'Open a workflow card to inspect its steps, tests, timing and output.')
-            self.set_detail_text(grouped.group_context() if in_group else self.selection_info.text(), '')
+            self.step_inspector.show_group(grouped.heading.text() if in_group else 'Whole workflow',
+                information, grouped.group_context() if in_group else information)
             return
-        from .workflow_ui import title, effect_label
         phase = self.phases[self.selected]
-        fact = self.facts.get(self.selected, {})
         state, reason = self.flow.canvas.states.get(self.selected, ('queued', ''))
-        self.selection_heading.setText(title(phase))
-        dependencies = ', '.join(title(self.phases[key]) for key in phase.dependencies) or 'None'
-        from .workflow_ui import state_label, step_time
-        text = f'{effect_label(phase, self.plan)} · {state_label(state)}\nPrerequisites: {dependencies}'
-        if reason:
-            text += '\n' + reason
-        elapsed = step_time(self.live_facts().get(self.selected, fact), state)
-        if elapsed:
-            text += '\n' + ('Running for: ' if state == 'running' else 'Step duration: ') + elapsed
-        if getattr(phase, 'waits_for', ()):
-            text += '\nWaits for completion (success not required): ' + ', '.join(phase.waits_for)
-        if phase.resources:
-            from .resources import resource_details
-            text += '\n' + '\n'.join(resource_details(self.plan, self.selected))
-        for row in getattr(self.plan, 'journey', {}).get('destinations', {}).values():
-            if self.selected in row['steps']:
-                text += '\nDestination: ' + row['identity']
-        self.selection_info.setText(text)
-        if state in {'blocked', 'skipped'}:
-            self.next_action.setText('This step will not run. ' + reason + '\nSelect its prerequisite cards to inspect the cause.')
-        elif state == 'waiting_resource':
-            self.next_action.setText(reason + '\nOther independent platform steps can continue.')
-        elif state == 'retrying':
-            self.next_action.setText('Waiting to reconnect automatically. Other work continues; completed tests and prepared builds are retained. Stop cancels the wait.')
-        elif state == 'running':
-            self.next_action.setText('This step is running. Reports appear after capture; Output shows its current messages.')
-        elif state == 'passed':
-            self.next_action.setText('This step passed. Results and timing below belong to this card. Other branches may still be running.')
-        elif state in {'failed', 'error', 'timeout'}:
-            self.next_action.setText('This step failed. Inspect Tests for failures or Details and Output for the reason.')
-        elif state == 'awaiting_review':
-            self.next_action.setText('This step needs your approval. Use Review and continue below the workflow to inspect the exact action before it starts.')
-        elif state == 'unknown':
-            self.next_action.setText('This step has an unknown outcome. Check its provider status before retrying; it will not repeat automatically.')
-        else:
-            self.next_action.setText(reason or 'This step has not produced a report. Inspect Details for its current state.')
+        self.step_inspector.show_phase(self.plan, phase,
+            self.live_facts().get(self.selected, {}), state, reason, self.phases)
         self.show_detail(self.rows.get(self.selected))
 
     def append_output(self, phase, text):
-        for line in text.splitlines():
-            self.output_lines.append((phase, line))
-            if phase in self.scoped_facts() or phase is None and not self.selected:
-                self.log.appendPlainText(('[' + phase + '] ' if phase and not self.selected else '') + line)
+        self.output.append(phase, text, selected=self.selected, keys=self.scoped_facts())
 
     def set_output(self, text):
-        self.output_lines.clear()
+        self.output.reset()
         self.append_output(None, text)
         self.refresh_output()
 
     def refresh_output(self):
-        lines = [('[' + key + '] ' if key and not self.selected else '') + text
-                 for key, text in self.output_lines if key in self.scoped_facts() or key is None and not self.selected]
-        self.log_notice.setText('Output for the selected step.' if self.selected else 'Output for steps in this card, with runner messages.')
-        if self.selected and not lines and self.phase_log_reader:
-            try:
-                lines = [self.phase_log_reader(self.selected)]
-            except (OSError, ValueError):
-                lines = []
-        self.log.setPlainText('\n'.join(lines) if any(lines) else 'No captured output for this selection yet. Retained log paths appear in Details.')
+        self.output.show_scope(selected=self.selected, keys=self.scoped_facts(), reader=self.phase_log_reader)
 
     def show_problem_tests(self):
         self.filter.setCurrentText('Problems')
@@ -710,12 +634,12 @@ class RunView(QWidget):
         self.pages.setCurrentIndex(0)
         self.delivered.clear()
         self.delivery_signature = None
-        self.output_lines.clear()
+        self.output.reset()
         self.flow.reset(plan)
         self.flow.hide()
         self.inspector.hide()
         self.rows, self.facts, self.started = {}, {}, {}
-        self.detail_key = None
+        self.step_inspector.detail_key = None
         self.external_dependency_keys = None
         self.phases = {phase.id: phase for phase in plan.phases}
         from .plan_summary import captured_choices

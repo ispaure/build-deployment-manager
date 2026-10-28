@@ -48,11 +48,12 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
     if not revision.strip():
         messages.append('Choose a commit, branch or tag in Source.')
         blockers.append(ChoiceBlocker('source', 'Choose source…', 'source'))
-    if goal == 'advanced' or not capability:
-        nodes.append(ProposedStep('operation', operation or 'Choose an operation',
+    if goal in {'advanced', 'build'} or not capability:
+        nodes.append(ProposedStep('operation', 'Build only' if goal == 'build' else operation or 'Choose an operation',
             ' · '.join(filter(None, (platform, backend))), ('source',), 'platforms',
             platforms=(platform,), backend=backend))
-        messages.append('This project defines the operation’s internal steps and effects during Review.')
+        messages.append('Prepare build artifacts without running tests or delivery actions.' if goal == 'build' else
+                        'This project defines the operation’s internal steps and effects during Review.')
         return ProposedWorkflow(tuple(nodes), tuple(messages), blockers=tuple(blockers))
     checks = []
     source_requirements = {}

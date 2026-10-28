@@ -91,6 +91,7 @@ class ConfigurationView(QWidget):
         self.goal = QComboBox(self)
         self.goal.setAccessibleName('What would you like to do?')
         self.goal.addItem('Validate — run checks only', 'validate')
+        self.goal.addItem('Build only — prepare artifacts', 'build')
         self.goal.addItem('Validate and deliver', 'deliver')
         self.goal.addItem('Advanced operation — project workflow or single operation', 'advanced')
         # The combo remains the selection model for persisted/legacy requests.
@@ -102,7 +103,7 @@ class ConfigurationView(QWidget):
         self.goal_row = QHBoxLayout()
         self.goal_group = QButtonGroup(self)
         self.goal_buttons = {}
-        for value, text in (('validate', 'Run checks'), ('deliver', 'Prepare and deliver'), ('advanced', 'Project operation…')):
+        for value, text in (('validate', 'Run checks'), ('build', 'Build only'), ('deliver', 'Prepare and deliver'), ('advanced', 'Project operation…')):
             button = QToolButton() if value == 'advanced' else QPushButton()
             button.setText(text)
             button.setAccessibleName(text)
@@ -362,7 +363,7 @@ class ConfigurationView(QWidget):
 
     def choose_goal(self, value):
         self.goal.setCurrentIndex(self.goal.findData(value))
-        if value == 'advanced':
+        if value in {'advanced', 'build'}:
             self.open_section('platforms')
 
     def choose_source(self, *_):
@@ -410,12 +411,12 @@ class ConfigurationView(QWidget):
 
     def update_mode(self, *_):
         self.goal_buttons[self.goal.currentData()].setChecked(True)
-        integrated = bool(self.platform_checks) and self.goal.currentData() != 'advanced'
-        self.guided.setVisible(self.goal.currentData() != 'advanced')
+        integrated = bool(self.platform_checks) and self.goal.currentData() in {'validate', 'deliver'}
+        self.guided.setVisible(self.goal.currentData() in {'validate', 'deliver'})
         self.legacy.setVisible(not integrated)
         for control in (self.preset, self.preset_note, self.restore_preset, self.operation):
             self.legacy_form.setRowVisible(control, self.goal.currentData() == 'advanced')
-        self.sections['validation'].setVisible(self.goal.currentData() != 'advanced' and bool(self.platform_checks))
+        self.sections['validation'].setVisible(self.goal.currentData() in {'validate', 'deliver'} and bool(self.platform_checks))
         self.sections['delivery'].setVisible(self.goal.currentData() == 'deliver')
         self.config_tabs.setTabEnabled(self.config_tabs.indexOf(self.config_pages['delivery']), self.goal.currentData() == 'deliver')
         for target, location in self.platform_backends.items():
@@ -424,7 +425,7 @@ class ConfigurationView(QWidget):
             options.setVisible(self.goal.currentData() == 'deliver' and self.destination_checks[name].isChecked())
         for control in self.destination_checks.values():
             control.setEnabled(self.goal.currentData() == 'deliver')
-        field_body = self.sections['advanced' if self.goal.currentData() == 'advanced' else 'delivery'].body
+        field_body = self.sections['advanced' if self.goal.currentData() in {'advanced', 'build'} else 'delivery'].body
         if self.goal.currentData() == 'deliver':
             categories = {self.destination_categories[name] for row in self.run_fields.fields
                 if len(row.get('destinations', [])) > 1 for name in row['destinations']
@@ -434,6 +435,9 @@ class ConfigurationView(QWidget):
         field_body.insertWidget(max(0, field_body.count() - 1), self.run_fields)
         self.run_fields.update_context(self.goal.currentData(),
             [name for name, control in self.destination_checks.items() if control.isChecked()], self.operation.currentText())
+        self.legacy_form.setRowVisible(self.suite, self.goal.currentData() != 'build')
+        for control in self.run_controls.values():
+            self.legacy_form.setRowVisible(control, self.goal.currentData() != 'build')
         self.update_summary()
 
     def update_summary(self, *_):
@@ -496,7 +500,7 @@ class ConfigurationView(QWidget):
             self.proposed_flow.set_facts({})
 
     def refresh_section_tabs(self, proposal):
-        guided = bool(self.platform_checks) and self.goal.currentData() != 'advanced'
+        guided = bool(self.platform_checks) and self.goal.currentData() in {'validate', 'deliver'}
         platforms = [control.text() for control in self.platform_checks.values() if control.isChecked()] if guided else [self.platform.currentText()]
         destinations = [control.text() for control in self.destination_checks.values() if control.isChecked()] if self.goal.currentData() == 'deliver' else []
         revision = self.revision.text()
@@ -613,11 +617,11 @@ class ConfigurationView(QWidget):
     def choices(self):
         return dict(build_override=self.build_override.value(),
             run_options={name: control.isChecked() for name, control in self.run_controls.items()},
-            run_overrides=self.run_fields.saved_values(), suite=self.suite.currentData() or '', goal=self.goal.currentData(),
+            run_overrides=self.run_fields.saved_values(), suite='' if self.goal.currentData() == 'build' else self.suite.currentData() or '', goal=self.goal.currentData(),
             platform_backends={name: control.currentText() for name, control in self.platform_backends.items()},
             selected_platforms=[name for name, control in self.platform_checks.items() if control.isChecked()],
             selected_destinations=[name for name, control in self.destination_checks.items() if control.isChecked()], **{
-            name: getattr(self, name).currentText() if name in ('operation', 'platform', 'backend')
+            name: 'Build' if name == 'operation' and self.goal.currentData() == 'build' else getattr(self, name).currentText() if name in ('operation', 'platform', 'backend')
             else getattr(self, name).text()
             for name in ('operation', 'platform', 'backend', 'revision', 'pattern', 'release_tag')})
 

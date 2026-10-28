@@ -5,6 +5,10 @@ Use `build-manager` from the manager environment after [setup](setup.md).
 argument list when launching it from code. Each project keeps its own interpreter,
 operation names, suites, release rules and destinations.
 
+If you have not activated the environment, substitute `.venv/bin/build-manager`
+for `build-manager` on macOS/Linux, or `.venv\Scripts\build-manager.exe` on Windows.
+Start with `build-manager --help`; this prints help without loading an adapter.
+
 The normal loop is **discover → prepare → inspect → run → inspect failures**.
 The manager owns process supervision, logs, dependency gates, cleanup and recovery,
 so a caller does not need to reconstruct commands or parse entire build logs.
@@ -76,6 +80,11 @@ The JSON contains either advanced `operation`, `platform`, `backend` and optiona
 protected references. Existing names need `--replace`. Presets are project scoped;
 saved names take precedence over same-named descriptor suggestions. These commands
 do not change the currently selected GUI form or other projects' presets.
+
+The GUI's Build-only preset goal is not currently accepted by CLI preset
+preparation. For command-line build-only work, discover the project's `Build`
+operation and prepare it explicitly with `plan --operation Build` and the declared
+target/backend. Inspect that plan's effects before running it.
 
 ## Prepare and run
 

@@ -9,6 +9,13 @@ from commonUtils.runtime.operations import check_cancelled
 EXTERNAL={'deploy','upload','publish','dispatch'}
 
 
+def require_build_only(plan):
+    """Admit only artifact preparation and inspection for the explicit build goal."""
+    effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
+    if 'build' not in effects or effects - {'build', 'inspect'}:
+        raise ValueError('Build only requires build steps and permits inspection only; tests and delivery actions are excluded.')
+
+
 def start_authorized_effects(plan):
     """Bind fresh GUI review to selected deliveries/hosted checks, never history."""
     from dataclasses import replace

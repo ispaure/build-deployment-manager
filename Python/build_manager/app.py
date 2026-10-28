@@ -345,11 +345,15 @@ class ManagerWindow(QWidget):
             return choices
         def matches_preset(name):
             choices = snapshot()
-            saved = presets[name]
+            saved = dict(presets[name])
+            saved.setdefault('run_overrides', {})
+            inherited_options = {row['id']: row.get('default', '') for row in panel.run_fields.fields
+                                 if row.get('workflow_option') and row['id'] not in saved.get('run_overrides', {})}
             # Fields added after a preset was saved still inherit project defaults.
             # They only change that preset's choices when explicitly overridden.
             choices['run_overrides'] = {key: value for key, value in choices['run_overrides'].items()
-                if key in saved.get('run_overrides', {}) or key in panel.run_fields.edited}
+                if key in saved.get('run_overrides', {}) or (key in panel.run_fields.edited
+                    and (key not in inherited_options or value != inherited_options[key]))}
             # Older and CLI-authored presets can omit controls that inherit
             # defaults. Compare their declared choices, including only declared
             # backend/option entries when the project has gained new controls.

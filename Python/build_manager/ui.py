@@ -330,6 +330,10 @@ class ManagerPanel(QWidget):
         self.update_run_actions()
 
     def goal_changed(self, *_):
+        if self.goal.currentData() == 'build':
+            if self.operation.findText('Build') < 0:
+                self.operation.addItem('Build')
+            self.operation.setCurrentText('Build')
         if self.goal.currentData() == 'validate' and not self.platform_checks:
             checks = next((name for name in ('Test', 'Check') if name in self.project.operations), None)
             if checks:
@@ -428,7 +432,7 @@ class ManagerPanel(QWidget):
             self.plan_feedback.setText('Choices changed. Choose Next: review plan to check them before starting.')
             self.plan_feedback.hide()
             self.preparation_error_section.hide()
-        if not self.applying_preset and self.platform_checks and self.goal.currentData() != 'advanced':
+        if not self.applying_preset and self.platform_checks and self.goal.currentData() in {'validate', 'deliver'}:
             from .journeys import request
             try:
                 request(self.project.journey_capability, self.goal.currentData(),
@@ -528,7 +532,7 @@ class ManagerPanel(QWidget):
         if self.run_fields.values():
             choices['run_overrides'] = self.run_fields.values()
         goal = self.goal.currentData()
-        integrated = bool(self.platform_checks) and goal != 'advanced'
+        integrated = bool(self.platform_checks) and goal in {'validate', 'deliver'}
         if integrated:
             from .journeys import request
             targets = [name for name, control in self.platform_checks.items() if control.isChecked()]
@@ -547,6 +551,12 @@ class ManagerPanel(QWidget):
                 integrated_choices['run_overrides'] = choices['run_overrides']
             prepare = partial(self.project.make_journey, goal, targets, destinations, **integrated_choices)
         else:
+            if goal == 'build':
+                operation = 'Build'
+                choices.pop('suite', None)
+                choices['pattern'] = ''
+                for name in self.run_controls:
+                    choices.pop(name, None)
             operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(platform)
             if operation not in operations or backend not in self.project.backend_options(platform, operation):
                 self.preparation_message('This platform, operation and execution host do not work together. Your choices are retained; choose a supported combination explicitly.')
@@ -601,7 +611,14 @@ class ManagerPanel(QWidget):
         if self.selection_revision != self.preparation_revision:
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
             return
-        from .workflows import start_authorized_effects
+        from .workflows import start_authorized_effects, require_build_only
+        if self.goal.currentData() == 'build':
+            try:
+                require_build_only(plan)
+            except ValueError as error:
+                self.plan = None
+                self.preparation_message(str(error))
+                return
         plan = start_authorized_effects(plan)
         self.plan = plan
         if not self.preparing_verification and self.goal.currentData() == 'validate':
@@ -617,6 +634,7 @@ class ManagerPanel(QWidget):
         self.start.setEnabled(True)
         effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
         self.start.setText('Start reviewed workflow' if plan.journey and plan.journey['goal'] == 'deliver'
+                           else 'Start build' if self.goal.currentData() == 'build'
                            else 'Start validation' if self.goal.currentData() == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
         self.status.clear()

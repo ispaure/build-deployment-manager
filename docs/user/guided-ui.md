@@ -38,7 +38,8 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 ## Choose work
 
-Run checks and Prepare and deliver are visible, exclusive goal buttons.
+Run checks, Build only and Prepare and deliver are visible, exclusive goal buttons.
+Build only selects a supported Build operation without tests or delivery.
 Project operation opens the project operation controls. The Source, Test,
 Delivery and Options tab buttons sit above the settings pane; click one to
 open its choices. Delivery categories are Tester, Development, Store and Source.
@@ -60,6 +61,8 @@ choices; switching back restores their visibility.
 Presets appears only in Choose work. Selecting a preset loads its saved choices
 and invalidates any previous review; it never starts work. The adjacent menu
 contains Save preset and Delete preset. Edits mark the selected preset Modified.
+New workflow options inherit their declared defaults without marking an older
+preset Modified; changing an inherited option away from its default does.
 Saving a preset keeps the current choices and review; deleting one leaves the
 current draft intact. Presets remain private to the selected checkout. On reopening the app, choices
 that exactly match a saved preset re-select its name without reapplying it.
@@ -125,7 +128,7 @@ as a warning before the checkout has been inspected.
 The integrated contract currently requires selected validation;
 the UI shows that requirement rather than offering unsupported bypass controls.
 
-Choose Validate for checks only, or Validate and deliver for checks, preparation
+Choose **Run checks** for checks only, or **Prepare and deliver** for checks, preparation
 and reviewed delivery. Projects declaring the [journey contract](../development/journey-contract.md)
 offer platform checkboxes and independent destination choices. Selecting a
 destination expands its description, notes and recipient inputs directly below
@@ -135,9 +138,9 @@ appear once in the shared run options. Advanced operations keep their own inputs
 platform does not block its delivery review. Conflicting choices stay
 selected with an explanation; add the required platform or remove the destination.
 
-Older projects retain single-platform validation and Advanced operation, where
+Older projects retain single-platform validation and **Project operation**, where
 their suggested workflows, operation, platform and execution backend are available.
-Selecting a suggested workflow explicitly opens Advanced operation. Changes keep
+Selecting a suggested workflow explicitly opens Project operation. Changes keep
 its name with a Modified notice; Restore suggested workflow reapplies its declared
 values. No execution host is substituted silently. Applicable named test suites
 remain available for single-platform operations. Integrated journeys use the
@@ -200,8 +203,9 @@ availability. Preparing a suggestion does not create or reserve a remote tag.
 
 ## Review and results
 
-Live and retained runs open on the main workflow cards. Open a card to see its
-execution dependency graph, then select a step for evidence alongside the graph.
+Live and retained runs keep the main workflow cards visible. Select a card to
+filter the persistent task list and inspector beside it, then select a step for
+evidence. Card selection does not open a nested dependency-card browser.
 The inspector's Files and deliveries tab lists relevant destination outcomes and
 retained output paths. A successful run preserves your current view; partial
 delivery and unknown outcomes remain separate.

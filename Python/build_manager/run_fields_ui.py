@@ -143,7 +143,7 @@ class RunFieldsView(QWidget):
         for row in self.fields:
             active=(row.get('workflow_option', False)
                     or goal=='deliver' and bool(set(row.get('destinations',[])) & set(destinations))
-                    or goal=='advanced' and operation in row.get('operations',[]))
+                    or goal in {'advanced', 'build'} and operation in row.get('operations',[]))
             name = row['id']
             destination = row.get('destinations', [])
             target = (self.destination_forms.get(destination[0], self.form)

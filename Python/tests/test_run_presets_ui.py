@@ -192,3 +192,34 @@ class RunPresetTests(unittest.TestCase):
                 finally:
                     window.close()
                     self.app.processEvents()
+
+    def test_sparse_preset_inherits_new_workflow_option_without_modified_label(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'build-project.json').write_text(json.dumps(dict(schema=1, adapter_api=1,
+                project_id='example', name='Example', interpreter='.venv/bin/python', bridge='bridge.py',
+                capabilities=dict(platforms=['android'], operations=['Test']))))
+            registry = Registry(root / 'private')
+            key = registry.add(root)
+            registry.save_preset(key, 'Older', dict(goal='deliver', revision='HEAD',
+                selected_platforms=['android'], selected_destinations=['phones']))
+            def bridge(store, selected):
+                project = test_recipient_ui.RecipientUITests.project(self, root)
+                project.row = store.read()['projects'][selected]
+                project.run_fields.append(dict(id='reuse', label='Reuse', kind='choice',
+                    options={'on': 'On', 'off': 'Off'}, default='on', workflow_option=True))
+                return project
+            with patch('build_manager.app.ProjectBridge', side_effect=bridge):
+                window = ManagerWindow(registry)
+                try:
+                    window.saved_presets.setCurrentIndex(window.saved_presets.findData('Older'))
+                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
+                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    control = window.panel.run_fields.controls['reuse']
+                    control.setText('off')
+                    self.assertIn('Modified', window.saved_presets.currentText())
+                    control.setText('on')
+                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                finally:
+                    window.close()
+                    self.app.processEvents()

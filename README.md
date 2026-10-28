@@ -7,8 +7,9 @@ Start with the [documentation wiki](docs/docs.md), [setup](docs/user/setup.md), 
 submodule are required. The headless engine has no Qt dependency; the local GUI
 environment is locked separately. Projects retain their own environments.
 
-Use the platform launcher to open the GUI, register a checkout and explicitly
-trust its project adapter. Named workflows capture source/settings, retain results,
+Use the platform launcher to open the GUI and register a trusted project checkout.
+Adding it authorizes its adapter to run in that project's interpreter.
+Named workflows capture source/settings, retain results,
 pause for artifact review and support safe restart. Resource declarations bound
 parallel work. See [workflow recovery](docs/user/workflows.md) and
 [current validation scope](docs/development/validation.md).

@@ -1,5 +1,12 @@
 # Validation scope and remaining acceptance
 
+This page records dated validation work. A passing count below applies to its
+recorded source and environment, not every later working-tree change. Start with
+[developer checks](development.md#select-validation-by-behavior) to validate your
+own change, and [host requirements](../user/hosts.md) to determine availability.
+Portable/offscreen fixtures, native desktop checks and real provider/device
+acceptance establish different things; report which you actually ran.
+
 ## October 26 completion, activity, history and journey passes
 
 Five separately committed passes cover completion/results, active execution,

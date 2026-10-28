@@ -617,15 +617,17 @@ class FlowCanvas(QWidget):
                 'failed' if status in FAILED - {'skipped'} else
                 'muted' if status in {'blocked', 'skipped'} else
                 'awaiting_review' if status == 'needs_selection' else status)
+        # Teal-green and orange-red separate along the blue/yellow axis too,
+        # making outcomes easier to distinguish with deuteranopia.
         colors = ({
-            'passed': ('#1e4431', '#d0f2dc', '#5aab79'),
-            'failed': ('#542c32', '#ffdce0', '#cf7885'),
+            'passed': ('#164b46', '#d0f5ed', '#58b8a8'),
+            'failed': ('#542d22', '#ffe0d1', '#df8a64'),
             'running': ('#1d3c5a', '#d5e9ff', '#75ace0'),
             'awaiting_review': ('#4c3d20', '#ffebbb', '#c7a055'),
             'muted': ('#292d33', '#a5acb6', '#646b75'),
         } if dark else {
-            'passed': ('#dff2e4', '#173d24', '#609771'),
-            'failed': ('#f8dede', '#632020', '#b76f6f'),
+            'passed': ('#d4f2eb', '#12483e', '#398779'),
+            'failed': ('#f8dfd0', '#672b18', '#ba6845'),
             'running': ('#deecfb', '#163e69', '#4d86bd'),
             'awaiting_review': ('#fff0cf', '#604500', '#b58a2e'),
             'muted': ('#eceef1', '#626262', '#a0a6ae'),
@@ -1458,7 +1460,7 @@ class WorkflowFlow(QWidget):
         self.views.addWidget(self.browser if self.browser is not None else QWidget())
         self.views.addWidget(self.scroll)
         layout.addWidget(self.views, 1)
-        self.legend = legend = QLabel('Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
+        self.legend = legend = QLabel('Blue: running · Teal-green: passed · Orange-red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
         legend.setWordWrap(True)
         layout.addWidget(legend)
         self.canvas.selected.connect(self.select)
@@ -1517,7 +1519,7 @@ class WorkflowFlow(QWidget):
         elif self.views.currentIndex() == 0:
             self.legend.setText('Statuses reflect execution. Select a step to inspect results, approval requirements or blockers.')
         else:
-            self.legend.setText('Blue: running · Green: passed · Red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
+            self.legend.setText('Blue: running · Teal-green: passed · Orange-red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
         if self.views.currentIndex() == 1 and self.canvas.order_edges:
             self.legend.setText(self.legend.text() + '\nDotted arrows: wait for completion, not success.')
         if self.views.currentIndex() == 0:

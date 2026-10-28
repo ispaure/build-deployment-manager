@@ -1,5 +1,23 @@
 # Workflows, review and recovery
 
+Use this guide when a workflow pauses or does not finish as expected. A saved
+preset restores choices; resuming a retained run reuses verified work from that
+run. Preparing a new plan captures source and settings again.
+
+## Choose the next action
+
+| Recorded state | What it means | Next action |
+| --- | --- | --- |
+| Awaiting review | An eligible effect needs approval | Inspect the exact prepared files and destination, then continue if intended |
+| Waiting to reconnect | A declared pre-install availability check cannot reach its selected device | Reconnect that device or stop; the wait can retry without reinstalling |
+| Failed check | A required gate did not pass | Read its test/log evidence, fix the cause and prepare again for changed source |
+| Unknown outcome | An external action may have completed | Reconcile its provider/device outcome before retrying |
+| Missing or changed artifact | Retained bytes no longer match the recorded identity | Recover the exact output or prepare a new run |
+| Cancelled | Some work may already have finished | Read per-step outcomes before deciding what to resume |
+
+Keep the original result directory. A disconnected network does not prove an
+upload failed, and cancellation does not undo completed deliveries.
+
 ## Waiting for a device
 
 Adapters can declare a separate connection check before installation. A temporary
@@ -71,14 +89,13 @@ Workflow maps start in Horizontal orientation. Use the orientation selector to
 choose Vertical or Best fit; your choice stays in effect as the view refreshes
 or resizes. Fit keeps the selected orientation.
 
-During a live or retained run, opening a main workflow card shows its relevant
-dependency graph. Selecting a step opens the shared inspector alongside the graph;
-there is no separate run results browser. Details shows state, waiting reasons,
-errors and captured context. Tests, Timing, Output and Files and deliveries stay
-scoped to that step; All steps in this card shows the card's combined evidence.
-All workflow cards returns to the main overview. View problems opens the failing
-step and selects its first reported test problem. External prerequisites and
-failed blockers link to their own cards.
+During a live or retained run, selecting a workflow card updates the persistent
+side pane. Review plan and Progress & results keep the same card overview;
+selection does not enter a nested card browser. Use the pane's step selection to
+inspect state, waiting reasons, errors and captured context. Tests, Timing, Output
+and Files and deliveries follow the selected scope. View problems selects the
+failing step and its reported problem. See the [guided UI](guided-ui.md) for the
+available evidence controls.
 
 Running cards and details use the same elapsed clock. Completed steps keep their
 measured durations; skipped steps without measured runtime show Not started.

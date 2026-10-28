@@ -15,7 +15,7 @@ source snapshot policy, app versions, destinations and storage policy.
 
 The manager owns process lifecycle, locking, redaction, generic transports,
 profile mechanics, artifact capture and retention mechanisms. Logistics keeps
-`Scripts/build_retention.py` as the single policy owner. No alternate project
+`logistics_build/build_retention.py` as the single policy owner. No alternate project
 cache tree is introduced. Shared API documentation belongs in commonUtils.
 
 An engine result records manager and commonUtils commit/dirty identity alongside
@@ -23,6 +23,13 @@ adapter-supplied source/toolchain identity. Native transport acceptance is
 separate from portable subprocess tests. VM holds are never bypassed by setup.
 
 ## Registration and trusted subprocess bridge
+
+Read this contract after the [architecture overview](architecture.md). To trace a
+working integration, follow a consumer's `build-project.json` to its bridge and
+adapter; do not import its implementation into the manager. The minimum path is
+descriptor → registration → isolated planning request → validated Plan → executor.
+Use temporary harmless commands while developing that path, before adding native
+builders or delivery effects.
 
 Inspection phases may declare `retry_exit_codes` and `retry_delay` (seconds,
 default 30). Only those explicitly temporary command failures retry, without a
@@ -205,3 +212,68 @@ repeats only `bootstatus`, once with a 30-second limit, for the same uniquely
 identified device in `Booted` state. Readiness requires a successful command
 exit; partial output or inventory alone cannot satisfy it. A second timeout or
 any other state remains a failure. Caller-owned leases and cleanup are unchanged.
+
+## Boundaries when adding another project
+
+Keep generic execution, subprocess ownership, result/review UI, presets, retained
+history, artifact verification, transports, provider clients and lease/pruning
+mechanics here. Keep portable persistence, resource/index behavior and toolkit
+primitives in commonUtils. A project supplies its adapter/descriptor, source and
+privacy rules, interpreters/dependency pins, test inventory, native builders,
+package/signing/version rules, release gates, recipients and storage policy.
+Use an existing manager primitive before copying it into a new project.
+
+`native_commands.command(argv, cwd, timeout, stdout=..., stderr=..., check=...,
+failure=...)` supervises a synchronous POSIX session, always retiring descendants
+on success, failure, timeout or interruption. It returns the exit code when
+`check=False`. The caller retains its tool arguments, log paths and error policy.
+This small API is POSIX-specific; Windows plans retain the executor's job owner.
+
+`dependency_sources.verify(checkout, pin, pinned_source=False)` verifies an
+explicit manager commit and its real pinned commonUtils submodule. `archive`
+accepts that checkout/pin, `zip` or `tar`, and a supplied disposable workspace.
+It prepares exact committed sources without private/untracked host files or
+resetting the host checkout. The caller owns pin selection, transport and scratch
+cleanup; this module creates no independent cache hierarchy. Initial dependency
+bootstrap may remain a small project entry point because the manager cannot be
+imported before it is installed.
+
+## Explicit cross-consumer acceptance
+
+`python -m build_manager.consumer_acceptance plan --config CONFIG --output NEW_DIR`
+prepares an ordinary manager plan from schema-1 JSON. `baseline` is an explicit
+shared Git checkout. Each entry in `checks` declares a unique `id`, consumer
+`root`, absolute `interpreter`, argument-array `argv` after that interpreter, and
+optional `environment`, `shared`, required `branch` and `distributions` metadata.
+No sibling checkout, environment, dependency or branch is automatically selected.
+For example, a caller-owned local configuration can contain:
+
+```json
+{
+  "schema": 1,
+  "baseline": "/explicit/shared-checkout",
+  "checks": [{
+    "id": "consumer-portable",
+    "root": "/explicit/consumer-checkout",
+    "shared": "/explicit/consumer-checkout/Lib/shared",
+    "interpreter": "/explicit/consumer-checkout/.venv/bin/python",
+    "argv": ["-m", "unittest", "discover", "-s", "tests", "-p", "test_shared*.py"],
+    "environment": {"QT_QPA_PLATFORM": "offscreen"}
+  }]
+}
+```
+
+Use trusted project-owned test commands; labels do not sandbox adapter code or
+certify native behavior. The prepared plan records baseline/consumer/shared
+working identities and each interpreter's OS, version, architecture and requested
+package metadata. Run it through `python -m build_manager NEW_DIR/plan.json
+--output NEW_DIR/run`. Ordinary execution owns logs, failures and cancellation.
+Source/environment verification runs before tests and again after all attempts,
+including failed tests. Modified input captures, checkouts, required branches or
+interpreters require a fresh plan. A failed check remains failed even when final
+identity verification succeeds. Output and retention remain caller-owned.
+
+Consumers can expose an explicit candidate-library test hook. Such a check is
+separate from installed/pinned acceptance: it must preserve the consumer namespace
+and report the actual candidate source. This planner never updates a pin,
+submodule or subtree, and portable compatibility never implies release acceptance.
