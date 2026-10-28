@@ -112,6 +112,7 @@ def parser_for_cli():
     start = sub.add_parser('start', help='Prepare and run a saved project preset; delivery still pauses for review')
     start.add_argument('--project')
     start.add_argument('--preset', required=True)
+    start.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
     start.add_argument('--output', type=Path, help='Fresh run directory; defaults to project results')
     run = sub.add_parser('run', help='Execute a reviewed trusted plan and return a compact outcome')
     run.add_argument('plan', type=Path)
@@ -165,9 +166,10 @@ def execute(args, api):
                                project=args.project, replace=args.replace)
     if command == 'plan' and args.preset:
         if any((args.operation, args.target, args.backend, args.suite, args.pattern,
-                args.run_value, args.release_tag, args.revision != 'working-tree')):
+                args.release_tag, args.revision != 'working-tree')):
             raise ValueError('Preset planning uses its saved choices; do not combine explicit operation arguments.')
-        prepared = api.prepare_preset(args.preset, project=args.project)
+        prepared = api.prepare_preset(args.preset, project=args.project,
+                run_overrides=assignments(args.run_value) if args.run_value else None)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
     if command in ('plan', 'journey'):
@@ -218,7 +220,8 @@ def execute(args, api):
                 args.output = bridge.results_directory / (datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:8])
             if args.output.exists():
                 raise ValueError('Use a fresh output directory or resume the retained run.')
-            prepared = api.prepare_preset(args.preset, project=args.project)
+            prepared = api.prepare_preset(args.preset, project=args.project,
+                run_overrides=assignments(args.run_value) if args.run_value else None)
         lock = Lock()
         def event(value):
             with lock:

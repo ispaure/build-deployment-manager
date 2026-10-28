@@ -65,7 +65,12 @@ artifact/recipient review and uses ordinary `review`/`resume`; saved presets nev
 contain approvals. `--confirm` remains necessary for a plan with an overall
 external effect. Use `plan --preset` followed by ordinary `run` when you need to
 inspect the complete plan before execution. Preset planning rejects explicit
-operation/host/source/input overrides rather than silently mixing configurations.
+operation/host/source overrides rather than silently mixing configurations. Both
+`plan --preset` and `start --preset` accept explicit `--run-value field=value`
+for declared per-run inputs, such as tester notes or recipient choices. These
+replace matching saved inputs for this plan only; other saved inputs remain and
+the preset is unchanged. Unknown fields and secret values are rejected through
+the normal input validation before project planning.
 
 Save choices using the same selection schema as the GUI:
 

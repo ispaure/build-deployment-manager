@@ -52,7 +52,7 @@ class ManagerAPI:
         self.registry.save_preset(bridge.key, name, choices)
         return dict(project=bridge.key, preset=name.strip(), choices=choices)
 
-    def prepare_preset(self, name, *, project=None):
+    def prepare_preset(self, name, *, project=None, run_overrides=None):
         bridge = self._project(project)
         saved = bridge.row.get('presets', {})
         if name not in saved and name not in bridge.workflow_presets:
@@ -62,8 +62,12 @@ class ManagerAPI:
         options = dict(revision=choices.get('revision', 'working-tree'),
                        pattern=choices.get('pattern', ''), release_tag=choices.get('release_tag', ''),
                        build_override=str(choices['build_override']) if choices.get('build_override') else '')
-        if choices.get('run_overrides'):
-            options['run_overrides'] = dict(choices['run_overrides'])
+        inputs = dict(choices.get('run_overrides', {}))
+        if run_overrides is not None:
+            from .run_fields import validate_overrides
+            inputs.update(validate_overrides(bridge.run_fields, run_overrides))
+        if inputs:
+            options['run_overrides'] = inputs
         goal = choices.get('goal', 'advanced')
         if goal in ('validate', 'deliver'):
             if not bridge.journey_capability:

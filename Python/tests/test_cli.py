@@ -208,6 +208,25 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('plan', '--project', key, '--preset', 'missing', '--output', path, code=1)
         self.invoke('plan', '--project', key, '--preset', 'Everyday', '--backend', 'Local', '--output', path, code=1)
 
+    def test_preset_run_inputs_are_validated_ephemeral_and_shared_with_start(self):
+        root, key = self.fixture_project()
+        api = ManagerAPI(self.registry)
+        choices = dict(operation='Check', platform='native', backend='Local',
+                       run_overrides={'notes': 'saved'})
+        api.save_preset('Release', choices, project=key)
+        path = self.root / 'override-plan.json'
+        self.invoke('plan', '--project', key, '--preset', 'Release',
+                    '--run-value', 'notes=current tester notes', '--output', path)
+        self.assertEqual(Plan.load(path).source['run_overrides'], {'notes': 'current tester notes'})
+        self.assertEqual(api.presets(key)['saved']['Release'], choices)
+        self.invoke('plan', '--project', key, '--preset', 'Release',
+                    '--run-value', 'undeclared=value', '--output', self.root / 'bad.json', code=1)
+        output = self.root / 'override-run'
+        self.assertEqual(self.invoke('start', '--project', key, '--preset', 'Release',
+                                    '--run-value', 'notes=run only', '--output', output)['status'], 'passed')
+        self.assertEqual(Plan.load(output / 'plan.json').source['run_overrides'], {'notes': 'run only'})
+        self.assertEqual(api.presets(key)['saved']['Release'], choices)
+
     def test_journey_presets_use_selected_platforms_hosts_and_inputs(self):
         root, key = self.fixture_project()
         api = ManagerAPI(self.registry)
