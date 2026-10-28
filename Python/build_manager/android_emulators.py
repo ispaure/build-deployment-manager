@@ -108,7 +108,7 @@ class AndroidEmulator:
             deadline = time.monotonic()+240
             while time.monotonic()<deadline:
                 if child.poll() is not None:
-                    raise RuntimeError('Owned emulator exited before readiness; inspect emulator.log.')
+                    raise RuntimeError(self.startup_failure())
                 try:
                     if self.invoke('-s',record['serial'],'shell','getprop','sys.boot_completed',timeout=10)=='1':
                         self.verify(record)
@@ -133,6 +133,24 @@ class AndroidEmulator:
             raise RuntimeError('Owned Android emulator did not become ready within four minutes.')
         finally:
             for channel in sockets:channel.close()
+
+    def startup_failure(self):
+        """Carry the native startup cause into CLI results before scratch cleanup."""
+        path = self.workspace / 'emulator.log'
+        try:
+            with path.open('rb') as stream:
+                stream.seek(max(0, path.stat().st_size - 8192))
+                tail = stream.read(8192).decode('utf-8', errors='replace')
+        except OSError:
+            tail = ''
+        if 'Not enough space to create userdata partition' in tail:
+            available = re.search(r'Available: ([0-9.]+ MB)', tail)
+            needed = re.search(r'need ([0-9.]+ MB)', tail)
+            sizes = (' Available: ' + available.group(1) + '; required: ' + needed.group(1) + '.') if available and needed else ''
+            return ('Owned emulator could not allocate its user-data partition.' + sizes
+                    + ' Free disk space; review project-owned outputs with build-manager storage. '
+                    + 'The manager never deletes system backups or personal files automatically.')
+        return 'Owned emulator exited before readiness; inspect emulator.log.'
 
     def verify(self, record):
         if (record['name']!='build-manager-'+record['token'] or not record['serial'].startswith('emulator-')

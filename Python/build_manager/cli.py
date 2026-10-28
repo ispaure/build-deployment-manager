@@ -100,6 +100,11 @@ def parser_for_cli():
         command.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
         command.add_argument('--output', type=Path, required=True, help='Prepared plan JSON file')
     sub.add_parser('show-plan', help='Read a trusted plan without executing it').add_argument('plan', type=Path)
+    storage = sub.add_parser('storage', help='List or explicitly remove adapter-owned generated outputs')
+    storage.add_argument('--project')
+    storage.add_argument('--delete', action='append', default=[], metavar='GROUP=NAME',
+                         help='Exact group and direct output name from storage inventory; repeat for each output')
+    storage.add_argument('--confirm', action='store_true', help='Confirm reviewed generated-output deletion')
     retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
@@ -157,6 +162,18 @@ def execute(args, api):
         return dict(status=command)
     if command in ('capabilities', 'inputs', 'presets'):
         return getattr(api, command)(args.project)
+    if command == 'storage':
+        if not args.delete:
+            if args.confirm:
+                raise ArgumentError('Choose exact storage outputs with --delete before confirming.')
+            return dict(entries=api.storage_inventory(args.project))
+        selections = {}
+        for value in args.delete:
+            group, separator, name = value.partition('=')
+            if not separator or not group or not name:
+                raise ArgumentError('Storage deletion requires GROUP=NAME from the inventory.')
+            selections.setdefault(group, []).append(name)
+        return api.delete_storage(selections, project=args.project, confirmed=args.confirm)
     if command == 'history':
         return api.history(args.project, args.limit)
     if command == 'save-preset':

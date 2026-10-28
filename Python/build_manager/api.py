@@ -95,6 +95,20 @@ class ManagerAPI:
             raise ValueError('Advanced presets need operation, platform and backend.') from error
         return bridge.make_plan(operation, platform, backend, **options)
 
+    def storage_inventory(self, project=None):
+        """List only adapter-declared generated outputs, including active/pinned holds."""
+        return self._project(project).call('storage_inventory')
+
+    def delete_storage(self, selections, *, project=None, confirmed=False):
+        if not confirmed:
+            raise ValueError('Explicit storage deletion requires --confirm after reviewing inventory.')
+        if (not isinstance(selections, dict) or not selections
+                or any(not isinstance(group, str) or not group or not isinstance(names, list)
+                       or not names or any(not isinstance(name, str) or not name for name in names)
+                       for group, names in selections.items())):
+            raise ValueError('Select declared storage groups and direct output names.')
+        return self._project(project).call('delete_storage', selections=selections, timeout=600)
+
     def history(self, project=None, limit=20):
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError('History limit must be 1–100.')

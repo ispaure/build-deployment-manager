@@ -69,6 +69,11 @@ if request['action'] == 'plan':
     result = dict(project='Fixture', operation='Check', source=request['values'],
         workspace=str(Path.cwd() / 'workspace'), phases=[dict(id='check',
         argv=[sys.executable, '-c', "print('project child')"], cwd=str(Path.cwd()))])
+elif request['action'] == 'storage_inventory':
+    result = [dict(group='Fixtures', name='old', path=str(Path.cwd() / 'generated/old'), protected='')]
+elif request['action'] == 'delete_storage':
+    assert request['values']['selections'] == {'Fixtures': ['old']}
+    result = dict(removed=['old'], skipped=[])
 elif request['action'] == 'settings':
     result = {'notes': {'value': 'project default'}}
 else:
@@ -226,6 +231,19 @@ print(json.dumps(dict(schema=1, result=result)))
                                     '--run-value', 'notes=run only', '--output', output)['status'], 'passed')
         self.assertEqual(Plan.load(output / 'plan.json').source['run_overrides'], {'notes': 'run only'})
         self.assertEqual(api.presets(key)['saved']['Release'], choices)
+
+    def test_storage_requires_reviewed_selection_and_confirmation(self):
+        root, key = self.fixture_project()
+        entries = self.invoke('storage', '--project', key)['entries']
+        self.assertEqual(entries[0]['name'], 'old')
+        (root / 'adapter-called').unlink()
+        self.invoke('storage', '--project', key, '--delete', 'Fixtures=old', code=1)
+        self.assertFalse((root / 'adapter-called').exists())
+        self.invoke('storage', '--project', key, '--delete', 'invalid', '--confirm', code=2)
+        self.assertFalse((root / 'adapter-called').exists())
+        outcome = self.invoke('storage', '--project', key, '--delete', 'Fixtures=old', '--confirm')
+        self.assertEqual(outcome['removed'], ['old'])
+        self.assertTrue((root / 'adapter-called').exists())
 
     def test_journey_presets_use_selected_platforms_hosts_and_inputs(self):
         root, key = self.fixture_project()

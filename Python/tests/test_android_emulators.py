@@ -24,6 +24,22 @@ class AndroidLeaseTests(unittest.TestCase):
             self.assertFalse(client.marker.exists());self.assertFalse((client.workspace/'avds').exists())
             self.assertTrue((client.workspace/'removed-lease.json').exists())
 
+    def test_low_disk_startup_cause_survives_disposable_log_removal(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            client = AndroidEmulator(root / 'sdk', root / 'owned')
+            client.workspace.mkdir()
+            log = client.workspace / 'emulator.log'
+            log.write_text('FATAL | Not enough space to create userdata partition. '
+                           'Available: 3088.63 MB at /private/synthetic/path, need 7372.80 MB.\n')
+            message = client.startup_failure()
+            self.assertIn('3088.63 MB', message)
+            self.assertIn('7372.80 MB', message)
+            self.assertIn('build-manager storage', message)
+            self.assertNotIn('/private/synthetic/path', message)
+            log.unlink()
+            self.assertIn('inspect emulator.log', client.startup_failure())
+
     def test_incomplete_sdk_fails_without_starting_or_creating_avd(self):
         with TemporaryDirectory() as folder, patch('build_manager.hosts.android_host_issue', return_value=None), patch('build_manager.android_emulators.subprocess.check_output') as run:
             root=Path(folder);client=AndroidEmulator(root/'missing-sdk',root/'owned')
