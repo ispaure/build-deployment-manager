@@ -212,6 +212,7 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('start', '--project', key, '--preset', 'Everyday', '--output', output, code=1)
         self.invoke('plan', '--project', key, '--preset', 'missing', '--output', path, code=1)
         self.invoke('plan', '--project', key, '--preset', 'Everyday', '--backend', 'Local', '--output', path, code=1)
+        self.invoke('plan', '--project', key, '--preset', 'Everyday', '--exclude-destination', 'devices', '--output', path, code=1)
 
     def test_preset_run_inputs_are_validated_ephemeral_and_shared_with_start(self):
         root, key = self.fixture_project()
@@ -261,6 +262,12 @@ print(json.dumps(dict(schema=1, result=result)))
             bridge.platforms=('native',); bridge.journey_capability={'platforms':{'native':{'backend':'Local'}}}
             with patch.object(api, '_project', return_value=bridge):
                 self.assertEqual(api.prepare_preset('Delivery').identity, plan.identity)
+                api.prepare_preset('Delivery', exclude_destinations=['devices'])
+                self.assertEqual(make.call_args.args, ('deliver', ['native'], []))
+                self.assertEqual(choices['selected_destinations'], ['devices'])
+                with self.assertRaisesRegex(ValueError, 'selected by this preset'):
+                    api.prepare_preset('Delivery', exclude_destinations=['unknown'])
+                api.prepare_preset('Delivery')
         self.assertEqual(make.call_args.args, ('deliver', ['native'], ['devices']))
         self.assertEqual(make.call_args.kwargs['backends'], {'native':'Local'})
         self.assertEqual(make.call_args.kwargs['revision'], 'HEAD')

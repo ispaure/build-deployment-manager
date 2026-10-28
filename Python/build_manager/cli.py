@@ -99,6 +99,8 @@ def parser_for_cli():
         command.add_argument('--release-tag', default='')
         command.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
         command.add_argument('--output', type=Path, required=True, help='Prepared plan JSON file')
+    sub.choices['plan'].add_argument('--exclude-destination', action='append', default=[],
+                                    help='Omit a saved preset delivery destination for this run only')
     sub.add_parser('show-plan', help='Read a trusted plan without executing it').add_argument('plan', type=Path)
     storage = sub.add_parser('storage', help='List or explicitly remove adapter-owned generated outputs')
     storage.add_argument('--project')
@@ -118,6 +120,7 @@ def parser_for_cli():
     start.add_argument('--project')
     start.add_argument('--preset', required=True)
     start.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
+    start.add_argument('--exclude-destination', action='append', default=[], help='Omit one delivery destination for this run; keeps all platform validation')
     start.add_argument('--output', type=Path, help='Fresh run directory; defaults to project results')
     run = sub.add_parser('run', help='Execute a reviewed trusted plan and return a compact outcome')
     run.add_argument('plan', type=Path)
@@ -186,9 +189,12 @@ def execute(args, api):
                 args.release_tag, args.revision != 'working-tree')):
             raise ValueError('Preset planning uses its saved choices; do not combine explicit operation arguments.')
         prepared = api.prepare_preset(args.preset, project=args.project,
-                run_overrides=assignments(args.run_value) if args.run_value else None)
+                run_overrides=assignments(args.run_value) if args.run_value else None,
+                exclude_destinations=args.exclude_destination)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
+    if command == 'plan' and args.exclude_destination:
+        raise ArgumentError('Destination exclusions require --preset.')
     if command in ('plan', 'journey'):
         options = dict(revision=args.revision, release_tag=args.release_tag)
         if args.run_value:
@@ -238,7 +244,8 @@ def execute(args, api):
             if args.output.exists():
                 raise ValueError('Use a fresh output directory or resume the retained run.')
             prepared = api.prepare_preset(args.preset, project=args.project,
-                run_overrides=assignments(args.run_value) if args.run_value else None)
+                run_overrides=assignments(args.run_value) if args.run_value else None,
+                exclude_destinations=args.exclude_destination)
         lock = Lock()
         def event(value):
             with lock:

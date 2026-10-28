@@ -249,3 +249,10 @@ active leases under the same locks used by its GUI cleanup. Manual cleanup may
 remove recent outputs; automatic retention age/count rules remain unchanged.
 Save needed evidence first. This removes generated artifacts, not installed apps,
 signing credentials, build counters or source checkouts.
+
+Delivery presets also accept repeated `--exclude-destination NAME` in `plan` and
+`start`. This explicitly omits a selected delivery destination for this run only,
+for example an unavailable physical-device destination. All selected platforms and
+validation gates stay included, and the saved preset is unchanged. Excluding an
+unknown destination or using this option without a delivery preset is rejected.
+Inspect `show-plan` to verify the resulting destinations before executing.

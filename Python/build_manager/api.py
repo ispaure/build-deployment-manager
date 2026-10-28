@@ -52,13 +52,22 @@ class ManagerAPI:
         self.registry.save_preset(bridge.key, name, choices)
         return dict(project=bridge.key, preset=name.strip(), choices=choices)
 
-    def prepare_preset(self, name, *, project=None, run_overrides=None):
+    def prepare_preset(self, name, *, project=None, run_overrides=None, exclude_destinations=None):
         bridge = self._project(project)
         saved = bridge.row.get('presets', {})
         if name not in saved and name not in bridge.workflow_presets:
             raise ValueError('Unknown project preset: ' + name)
         choices = saved[name] if name in saved else bridge.workflow_presets[name]
         self.registry.validate_selections(choices)
+        if exclude_destinations:
+            if choices.get('goal') != 'deliver':
+                raise ValueError('Destination exclusions require a delivery preset.')
+            if (not isinstance(exclude_destinations, (list, tuple))
+                    or any(not isinstance(value, str) for value in exclude_destinations)
+                    or set(exclude_destinations) - set(choices.get('selected_destinations', []))):
+                raise ValueError('Exclude only destinations selected by this preset.')
+            choices = dict(choices, selected_destinations=[value for value in choices.get('selected_destinations', [])
+                                                          if value not in exclude_destinations])
         options = dict(revision=choices.get('revision', 'working-tree'),
                        pattern=choices.get('pattern', ''), release_tag=choices.get('release_tag', ''),
                        build_override=str(choices['build_override']) if choices.get('build_override') else '')
