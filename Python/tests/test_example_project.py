@@ -75,7 +75,9 @@ class ExampleProjectTests(unittest.TestCase):
 
 
     def test_cli_registration_uses_the_isolated_project_interpreter(self):
-        venv.EnvBuilder(with_pip=False).create(self.root / '.venv')
+        # Standalone Linux Python resolves libpython relative to its executable.
+        # Keep the base interpreter location rather than relocating that binary.
+        venv.EnvBuilder(with_pip=False, symlinks=sys.platform != 'win32').create(self.root / '.venv')
         interpreter = self.root.resolve() / '.venv' / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
         site = subprocess.check_output([str(interpreter), '-c',
             'import site; print(site.getsitepackages()[0])'], text=True, timeout=30).strip()
