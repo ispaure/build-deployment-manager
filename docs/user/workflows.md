@@ -62,6 +62,11 @@ After reviewing an awaiting step, use `--resume --confirm --approve-step STEP`.
 Passed work is reused after checksum verification; only unsuccessful harmless
 steps retry. Manager/dependency or plan identity changes require a new inspection.
 
+Resuming after a workspace admission failure keeps that failure and its message
+in the attempt history. Once the new attempt acquires its resources, the current
+outcome no longer shows the old admission error. Original failed attempts and
+uncertain external outcomes remain retained.
+
 The [guided UI](guided-ui.md) offers Configure, Review, Run and results, and
 project-owned History. Review and continue delivery opens the current retained
 run directly with source/settings and verified artifact evidence in one approval

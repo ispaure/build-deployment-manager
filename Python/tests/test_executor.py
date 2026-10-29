@@ -224,6 +224,23 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertIn('Another operation', result['error'])
 
+    def test_successful_resume_retires_admission_error_but_preserves_attempt(self):
+        plan = self.plan(self.phase('work', 'print("completed after admission")'))
+        with workspace_lock(self.root / 'workspace/operation.lock'):
+            failed = self.run_plan(plan)
+        self.assertEqual(failed['status'], 'failed')
+        message = failed['error']
+        result = Executor().run(plan, self.root / 'result', resume=True)
+        self.assertEqual(result['status'], 'passed')
+        self.assertNotIn('error', result)
+        self.assertEqual(result['attempts'][0]['status'], 'failed')
+        self.assertEqual(result['attempts'][0]['error'], message)
+        self.assertEqual(result['attempts'][1]['status'], 'passed')
+        self.assertNotIn('error', result['attempts'][1])
+        retained = json.loads((self.root / 'result/result.json').read_text())
+        self.assertNotIn('error', retained)
+        self.assertEqual(retained['attempts'], result['attempts'])
+
     def test_timeout_closes_pipe_held_by_descendant_after_parent_exits(self):
         code = 'import subprocess,sys; subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"])'
         result = self.run_plan(self.plan(self.phase('orphan', code, timeout=.15)))

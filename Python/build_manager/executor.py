@@ -134,8 +134,11 @@ class Executor:
         def finish_timing():
             elapsed = time.monotonic() - started
             report.update(finished_at=timestamp(), attempt_seconds=elapsed, seconds=previous_seconds + elapsed)
-            report.setdefault('attempts', []).append(dict(started_at=attempt_started_at,
-                finished_at=report['finished_at'], seconds=elapsed, status=report['status']))
+            attempt = dict(started_at=attempt_started_at, finished_at=report['finished_at'],
+                           seconds=elapsed, status=report['status'])
+            if report.get('error'):
+                attempt['error'] = report['error']
+            report.setdefault('attempts', []).append(attempt)
         resources = Resources(getattr(self, 'resource_directory', None))
         def execute(phase):
             try:
@@ -173,6 +176,9 @@ class Executor:
                     migration['retained_phases'] = list(rows)
                     report.setdefault('engine_history', []).append(migration)
                     report['engine'] = engine
+                # Previous admission errors belong to their retained attempt,
+                # not the current run after successful resource admission.
+                report.pop('error', None)
                 report['status'] = 'running'
                 report['phases'] = list(rows.values())
                 report['attempt_started_at'] = attempt_started_at
