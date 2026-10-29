@@ -5,7 +5,7 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from pathlib import Path
 import sys
 import time
-from tempfile import TemporaryDirectory
+from fixture_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication,QFileDialog
@@ -60,3 +60,11 @@ class WorkflowUITests(unittest.TestCase):
             self.assertEqual(panel.result, original_result)
             self.assertEqual(last['phases'][0]['started_at'], first['phases'][0]['started_at'])
             panel.close()
+            # Closing cancels asynchronous history reads; retain their directory
+            # until the owned readers acknowledge cancellation and close files.
+            close_deadline = time.monotonic() + 5
+            while not panel.prepare_close():
+                app.processEvents()
+                time.sleep(.01)
+                self.assertLess(time.monotonic(), close_deadline)
+            app.processEvents()

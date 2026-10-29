@@ -3,7 +3,7 @@ import json
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from fixture_directory import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from PySide6.QtGui import QFont

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
+from fixture_directory import TemporaryDirectory
 import unittest
 
 from build_manager.registry import Registry,inspect
