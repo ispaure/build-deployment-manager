@@ -24,7 +24,7 @@ class PointerFollowTests(unittest.TestCase):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.preferences = Path(directory.name) / 'workflow-view.json'
-        patcher = patch('build_manager.workflow_ui.config_directory', return_value=Path(directory.name))
+        patcher = patch('build_manager.workflow_map_ui.config_directory', return_value=Path(directory.name))
         patcher.start()
         self.addCleanup(patcher.stop)
         self.flow = WorkflowFlow(graph_only=True)

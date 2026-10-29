@@ -4,7 +4,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import sys
 import unittest
 from unittest.mock import patch
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from build_manager import Phase, Plan
@@ -58,7 +58,7 @@ class VisualDependencyTests(unittest.TestCase):
         for selected in ('', 'A', 'B', 'join', 'cleanup', ''):
             view.select(selected)
             self.assertEqual(set(view.canvas.edges), expected)
-            with patch('build_manager.workflow_ui.connection_path', wraps=connection_path) as draw:
+            with patch('build_manager.workflow_cards_ui.connection_path', wraps=connection_path) as draw:
                 view.canvas.grab()
             expected_groups = connection_groups(view.canvas.edges, view.canvas.positions,
                 view.canvas.order_edges, view.canvas.states, view.canvas.completion_targets)
@@ -119,7 +119,7 @@ class VisualDependencyTests(unittest.TestCase):
         for vertical in (False, True):
             canvas.arrange(vertical)
             self.app.processEvents()
-            with patch('build_manager.workflow_ui.connection_path', wraps=connection_path) as draw:
+            with patch('build_manager.workflow_cards_ui.connection_path', wraps=connection_path) as draw:
                 canvas.grab()
             rails = {}
             groups = connection_groups(canvas.edges, canvas.positions)
@@ -179,7 +179,7 @@ class VisualDependencyTests(unittest.TestCase):
             self.assertIsNone(card.graphicsEffect())
             self.assertEqual(bool(card.property('traceMuted')), key not in canvas.trace_keys)
             self.assertFalse(card.isHidden())
-        with patch('build_manager.workflow_ui.connection_path', wraps=connection_path) as draw:
+        with patch('build_manager.workflow_cards_ui.connection_path', wraps=connection_path) as draw:
             canvas.grab()
         self.assertGreater(draw.call_count, len(connection_groups(canvas.edges, canvas.positions)))
         self.app.sendEvent(build, QEvent(QEvent.Type.Leave))
@@ -261,12 +261,21 @@ class VisualDependencyTests(unittest.TestCase):
             canvas.setPalette(palette)
             for vertical in (False, True):
                 canvas.arrange(vertical)
+                # Direct canvas rearrangement bypasses the view's orientation
+                # control; synchronize its scene extent before manual zoom.
+                view.fit_mode = False
+                view.fit_map()
                 for scale in (.65, 1.2):
                     with self.subTest(background=background, vertical=vertical, scale=scale):
                         view.resetTransform()
                         view.scale(scale, scale)
                         self.app.processEvents()
                         canvas.trace_card('build', True)
+                        # Windows font metrics can make the vertical canvas
+                        # taller than the viewport at this zoom. Inspect the
+                        # target card, rather than sampling off-screen pixels.
+                        view.centerOn(view.proxy.mapToScene(QPointF(muted.geometry().center())))
+                        self.app.processEvents()
                         screenshot = view.viewport().grab().toImage()
                         ratio = screenshot.devicePixelRatio()
                         # Sample separated corners: an effect can paint only a
@@ -275,7 +284,13 @@ class VisualDependencyTests(unittest.TestCase):
                                      (muted.width() - 8, muted.height() - 8)):
                             point = QPointF(muted.x() + x, muted.y() + y)
                             position = view.mapFromScene(view.proxy.mapToScene(point))
-                            actual = screenshot.pixelColor(round(position.x() * ratio), round(position.y() * ratio))
+                            sample = QPoint(round(position.x() * ratio), round(position.y() * ratio))
+                            self.assertTrue(screenshot.rect().contains(sample),
+                                f'Card corner {sample.toTuple()} outside {screenshot.size().toTuple()}; '
+                                f'canvas={canvas.size().toTuple()}, card={muted.geometry().getRect()}, '
+                                f'viewport={view.viewport().size().toTuple()}, scale={view.transform().m11()}, '
+                                f'scene={view.sceneRect().getRect()}')
+                            actual = screenshot.pixelColor(sample)
                             self.assertEqual(actual.name(), expected)
                         canvas.trace_card('build', False)
 

@@ -15,6 +15,10 @@ The manager's source root is `Python`; import `build_manager`, never
 `Python.build_manager`. Its commonUtils submodule is independent of the one in
 the project being built. Keep each project's interpreter and dependency pins.
 
+For a new consumer, follow [connecting project tests](adding-project-tests.md).
+Its runnable example covers registration, selection, file previews and JUnit
+results before adding native checks or delivery.
+
 ## Follow one run through its owners
 
 | Stage | Source owner | Important boundary |
@@ -98,12 +102,13 @@ from executable commands or prerequisite steps. Unknown targets have no badge.
 From this checkout, with its locked environment:
 
 ```sh
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m build_manager.contracts
+PYTHONPATH="$PWD/Python" QT_QPA_PLATFORM=offscreen .venv/bin/python -m build_manager.contracts
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s Python/tests -p test_guided_ui.py -v
 .venv/bin/python -m unittest discover -s Python/tests -p test_workflows.py -v
 ```
 
-On Windows use `.venv\Scripts\python.exe`; set `QT_QPA_PLATFORM` through the
+On Windows use `.venv\Scripts\python.exe` and set `PYTHONPATH` to this checkout's
+`Python` directory; set `QT_QPA_PLATFORM` through the
 shell's environment syntax for offscreen checks. Process/transport fixtures are
 portable contracts, not proof that a VM or personal device passed. Native Windows
 process jobs, guest recovery and OS GUI ownership need their real platform checks.
@@ -166,12 +171,15 @@ Windows process jobs and the existing process shutdown contracts remain separate
 
 ## Results-view composition
 
-`RunView` retains workflow selection, live facts, timers, subtests and coordination.
+`RunView` retains workflow selection, refresh coordination and subtest widgets.
+Headless `RunState` owns phase facts, measured timing, pending event merges and
+outcomes for live and retained runs. `RunSession` owns the Qt process and uses
+`EventStream` to retain incomplete output lines.
 `run_inspector_ui.RunInspectorView` renders a selected phase from explicit plan,
 phase, captured facts and state/reason values, and preserves text selection/scroll
 for unchanged detail identity. `run_output_ui.RunOutputView` owns bounded redacted
 output and receives the selected phase, allowed phase keys and retained-log reader.
-Neither view reaches back into its parent panel for hidden state. Retained log
+These rendering views receive explicit inputs from their coordinator. Retained log
 read errors remain empty-output results, and current selection determines the
 scope after navigation. The dormant nested workflow browser remains disconnected.
 

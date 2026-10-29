@@ -133,27 +133,25 @@ class ManagerPanel(QWidget):
         layout.addWidget(self.stages, 1)
         from .configuration_ui import ConfigurationView
         self.configuration = ConfigurationView(project, self)
-        for name in ConfigurationView.names:
-            setattr(self, name, getattr(self.configuration, name))
         configuration_layout = self.configuration.body_layout
         self.stages.addWidget(self.configuration)
-        self.goal.currentIndexChanged.connect(self.goal_changed)
-        for control in (*self.platform_checks.values(), *self.destination_checks.values()):
+        self.configuration.goal.currentIndexChanged.connect(self.goal_changed)
+        for control in (*self.configuration.platform_checks.values(), *self.configuration.destination_checks.values()):
             control.toggled.connect(self.invalidate)
-        for control in self.platform_backends.values():
+        for control in self.configuration.platform_backends.values():
             control.currentTextChanged.connect(self.invalidate)
-        for control in self.run_fields.controls.values():
+        for control in self.configuration.run_fields.controls.values():
             control.textChanged.connect(self.invalidate)
-        self.run_fields.defaults_loaded.connect(self.invalidate)
-        self.preset.currentTextChanged.connect(self.select_preset)
-        self.configuration.restore_preset.clicked.connect(lambda: self.select_preset(self.preset.currentText()))
-        self.platform.currentTextChanged.connect(self.refresh_operations)
-        self.platform.currentTextChanged.connect(self.refresh_backends)
-        self.operation.currentTextChanged.connect(self.refresh_backends)
-        self.suite.currentIndexChanged.connect(self.invalidate)
-        self.platform.currentTextChanged.connect(self.refresh_suites)
-        self.operation.currentTextChanged.connect(self.refresh_suites)
-        for control in self.run_controls.values():
+        self.configuration.run_fields.defaults_loaded.connect(self.invalidate)
+        self.configuration.preset.currentTextChanged.connect(self.select_preset)
+        self.configuration.restore_preset.clicked.connect(lambda: self.select_preset(self.configuration.preset.currentText()))
+        self.configuration.platform.currentTextChanged.connect(self.refresh_operations)
+        self.configuration.platform.currentTextChanged.connect(self.refresh_backends)
+        self.configuration.operation.currentTextChanged.connect(self.refresh_backends)
+        self.configuration.suite.currentIndexChanged.connect(self.invalidate)
+        self.configuration.platform.currentTextChanged.connect(self.refresh_suites)
+        self.configuration.operation.currentTextChanged.connect(self.refresh_suites)
+        for control in self.configuration.run_controls.values():
             control.toggled.connect(self.invalidate)
         self.prepare = QPushButton('Next: review plan', self)
         self.prepare.clicked.connect(self.inspect_plan)
@@ -309,10 +307,10 @@ class ManagerPanel(QWidget):
         layout.addLayout(settings_actions)
         layout.addWidget(self.action_footer)
         self.show_stage(0)
-        for control in (self.operation, self.platform, self.backend):
+        for control in (self.configuration.operation, self.configuration.platform, self.configuration.backend):
             control.currentTextChanged.connect(self.invalidate)
-        self.build_override.valueChanged.connect(self.invalidate)
-        for control in (self.revision, self.pattern, self.release_tag):
+        self.configuration.build_override.valueChanged.connect(self.invalidate)
+        for control in (self.configuration.revision, self.configuration.pattern, self.configuration.release_tag):
             control.textChanged.connect(self.invalidate)
         self.refresh_operations()
         self.refresh_backends()
@@ -320,24 +318,98 @@ class ManagerPanel(QWidget):
         self.refresh_history()
         checks = next((name for name in ('Test', 'Check') if name in self.project.operations), None)
         if checks:
-            self.operation.setCurrentText(checks)
+            self.configuration.operation.setCurrentText(checks)
         else:
-            self.goal.setCurrentIndex(self.goal.findData('advanced'))
+            self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
         self.configuration.update_summary()
         self.plan_feedback.setText('Select at least one platform above, then review your plan.'
-            if self.platform_checks else 'Choose the checks or workflow you want, then review your plan.')
+            if self.configuration.platform_checks else 'Choose the checks or workflow you want, then review your plan.')
         self.status.clear()
         self.update_run_actions()
 
+
+    # Compatibility handles for existing callers; configuration owns these widgets.
+    @property
+    def preset(self):
+        return self.configuration.preset
+
+    @property
+    def operation(self):
+        return self.configuration.operation
+
+    @property
+    def platform(self):
+        return self.configuration.platform
+
+    @property
+    def backend(self):
+        return self.configuration.backend
+
+    @property
+    def suite(self):
+        return self.configuration.suite
+
+    @property
+    def revision(self):
+        return self.configuration.revision
+
+    @property
+    def pattern(self):
+        return self.configuration.pattern
+
+    @property
+    def build_override(self):
+        return self.configuration.build_override
+
+    @property
+    def release_tag(self):
+        return self.configuration.release_tag
+
+    @property
+    def run_controls(self):
+        return self.configuration.run_controls
+
+    @property
+    def advanced_toggle(self):
+        return self.configuration.advanced_toggle
+
+    @property
+    def goal(self):
+        return self.configuration.goal
+
+    @property
+    def platform_checks(self):
+        return self.configuration.platform_checks
+
+    @property
+    def platform_backends(self):
+        return self.configuration.platform_backends
+
+    @property
+    def destination_checks(self):
+        return self.configuration.destination_checks
+
+    @property
+    def readiness(self):
+        return self.configuration.readiness
+
+    @property
+    def preset_note(self):
+        return self.configuration.preset_note
+
+    @property
+    def run_fields(self):
+        return self.configuration.run_fields
+
     def goal_changed(self, *_):
-        if self.goal.currentData() == 'build':
-            if self.operation.findText('Build') < 0:
-                self.operation.addItem('Build')
-            self.operation.setCurrentText('Build')
-        if self.goal.currentData() == 'validate' and not self.platform_checks:
+        if self.configuration.goal.currentData() == 'build':
+            if self.configuration.operation.findText('Build') < 0:
+                self.configuration.operation.addItem('Build')
+            self.configuration.operation.setCurrentText('Build')
+        if self.configuration.goal.currentData() == 'validate' and not self.configuration.platform_checks:
             checks = next((name for name in ('Test', 'Check') if name in self.project.operations), None)
             if checks:
-                self.operation.setCurrentText(checks)
+                self.configuration.operation.setCurrentText(checks)
         self.invalidate(preserve_preset=True)
 
     def select_preset(self, name):
@@ -345,24 +417,24 @@ class ManagerPanel(QWidget):
         self.preset_error = ''
         if not choices:
             return
-        self.goal.setCurrentIndex(self.goal.findData('advanced'))
-        self.preset_note.setText('Suggested workflow: ' + name + '. Changes will be marked Modified.')
+        self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
+        self.configuration.preset_note.setText('Suggested workflow: ' + name + '. Changes will be marked Modified.')
         self.applying_preset = True
         try:
-            if self.platform.findText(choices['platform']) < 0:
+            if self.configuration.platform.findText(choices['platform']) < 0:
                 raise ValueError('This workflow platform is unavailable in the selected project.')
-            self.platform.setCurrentText(choices['platform'])
+            self.configuration.platform.setCurrentText(choices['platform'])
             operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(choices['platform'])
             if choices['operation'] not in operations:
                 raise ValueError('This workflow operation is unavailable on the selected platform.')
-            self.operation.setCurrentText(choices['operation'])
+            self.configuration.operation.setCurrentText(choices['operation'])
             if choices['backend'] not in self.project.backend_options(choices['platform'], choices['operation']):
                 raise ValueError('This workflow backend is unavailable on this host. Choose a supported workflow or Custom operation.')
-            self.backend.setCurrentText(choices['backend'])
-            index = self.suite.findData(choices.get('suite', ''))
+            self.configuration.backend.setCurrentText(choices['backend'])
+            index = self.configuration.suite.findData(choices.get('suite', ''))
             if index < 0:
                 raise ValueError('This workflow test suite is unavailable for the selected operation.')
-            self.suite.setCurrentIndex(index)
+            self.configuration.suite.setCurrentIndex(index)
             self.invalidate()
         except (KeyError, TypeError, ValueError) as error:
             self.invalidate()
@@ -375,41 +447,65 @@ class ManagerPanel(QWidget):
     def refresh_operations(self, *_):
         factory=getattr(self.project,'operations_for',None)
         if factory:
-            previous=self.operation.currentText()
-            options = tuple(factory(self.platform.currentText()))
-            self.operation.clear(); self.operation.addItems(options)
+            previous=self.configuration.operation.currentText()
+            options = tuple(factory(self.configuration.platform.currentText()))
+            self.configuration.operation.clear(); self.configuration.operation.addItems(options)
             if previous:
                 if previous not in options:
-                    self.operation.addItem(previous)
-                    self.operation.setItemData(self.operation.count()-1,
+                    self.configuration.operation.addItem(previous)
+                    self.configuration.operation.setItemData(self.configuration.operation.count()-1,
                         'Unavailable on this platform. Choose a supported operation explicitly.', 3)
-                self.operation.setCurrentText(previous)
+                self.configuration.operation.setCurrentText(previous)
 
     def refresh_backends(self, *_):
-        previous = self.backend.currentText()
-        self.backend.clear()
-        options = tuple(self.project.backend_options(self.platform.currentText(), self.operation.currentText()))
-        self.backend.addItems(options)
+        previous = self.configuration.backend.currentText()
+        self.configuration.backend.clear()
+        options = tuple(self.project.backend_options(self.configuration.platform.currentText(), self.configuration.operation.currentText()))
+        self.configuration.backend.addItems(options)
         if previous:
             if previous not in options:
-                self.backend.addItem(previous)
-                self.backend.setItemData(self.backend.count()-1,
+                self.configuration.backend.addItem(previous)
+                self.configuration.backend.setItemData(self.configuration.backend.count()-1,
                     'Unavailable for this work. Choose an execution host explicitly.', 3)
-            self.backend.setCurrentText(previous)
+            self.configuration.backend.setCurrentText(previous)
 
     def refresh_suites(self, *_):
         if not hasattr(self, 'suite'):
             return
-        previous = self.suite.currentData()
-        self.suite.blockSignals(True)
-        self.suite.clear()
-        self.suite.addItem('Full declared suite / operation default', '')
+        previous = self.configuration.suite.currentData()
+        self.configuration.suite.blockSignals(True)
+        self.configuration.suite.clear()
+        self.configuration.suite.addItem('Full declared suite / operation default', '')
         for row in getattr(self.project, 'test_suites', []):
-            if self.platform.currentText() in row['platforms'] and self.operation.currentText() in row['operations']:
-                self.suite.addItem(row['label'] + ' · ' + row['tier'], row['id'])
-                self.suite.setItemData(self.suite.count()-1, row.get('description', ''), 3)
-        self.suite.setCurrentIndex(max(0, self.suite.findData(previous)))
-        self.suite.blockSignals(False)
+            if self.configuration.platform.currentText() in row['platforms'] and self.configuration.operation.currentText() in row['operations']:
+                self.configuration.suite.addItem(row['label'] + ' · ' + row['tier'], row['id'])
+                self.configuration.suite.setItemData(self.configuration.suite.count()-1, row.get('description', ''), 3)
+        self.configuration.suite.setCurrentIndex(max(0, self.configuration.suite.findData(previous)))
+        self.configuration.suite.blockSignals(False)
+
+    @property
+    def saved_presets(self):
+        return self.preset_controller.picker
+
+    @property
+    def preset_actions(self):
+        return self.preset_controller.actions
+
+    @property
+    def preset_menu(self):
+        return self.preset_controller.menu_button
+
+    def refresh_saved_presets(self):
+        self.preset_controller.refresh()
+
+    def restore_selection(self, choices):
+        self.applying_preset = True
+        try:
+            self.configuration.restore_choices(choices)
+        finally:
+            self.applying_preset = False
+        self.invalidate()
+        self.stages.setCurrentIndex(0)
 
     def choices(self):
         return self.configuration.choices()
@@ -423,8 +519,8 @@ class ManagerPanel(QWidget):
             self.review_state.setText('Choices or settings changed. Return to choices and prepare a fresh plan.')
         if not self.applying_preset and not preserve_preset:
             self.preset_error = ''
-            if self.preset.currentIndex():
-                self.preset_note.setText(self.preset.currentText() + ' · Modified. Review the updated plan before running.')
+            if self.configuration.preset.currentIndex():
+                self.configuration.preset_note.setText(self.configuration.preset.currentText() + ' · Modified. Review the updated plan before running.')
         if not self.applying_preset:
             self.selection_changed.emit(self.choices())
         if hasattr(self, 'status'):
@@ -432,15 +528,15 @@ class ManagerPanel(QWidget):
             self.plan_feedback.setText('Choices changed. Choose Next: review plan to check them before starting.')
             self.plan_feedback.hide()
             self.preparation_error_section.hide()
-        if not self.applying_preset and self.platform_checks and self.goal.currentData() in {'validate', 'deliver'}:
+        if not self.applying_preset and self.configuration.platform_checks and self.configuration.goal.currentData() in {'validate', 'deliver'}:
             from .journeys import request
             try:
-                request(self.project.journey_capability, self.goal.currentData(),
-                    [name for name, control in self.platform_checks.items() if control.isChecked()],
-                    [name for name, control in self.destination_checks.items() if control.isChecked()]
-                    if self.goal.currentData() == 'deliver' else [])
+                request(self.project.journey_capability, self.configuration.goal.currentData(),
+                    [name for name, control in self.configuration.platform_checks.items() if control.isChecked()],
+                    [name for name, control in self.configuration.destination_checks.items() if control.isChecked()]
+                    if self.configuration.goal.currentData() == 'deliver' else [])
             except ValueError as error:
-                self.readiness.setText(str(error))
+                self.configuration.readiness.setText(str(error))
 
     def show_stage(self, index):
         if index == 1 and getattr(self, 'review_live_dirty', False):
@@ -509,62 +605,32 @@ class ManagerPanel(QWidget):
             except (OSError, ValueError, KeyError) as error:
                 self.preparation_message('Could not open this project. ' + self.redact(str(error)))
                 return
-        if not self.revision.text().strip():
+        if not self.configuration.revision.text().strip():
             self.configuration.open_section('source')
             self.preparation_message('Choose a source revision, or select Current files or Latest commit in Source. No plan has been prepared.')
             return
         if self.preset_error:
             self.preparation_message(self.preset_error)
             return
-        if self.run_fields.missing_selection():
-            row = self.run_fields.missing_selection_field()
+        if self.configuration.run_fields.missing_selection():
+            row = self.configuration.run_fields.missing_selection_field()
             self.configuration.open_section('delivery', next(iter(row.get('destinations', [])), ''))
-            self.preparation_message(self.run_fields.missing_selection())
+            self.preparation_message(self.configuration.run_fields.missing_selection())
             return
         from functools import partial
-        operation, platform, backend = (control.currentText() for control in
-                                       (self.operation, self.platform, self.backend))
-        choices = dict(revision=self.revision.text(), pattern=self.pattern.text(),
-                       build_override=str(self.build_override.value()) if self.build_override.value() else '', release_tag=self.release_tag.text(),
-                       **{name: control.isChecked() for name, control in self.run_controls.items()})
-        if self.suite.currentData():
-            choices['suite'] = self.suite.currentData()
-        if self.run_fields.values():
-            choices['run_overrides'] = self.run_fields.values()
-        goal = self.goal.currentData()
-        integrated = bool(self.platform_checks) and goal in {'validate', 'deliver'}
-        if integrated:
-            from .journeys import request
-            targets = [name for name, control in self.platform_checks.items() if control.isChecked()]
-            destinations = [name for name, control in self.destination_checks.items() if control.isChecked()] if goal == 'deliver' else []
-            try:
-                request(self.project.journey_capability, goal, targets, destinations)
-            except ValueError as error:
-                self.preparation_message(str(error))
-                self.readiness.setText(str(error))
-                return
-            # Hidden legacy suite/operation switches cannot alter a guided journey.
-            integrated_choices = {name: choices[name] for name in ('revision', 'pattern', 'build_override', 'release_tag')}
-            if self.configuration.selectable_backends:
-                integrated_choices['backends'] = {target:self.platform_backends[target].currentText() for target in targets}
-            if choices.get('run_overrides'):
-                integrated_choices['run_overrides'] = choices['run_overrides']
-            prepare = partial(self.project.make_journey, goal, targets, destinations, **integrated_choices)
-        else:
-            if goal == 'build':
-                operation = 'Build'
-                choices.pop('suite', None)
-                choices['pattern'] = ''
-                for name in self.run_controls:
-                    choices.pop(name, None)
-            operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(platform)
-            if operation not in operations or backend not in self.project.backend_options(platform, operation):
-                self.preparation_message('This platform, operation and execution host do not work together. Your choices are retained; choose a supported combination explicitly.')
-                return
-            if goal == 'deliver':
-                self.preparation_message('This project has not declared integrated delivery. Choose Advanced operation and a project workflow; review its actual destinations.')
-                return
-            prepare = partial(self.project.make_plan, operation, platform, backend, **choices)
+        from .preparation import preparation_request, validate_gui_selection
+        selection = self.configuration.selection()
+        integrated = bool(self.configuration.platform_checks) and selection.goal in {'validate', 'deliver'}
+        try:
+            validate_gui_selection(self.project, selection, integrated=integrated)
+        except ValueError as error:
+            self.preparation_message(str(error))
+            if integrated:
+                self.configuration.readiness.setText(str(error))
+            return
+        request = preparation_request(selection, integrated=integrated,
+                                      include_backends=self.configuration.selectable_backends)
+        prepare = partial(request.prepare, self.project)
         self.preparing_proposal = self.configuration.current_proposal
         self.invalidate(preserve_preset=True)
         self.preparation_revision = self.selection_revision
@@ -612,7 +678,7 @@ class ManagerPanel(QWidget):
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
             return
         from .workflows import start_authorized_effects, require_build_only
-        if self.goal.currentData() == 'build':
+        if self.configuration.goal.currentData() == 'build':
             try:
                 require_build_only(plan)
             except ValueError as error:
@@ -621,7 +687,7 @@ class ManagerPanel(QWidget):
                 return
         plan = start_authorized_effects(plan)
         self.plan = plan
-        if not self.preparing_verification and self.goal.currentData() == 'validate':
+        if not self.preparing_verification and self.configuration.goal.currentData() == 'validate':
             effects = [(phase.effect if phase.effect != 'inherit' else plan.effect) for phase in plan.phases]
             if any(effect in {'deploy', 'upload', 'publish'} for effect in effects) or 'test' not in effects:
                 self.plan = None
@@ -634,8 +700,8 @@ class ManagerPanel(QWidget):
         self.start.setEnabled(True)
         effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
         self.start.setText('Start reviewed workflow' if plan.journey and plan.journey['goal'] == 'deliver'
-                           else 'Start build' if self.goal.currentData() == 'build'
-                           else 'Start validation' if self.goal.currentData() == 'validate'
+                           else 'Start build' if self.configuration.goal.currentData() == 'build'
+                           else 'Start validation' if self.configuration.goal.currentData() == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
         self.status.clear()
         if device_retry:
@@ -840,10 +906,10 @@ class ManagerPanel(QWidget):
         self.is_busy = busy
         self.session.set_busy(busy)
         self.stage_tabs.setEnabled(not busy)
-        for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.operation,
-                        self.platform, self.backend, self.preset, self.suite, self.revision, self.pattern, self.build_override, self.release_tag,
+        for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.cleanup, self.resume, self.configuration.operation,
+                        self.configuration.platform, self.configuration.backend, self.configuration.preset, self.configuration.suite, self.configuration.revision, self.configuration.pattern, self.configuration.build_override, self.configuration.release_tag,
                         self.refresh_history_button, self.view_history_button, self.history, self.history_view.search, self.history_view.filter, self.continue_run,
-                        self.goal, self.configuration.blocker_strip, *self.configuration.goal_buttons.values(), *self.platform_checks.values(), *self.platform_backends.values(), *self.destination_checks.values(), *self.run_controls.values(), *self.run_fields.controls.values()):
+                        self.configuration.goal, self.configuration.blocker_strip, *self.configuration.goal_buttons.values(), *self.configuration.platform_checks.values(), *self.configuration.platform_backends.values(), *self.configuration.destination_checks.values(), *self.configuration.run_controls.values(), *self.configuration.run_fields.controls.values()):
             control.setEnabled(not busy)
         if not busy:
             self.configuration.update_mode()
@@ -871,21 +937,16 @@ class ManagerPanel(QWidget):
 
     def read_output(self):
         self.output_timer.stop()
-        self.session.buffer += bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
+        self.session.read_stdout()
         budget = QElapsedTimer()
         budget.start()
         processed = 0
-        while '\n' in self.session.buffer:
+        while self.session.events.has_line():
             if processed >= 128 or budget.elapsed() >= 8:
                 self.output_timer.start(0)
                 break
-            line, self.session.buffer = self.session.buffer.split('\n', 1)
+            event = self.session.events.take_event()
             processed += 1
-            try:
-                event = json.loads(line)
-            except ValueError:
-                self.run_view.append_output(None, self.redact(line))
-                continue
             if event.get('type') == 'output':
                 self.run_view.append_output(event.get('phase'), self.redact(event['text'].rstrip()))
             elif event.get('type') == 'waiting':
@@ -902,11 +963,7 @@ class ManagerPanel(QWidget):
                 # A suite can emit several growing case inventories in one
                 # read. Merge before redaction/model work, not merely before
                 # painting the same data repeatedly on the GUI thread.
-                pending = getattr(self, 'pending_phase_events', None)
-                if pending is None:
-                    pending = self.pending_phase_events = {}
-                previous_status = pending.get(event['id'], self.run_view.facts.get(event['id'], {})).get('status')
-                pending.setdefault(event['id'], {}).update(event)
+                previous_status = self.run_view.state.queue_event(event)
                 if not self.live_update_timer.isActive():
                     self.live_update_timer.start()
                 if event['status'] == 'running' and previous_status != 'running':
@@ -928,9 +985,7 @@ class ManagerPanel(QWidget):
             self.review_live_dirty = False
 
     def flush_live_updates(self):
-        pending = getattr(self, 'pending_phase_events', {})
-        self.pending_phase_events = {}
-        for event in pending.values():
+        for event in self.run_view.state.drain_events():
             self.run_view.update_phase(self.redacted_data(event), refresh=False)
             self.review_live_dirty = True
         self.run_view.flush_updates()
@@ -1059,7 +1114,7 @@ class ManagerPanel(QWidget):
     def prepare_close(self):
         if getattr(self, 'is_busy', False):
             return False
-        self.run_fields.stop()
+        self.configuration.run_fields.stop()
         self.closing = True
         self.history_timer.stop()
         self.review_timer.stop()

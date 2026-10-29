@@ -8,11 +8,10 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 import unittest
-from unittest.mock import patch
 from PySide6.QtCore import QPoint, QProcess, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QTabWidget, QScrollArea
+from PySide6.QtWidgets import QApplication, QScrollArea, QWidget
 from build_manager import Phase
 from build_manager.ui import ManagerPanel
 from test_journeys import integrated
@@ -356,7 +355,10 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.view.flow.open_group('deliver.firebase')
         for _ in range(5):
             self.app.processEvents()
-        self.assertEqual((self.panel.width(), self.panel.height()), (1024, 700))
+        minima = [(type(widget).__name__, widget.objectName(), widget.minimumSizeHint().toTuple())
+                  for widget in (self.panel, *self.panel.findChildren(QWidget))
+                  if widget.isVisible() and widget.minimumSizeHint().width() > 300]
+        self.assertEqual((self.panel.width(), self.panel.height()), (1024, 700), minima)
         for button in (self.panel.start, self.panel.back):
             self.assertTrue(self.panel.rect().contains(button.rect().translated(button.mapTo(self.panel, QPoint()))))
         self.assertTrue(self.view.tasks.isVisible())
@@ -366,6 +368,20 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.view.graph.legend.isHidden())
         self.assertTrue(self.panel.stage_heading.isHidden())
         self.assertTrue(self.panel.action_footer.isAncestorOf(self.panel.review_help))
+
+    def test_long_source_caption_fits_and_retains_accessible_full_text(self):
+        caption = 'Captured source: ' + 'source-and-run-choices ' * 40
+        button = self.view.source_details.toggle
+        button.setText(caption)
+        self.panel.resize(1024, 700)
+        for _ in range(5):
+            self.app.processEvents()
+        self.assertEqual(self.panel.width(), 1024)
+        self.assertNotEqual(button.text(), caption)
+        self.assertEqual(button.accessibleName(), caption)
+        self.assertEqual(button.toolTip(), caption)
+        button.click()
+        self.assertTrue(self.view.source_details.content.isVisible())
 
     def test_preparation_failure_exposes_full_redacted_traceback_without_starting_work(self):
         self.panel.stages.setCurrentIndex(0)

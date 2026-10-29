@@ -11,7 +11,7 @@ rules; the manager supervises them and keeps their evidence.
 | Run the application for the first time | [Setup](user/setup.md), then [your first workflow](user/user.md) |
 | Automate a registered project | [CLI](user/cli.md) |
 | Join development | [Developer guide](development/development.md), then [architecture and terms](development/architecture.md) |
-| Add support for a project | [Adapter contract](development/adapters.md) |
+| Add support for a project | [Runnable test onboarding](development/adding-project-tests.md), then [adapter contract](development/adapters.md) |
 | Understand a stopped or interrupted run | [Review and recovery](user/workflows.md) |
 
 The user guides describe controls and decisions. Developer references describe

@@ -6,7 +6,13 @@ import xml.etree.ElementTree as ET
 
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 MAX_CASES = 20000
+STAGE_LABELS = {'smoke': 'Smoke', 'regression': 'Regression', 'extended': 'Extended'}
+
 TIERS = {'unit', 'contracts', 'integration', 'ui', 'native', 'acceptance'}
+
+
+def stage_label(case):
+    return STAGE_LABELS.get(case.get('stage'), 'Unspecified')
 
 
 def validate_suites(suites, capabilities):
@@ -74,9 +80,13 @@ def read_junit(path):
             status = next((value for value in ('error', 'failure', 'skipped') if value in outcomes), 'passed')
             detail = outcomes.get(status)
             message = '' if detail is None else (detail.get('message', '') + '\n' + ''.join(detail.itertext())).strip()
+            stages = [prop.get('value') for child in element if tag(child) == 'properties'
+                      for prop in child if tag(prop) == 'property' and prop.get('name') == 'test_stage']
+            if len(stages) > 1 or stages and stages[0] not in STAGE_LABELS:
+                raise ValueError('JUnit test_stage must be smoke, regression or extended, declared once.')
             cases.append(dict(name=name, classname=element.get('classname', ''), suite=suite,
                               status='failed' if status == 'failure' else status, seconds=seconds,
-                              message=message[:16000]))
+                              message=message[:16000], **({'stage': stages[0]} if stages else {})))
         for child in element:
             walk(child, suite)
     try:

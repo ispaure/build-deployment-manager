@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "adapter_api": 1,
+  "project_id": "org.example.manager-testing-walkthrough",
+  "name": "Testing walkthrough",
+  "interpreter": {
+    "darwin": ".venv/bin/python",
+    "linux": ".venv/bin/python",
+    "win32": ".venv/Scripts/python.exe"
+  },
+  "bridge": "bridge.py",
+  "results": "test-results",
+  "capabilities": {
+    "platforms": ["host"],
+    "operations": ["Test"],
+    "backends": {"host": ["Local"]}
+  },
+  "test_suites": [
+    {
+      "id": "labels",
+      "label": "Display-name unit tests",
+      "description": "Two portable cases using synthetic strings",
+      "tier": "unit",
+      "platforms": ["host"],
+      "operations": ["Test"]
+    }
+  ]
+}

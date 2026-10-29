@@ -70,6 +70,30 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             discover(self.root, 'mobile')
 
+    def test_structure_checker_precedes_smoke_and_all_broad_suites(self):
+        data = dict(schema=1, suites=[dict(row, smoke_args=['--profile', 'smoke']) for row in self.rows],
+                    test_structure=dict(command=['-m', 'project.check_tests', '--check'], interpreter='host'))
+        (self.root / 'build-tests.json').write_text(json.dumps(data))
+        result = phases(self.root, 'mobile', {'host': '/host/python', 'project': '/project/python'},
+                        ('runner.py', '{directory}'))
+        self.assertEqual([p.id for p in result], ['test-structure','shared.smoke','app.smoke','shared','app'])
+        self.assertEqual(result[0].kind, 'setup')
+        self.assertEqual(result[0].argv, ('/host/python','-m','project.check_tests','--check'))
+        self.assertIn('test-structure', result[1].dependencies)
+        self.assertIn('shared.smoke', result[2].dependencies)
+        for phase in result[3:]:
+            self.assertTrue({'test-structure','shared.smoke','app.smoke'} <= set(phase.dependencies))
+
+    def test_invalid_structure_contract_and_missing_checker_interpreter_fail_planning(self):
+        data = dict(schema=1, suites=self.rows, test_structure={'command':'not argv','interpreter':'host'})
+        (self.root / 'build-tests.json').write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'test_structure'):
+            discover(self.root, 'mobile')
+        data['test_structure'] = dict(command=['validator.py'], interpreter='missing')
+        (self.root / 'build-tests.json').write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, 'structure checker interpreter'):
+            phases(self.root, 'mobile', {'host':'host','project':'project'}, ('runner','{directory}'))
+
     def test_headless_discovery_imports_no_application_or_qt(self):
         result = subprocess.run([sys.executable, '-c', 'import sys; import build_manager.test_manifest; '
             'assert not any(x.startswith(("PySide6", "Scripts", "mobile")) for x in sys.modules)'],

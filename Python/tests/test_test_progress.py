@@ -13,13 +13,16 @@ from build_manager.test_progress import PREFIX, parse_test_progress
 class TestProgressTests(unittest.TestCase):
     def test_events_are_bounded_and_cannot_override_execution_fields(self):
         event = dict(schema=1, kind='test_started', name='test_one', file='test_shared.py',
-                     status='passed', id='other-phase', artifacts=['unexpected'])
+                     stage='smoke', status='passed', id='other-phase', artifacts=['unexpected'])
         parsed = parse_test_progress(PREFIX + json.dumps(event))
         self.assertEqual(parsed['name'], 'test_one')
+        self.assertEqual(parsed['stage'], 'smoke')
         for key in ('status', 'id', 'artifacts'):
             self.assertNotIn(key, parsed)
         for invalid in ('ordinary output', PREFIX + 'broken', PREFIX + '[]',
                         PREFIX + json.dumps(dict(event, schema=9)),
+                        PREFIX + json.dumps(dict(event, stage='urgent')),
+                        PREFIX + json.dumps(dict(event, stage=[])),
                         PREFIX + json.dumps(dict(event, name='x' * 1001)),
                         PREFIX + json.dumps(dict(event, kind='test_finished', seconds=-1)),
                         PREFIX + json.dumps(dict(event, kind='test_finished', seconds=float('nan')))):
@@ -33,15 +36,15 @@ class TestProgressTests(unittest.TestCase):
 from pathlib import Path
 from build_manager.test_progress import emit_test_progress
 from build_manager.reporting import write_junit
-emit_test_progress('file_started', name='test_shared.py')
-emit_test_progress('test_started', name='test_slow', classname='Shared.Cases', file='test_shared.py')
+emit_test_progress('file_started', name='test_shared.py', stage='smoke')
+emit_test_progress('test_started', name='test_slow', classname='Shared.Cases', file='test_shared.py', stage='smoke')
 deadline = time.monotonic() + 5
 while not Path({str(release)!r}).exists():
     assert time.monotonic() < deadline, 'Current test was not received before it finished'
     time.sleep(.01)
-emit_test_progress('test_finished', name='test_slow', classname='Shared.Cases', file='test_shared.py', status='passed', seconds=.2)
-emit_test_progress('file_finished', name='test_shared.py', status='passed', seconds=.4)
-write_junit({str(report)!r}, 'shared', [dict(name='test_slow', classname='Shared.Cases', status='passed', seconds=.2)])
+emit_test_progress('test_finished', name='test_slow', classname='Shared.Cases', file='test_shared.py', status='passed', seconds=.2, stage='smoke')
+emit_test_progress('file_finished', name='test_shared.py', status='passed', seconds=.4, stage='smoke')
+write_junit({str(report)!r}, 'shared', [dict(name='test_slow', classname='Shared.Cases', status='passed', seconds=.2, stage='smoke')])
 '''
             phase = Phase('commonutils', (sys.executable, '-c', code), directory,
                 environment=dict(PYTHONPATH=str(Path(__file__).resolve().parents[1])),
@@ -52,6 +55,7 @@ write_junit({str(report)!r}, 'shared', [dict(name='test_slow', classname='Shared
                 if event.get('current_test'):
                     self.assertEqual(event['status'], 'running')
                     self.assertEqual(event['current_test']['name'], 'test_slow')
+                    self.assertEqual(event['current_test']['stage'], 'smoke')
                     self.assertNotIn('tests', event)
                     release.touch()
             plan = Plan('Fixture', 'Test', {}, (phase,), str(root / 'workspace'))
@@ -63,6 +67,8 @@ write_junit({str(report)!r}, 'shared', [dict(name='test_slow', classname='Shared
             self.assertIsNone(fact['current_test'])
             self.assertFalse(fact['tests_provisional'])
             self.assertEqual(fact['tests'][0]['file'], 'test_shared.py')
+            self.assertEqual(fact['tests'][0]['stage'], 'smoke')
+            self.assertEqual(fact['test_files'][0]['stage'], 'smoke')
             self.assertEqual(fact['test_files'][0]['seconds'], .4)
             self.assertTrue(any(event.get('live_tests') for event in events))
 

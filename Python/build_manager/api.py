@@ -6,6 +6,7 @@ from threading import Event
 from .executor import Executor
 from .history import load_run, read_report, recent_runs
 from .models import Plan
+from .preparation import WorkflowSelection, preparation_request
 from .registry import Registry
 from .workflows import EXTERNAL, ancestors, approve, recover
 
@@ -71,15 +72,11 @@ class ManagerAPI:
                 raise ValueError('Exclude only destinations selected by this preset.')
             choices = dict(choices, selected_destinations=[value for value in choices.get('selected_destinations', [])
                                                           if value not in exclude_destinations])
-        options = dict(revision=choices.get('revision', 'working-tree'),
-                       pattern=choices.get('pattern', ''), release_tag=choices.get('release_tag', ''),
-                       build_override=str(choices['build_override']) if choices.get('build_override') else '')
         inputs = dict(choices.get('run_overrides', {}))
         if run_overrides is not None:
             from .run_fields import validate_overrides
             inputs.update(validate_overrides(bridge.run_fields, run_overrides))
-        if inputs:
-            options['run_overrides'] = inputs
+        choices = dict(choices, run_overrides=inputs)
         goal = choices.get('goal', 'advanced')
         if goal in ('validate', 'deliver'):
             if not bridge.journey_capability:
@@ -88,24 +85,19 @@ class ManagerAPI:
             backends = choices.get('platform_backends', {})
             if set(backends) - set(bridge.platforms):
                 raise ValueError('Preset contains unknown execution platforms.')
-            if backends:
-                options['backends'] = {target: backends.get(target, bridge.journey_capability['platforms'][target]['backend'])
-                                       for target in platforms}
-            return bridge.make_journey(goal, platforms,
-                choices.get('selected_destinations', []) if goal == 'deliver' else [], **options)
+            choices['platform_backends'] = {
+                target: backends.get(target, bridge.journey_capability['platforms'][target]['backend'])
+                for target in platforms
+            } if backends else {}
+            return preparation_request(WorkflowSelection.from_choices(choices), integrated=True).prepare(bridge)
         if goal != 'advanced':
             raise ValueError('Unknown preset goal.')
-        if choices.get('suite'):
-            options['suite'] = choices['suite']
         run_options = choices.get('run_options', {})
         if set(run_options) - set(bridge.run_options):
             raise ValueError('Preset contains unknown project run options.')
-        options.update(run_options)
-        try:
-            operation, platform, backend = (choices[key] for key in ('operation', 'platform', 'backend'))
-        except KeyError as error:
-            raise ValueError('Advanced presets need operation, platform and backend.') from error
-        return bridge.make_plan(operation, platform, backend, **options)
+        if any(key not in choices for key in ('operation', 'platform', 'backend')):
+            raise ValueError('Advanced presets need operation, platform and backend.')
+        return preparation_request(WorkflowSelection.from_choices(choices)).prepare(bridge)
 
     def storage_inventory(self, project=None):
         """List only adapter-declared generated outputs, including active/pinned holds."""

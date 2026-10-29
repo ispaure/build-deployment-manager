@@ -120,3 +120,48 @@ class WindowsReleaseWaitTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 remove_tree('owned fixture')
             self.assertEqual(remove.call_count, 2)
+
+
+class BudgetRetentionTests(unittest.TestCase):
+    def test_pressure_evicts_oldest_recent_entries_but_keeps_pins_locks_and_newest(self):
+        from unittest.mock import patch
+        from build_manager.locking import workspace_lock
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for i in range(1, 8):
+                path = root / str(i); path.mkdir()
+                (path / 'data').write_bytes(b'x' * 100)
+                os.utime(path, (1000 + i, 1000 + i))
+            (root / '1/.keep').touch(); os.utime(root / '1', (1001, 1001))
+            with workspace_lock(root / '.2.retention.lock'), patch('build_manager.retention.allocated_bytes', return_value=100):
+                args = dict(eligible=lambda p: p.name.isdigit(), keep=2, now=1100,
+                            age_days=7, max_bytes=400)
+                preview = prune(root, **args)
+                self.assertEqual([Path(p).name for p in preview], ['3', '4', '5'])
+                self.assertEqual(prune(root, apply=True, **args), preview)
+            self.assertTrue(all((root / str(i)).exists() for i in (1, 2, 6, 7)))
+
+    def test_pressure_respects_grace_and_does_not_count_link_targets(self):
+        from build_manager.retention import allocated_bytes
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); builds = root / 'builds'; builds.mkdir()
+            outside = root / 'outside'; outside.mkdir(); (outside / 'data').write_bytes(b'x' * 8192)
+            for i in range(4):
+                path = builds / str(i); path.mkdir(); os.utime(path, (1000, 1000))
+            directory_link(builds / '0/link', outside)
+            self.assertEqual(allocated_bytes(builds / '0'), 0)
+            self.assertEqual(prune(builds, eligible=lambda p: True, keep=1, now=1100,
+                                   max_bytes=0, grace_days=1), [])
+
+
+class AccessDateRetentionTests(unittest.TestCase):
+    def test_last_used_overrides_old_directory_mtime_for_age_and_order(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for i in range(5):
+                path = root / str(i); path.mkdir(); os.utime(path, (1, 1))
+            # Entry zero has an old directory but was reused most recently.
+            times = {'0': 100000, '1': 100001, '2': 100002, '3': 100003, '4': 1}
+            rows = prune(root, eligible=lambda p: p.name.isdigit(), keep=2, now=100004,
+                         last_used=lambda p: times[p.name])
+            self.assertEqual([Path(p).name for p in rows], ['4'])

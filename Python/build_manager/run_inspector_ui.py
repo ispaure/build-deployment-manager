@@ -28,10 +28,10 @@ class RunInspectorView(QWidget):
         self.set_detail_text(details, '')
 
     def show_phase(self, plan, phase, fact, state, reason, phases):
-        from .workflow_ui import title, effect_label
+        from .workflow_presentation import title, effect_label
         self.selection_heading.setText(title(phase))
         dependencies = ', '.join(title(phases[key]) for key in phase.dependencies) or 'None'
-        from .workflow_ui import state_label, step_time
+        from .workflow_presentation import state_label, step_time
         text = f'{effect_label(phase, plan)} · {state_label(state)}\nPrerequisites: {dependencies}'
         if reason:
             text += '\n' + reason

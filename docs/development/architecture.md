@@ -79,6 +79,37 @@ Saved plans and CLI execution retain their declared approval requirements. Alway
 inspect the actual plan; do not infer permission from a provider name alone.
 See [execution and review](../user/workflows.md#execution-and-review).
 
+## Internal responsibility boundaries
+
+| Module | Owns |
+| --- | --- |
+| `preparation.py` | Typed workflow selections and normalized adapter requests shared by GUI and presets |
+| `configuration_ui.py` | Controls, selection snapshots, restoration and preset comparison |
+| `presets_ui.py` | One workspace's saved-preset picker, actions and refresh lifecycle |
+| `run_session.py` | Qt process lifecycle, cancellation marker and process output delivery |
+| `run_state.py` | Partial event buffering, batched phase facts, measured timing and run outcome |
+| `workflow_graph.py` | Display-only dependency reduction, positions and connection groups |
+| `workflow_presentation.py` | Headless labels, predicted display states and plan descriptions |
+| `workflow_cards_ui.py`, `workflow_map_ui.py`, `test_tree_ui.py` | Card rendering, viewport interaction and stable case-tree items |
+| `workflow_ui.py` | Compose the browser and map; preserve existing named imports |
+| `scheduling.py` | Pure readiness, skip and aggregate-outcome decisions |
+| `run_recording.py` | Redacted atomic report persistence and cumulative attempt timing |
+| `executor.py` | Resource/approval admission, scheduling loop, evidence and subprocess supervision |
+
+`ManagerPanel` coordinates these components. Configuration controls remain
+available through explicit compatibility properties; new code accesses their
+owner or uses `selection()` and `restore_selection()`. A preparation request
+contains choices, not executable work or permission. Project code still runs
+through its isolated bridge.
+
+Live phase facts and retained phase results enter the same `RunState.update`
+path. UI batching merges partial updates before redaction and rendering; its
+bounded read budget remains on the Qt thread. Predicted blocked states are
+presentation only and cannot satisfy dependencies. The executor persists intent
+before starting a child, retains unknown external outcomes, and owns cleanup
+independently of the display graph. Plan serialization and identity remain in
+`models.py` with their existing compatibility rules.
+
 ## Where to go next
 
 - [Adapter contract](adapters.md): descriptor, bridge actions and project boundaries.

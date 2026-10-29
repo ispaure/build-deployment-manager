@@ -7,6 +7,30 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## October 29 maintainability refactor
+
+Preparation now uses typed, headless workflow selections and normalized adapter
+requests. Run facts, partial event merging and measured timing have one headless
+owner; saved presets have a workspace controller. Workflow graph calculations,
+presentation, cards, map interaction and case trees have separate modules.
+Executor readiness/outcome decisions and report recording are extracted while
+resource/approval admission and subprocess supervision remain in the executor.
+See [internal responsibilities](architecture.md#internal-responsibility-boundaries).
+
+The full per-module portable/offscreen runner passes 603 tests using the locked
+`.venv` and this checkout's `Python` source root. Four subsequently added scheduling
+decision checks also pass. Focused reruns of preparation, run state, recording,
+CLI, executor and scheduling pass after final cleanup. Seventeen new regression
+tests cover these extracted boundaries, including headless imports. Existing
+contracts cover stale preparation, live responsiveness, retained timing, preset
+restoration, legacy plan identity, approval/recovery, process cleanup and the
+retained dormant browser. Raw logs remain in ignored `test-results`.
+
+This establishes portable and offscreen behavior, not new native desktop,
+provider, device or VM acceptance. Plan serialization, interpreter isolation and
+project-owned policy are preserved. The nested workflow browser remains dormant;
+review and progress retain their persistent side pane without nested navigation.
+
 ## October 26 completion, activity, history and journey passes
 
 Five separately committed passes cover completion/results, active execution,
@@ -367,3 +391,20 @@ without hosted fallback. Direct Settings editors and isolated bridge writers
 share the credential/reference guard. The published Logistics manager pin remains
 unchanged; older manager installations retain single-platform API-1 operations
 and require an explicit reviewed local upgrade to use combined journeys.
+
+## Contract process boundaries
+
+`python -m build_manager.contracts` discovers every `test*.py` module and runs
+each in a separate interpreter. Each child receives the selected test tree’s source root first in PYTHONPATH, so imports before build_manager still resolve its pinned commonUtils. The parent does not import GUI fixtures. This
+prevents closed Qt fixtures and their deferred callbacks from leaking into a
+later module's executor threads. Every module remains required; any assertion,
+crash or abnormal exit fails the aggregate, and remaining modules still report.
+The owning manager phase retains its aggregate deadline and process cleanup.
+This is test-process isolation, not evidence of a native platform pass.
+
+Explicit local consumer validation can capture uncommitted manager edits through
+`dependency_sources.local_test_identity` and an `archive(..., working_tree=...)`
+request bound to that exact identity. A bounded manifest is checked again after
+copy and extraction; the manager base commit and commonUtils pin remain fixed.
+Ordinary `verify` and `archive` calls still reject modified tracked source.
+Consumers must expose this only for local tests, never release or delivery.

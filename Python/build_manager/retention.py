@@ -78,27 +78,60 @@ def pinned(path):
     return False
 
 
-def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, now=None, order_key=None):
-    """Keep newest entries plus recent/pinned/locked trees. Never follow root links."""
+def allocated_bytes(path):
+    """Measure owned tree allocation without following directory or file links."""
+    total = 0
+    pending = [Path(path)]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or (os.name == 'nt' and linked(Path(entry.path))):
+                    continue
+                if stat.S_ISDIR(info.st_mode):
+                    pending.append(entry.path)
+                else:
+                    total += getattr(info, 'st_blocks', (info.st_size + 511) // 512) * 512
+    return total
+
+
+def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, now=None, order_key=None,
+          max_bytes=None, grace_days=0, last_used=None):
+    """Keep newest/pinned/locked trees; an optional budget can evict recent ones.
+
+    A budget is soft: newest entries, active leases, pins and the grace period
+    always win. Preview and apply use the same oldest-first pressure selection.
+    """
     root = Path(root)
-    if keep < 1 or age_days < 0:
+    if keep < 1 or age_days < 0 or grace_days < 0 or (max_bytes is not None and max_bytes < 0):
         raise ValueError('Retention requires at least one retained entry and a nonnegative age.')
     if not root.exists():
         return []
     if any(linked(part) for part in (root, *root.parents)):
         return []
     now = time.time() if now is None else now
+    last_used = last_used or (lambda p: p.stat().st_mtime)
     rows = []
     lock_path = lock_path or (lambda path: root / ('.' + path.name + '.retention.lock'))
     with workspace_lock(root / '.retention.lock'):
         entries = sorted((p for p in root.iterdir() if not linked(p) and p.is_dir() and eligible(p)),
-                         key=order_key or (lambda p: (p.stat().st_mtime, p.name)), reverse=True)
-        for path in entries[keep:]:
+                         key=order_key or (lambda p: (last_used(p), p.name)), reverse=True)
+        sizes = {path: allocated_bytes(path) for path in entries} if max_bytes is not None else {}
+        remaining = sum(sizes.values())
+        # Oldest first makes the pressure policy retain the most useful caches.
+        candidates = list(reversed(entries[keep:])) if max_bytes is not None else entries[keep:]
+        for path in candidates:
             try:
                 with workspace_lock(lock_path(path)):
-                    if now - path.stat().st_mtime < age_days * 86400 or pinned(path):
+                    age = now - last_used(path)
+                    pressure = max_bytes is not None and remaining > max_bytes
+                    if age < grace_days * 86400 or (age < age_days * 86400 and not pressure) or pinned(path):
+                        continue
+                    # Recheck caller ownership after acquiring the entry lock.
+                    if linked(path) or not eligible(path):
                         continue
                     rows.append(str(path))
+                    remaining -= sizes.get(path, 0)
                     if apply:
                         remove_tree(path)
             except RuntimeError:

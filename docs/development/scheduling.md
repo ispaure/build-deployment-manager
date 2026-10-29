@@ -83,3 +83,14 @@ cannot authorize a pass. The exact worker exit/receipt and collected reports sta
 authoritative. Presenter failures do not interrupt worker cleanup or change its
 outcome. Projects supply user-facing stage labels; headless waiting remains
 distinct from observed per-test progress.
+
+
+## Storage pressure retention
+
+`retention.prune` accepts an optional `max_bytes` allocation budget and
+`grace_days`. The caller owns the budget and eligibility policy. When over budget,
+recent eligible trees can expire oldest first; the newest `keep` trees, pinned
+or durably held trees, active entry locks and grace period remain protected.
+The limit is soft when protected storage alone exceeds it. Allocation measurement
+skips links and junctions. Dry runs use the same selection as deletion and caller
+ownership is rechecked under each entry lock.

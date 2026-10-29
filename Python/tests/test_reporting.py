@@ -69,3 +69,23 @@ class ReportingTests(unittest.TestCase):
     def test_producer_is_headless(self):
         subprocess.run([sys.executable, '-c', 'import sys;import build_manager.reporting;'
             'assert not any(name.startswith(("PySide6","bpy","mobile")) for name in sys.modules)'], check=True)
+
+
+    def test_stage_properties_round_trip_and_invalid_values_fail(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory)/'cases.xml'
+            cases = [dict(name=value, status='passed', stage=value)
+                     for value in ('smoke','regression','extended')]
+            cases.append(dict(name='legacy', status='passed'))
+            write_junit(output, 'fixture', cases)
+            reported = read_junit(output)
+            self.assertEqual([case.get('stage') for case in reported],
+                             ['smoke','regression','extended',None])
+            with self.assertRaisesRegex(ValueError, 'stage'):
+                write_junit(output, 'fixture', [dict(name='wrong',status='passed',stage='urgent')])
+            for properties in ('<property name="test_stage" value="urgent"/>',
+                    '<property name="test_stage" value="smoke"/><property name="test_stage" value="extended"/>'):
+                output.write_text('<testsuite><testcase name="a"><properties>' + properties +
+                                  '</properties></testcase></testsuite>')
+                with self.assertRaisesRegex(ValueError, 'test_stage'):
+                    read_junit(output)

@@ -67,3 +67,36 @@ class DependencySourceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             archive(self.manager, self.pin, 'unsupported', scratch)
         self.assertFalse(list(scratch.iterdir()))
+
+    def test_explicit_local_test_capture_includes_public_edits_and_rejects_tampering(self):
+        from build_manager.dependency_sources import local_test_identity, verify_local_test_source
+        (self.manager / 'public.py').write_text('PUBLIC = "working"')
+        added = self.manager / 'Python/build_manager/new_test_helper.py'
+        added.parent.mkdir(parents=True)
+        added.write_text('NEW = True')
+        (self.manager / 'private-credential').write_text('never transfer')
+        identity = local_test_identity(self.manager, self.pin)
+        with TemporaryDirectory() as scratch:
+            with self.assertRaisesRegex(ValueError, 'Commit manager'):
+                archive(self.manager, self.pin, 'zip', scratch)
+        with TemporaryDirectory() as scratch:
+            payload = archive(self.manager, self.pin, 'zip', scratch, working_tree=identity['fingerprint'])
+        with TemporaryDirectory() as extracted:
+            with zipfile.ZipFile(io.BytesIO(payload)) as data:
+                self.assertNotIn('private-credential', data.namelist())
+                self.assertIn('Python/build_manager/new_test_helper.py', data.namelist())
+                data.extractall(extracted)
+            actual = verify_local_test_source(extracted, self.pin, identity['fingerprint'])
+            self.assertEqual(actual, identity)
+            (Path(extracted) / 'public.py').write_text('tampered')
+            with self.assertRaisesRegex(ValueError, 'differs'):
+                verify_local_test_source(extracted, self.pin, identity['fingerprint'])
+        with TemporaryDirectory() as scratch:
+            with self.assertRaisesRegex(ValueError, 'changed after planning'):
+                archive(self.manager, self.pin, 'tar', scratch, working_tree='0' * 64)
+
+    def test_local_test_capture_keeps_commonutils_at_its_committed_pin(self):
+        from build_manager.dependency_sources import local_test_identity
+        (self.shared / 'library.py').write_text('SHARED = "unreviewed"')
+        with self.assertRaisesRegex(ValueError, 'Commit manager'):
+            local_test_identity(self.manager, self.pin)

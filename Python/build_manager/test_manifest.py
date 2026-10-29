@@ -9,6 +9,19 @@ from .models import Phase
 MANIFEST = 'build-tests.json'
 
 
+def structure_contract(root):
+    """An opt-in project checker owns labels; the manager never imports tests."""
+    value = json.loads((Path(root) / MANIFEST).read_text()).get('test_structure')
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or set(value) != {'command', 'interpreter'}
+            or not isinstance(value['command'], list) or not value['command']
+            or any(not isinstance(arg, str) or not arg for arg in value['command'])
+            or not isinstance(value['interpreter'], str) or not value['interpreter']):
+        raise ValueError('test_structure requires command arguments and an interpreter key')
+    return value
+
+
 def _inside(root, value):
     if not isinstance(value, str) or not value or Path(value).is_absolute():
         raise ValueError('Test paths must be relative to their owning checkout.')
@@ -32,6 +45,7 @@ def discover(root, group):
     data = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(data, dict) or data.get('schema') != 1 or not isinstance(data.get('suites'), list):
         raise ValueError('Expected test manifest schema 1 with suites.')
+    contract = structure_contract(root)
     rows = {}
     for original in data['suites']:
         if not isinstance(original, dict):
@@ -40,6 +54,11 @@ def discover(root, group):
         key = row.get('id')
         if not isinstance(key, str) or not re.fullmatch(r'[a-zA-Z0-9][\w.-]*', key) or key in rows:
             raise ValueError('Test suite IDs must be stable and unique.')
+        if contract and key == 'test-structure':
+            raise ValueError('test-structure is reserved for the preflight checker')
+        smoke_args = row.get('smoke_args', [])
+        if not isinstance(smoke_args, list) or any(not isinstance(arg, str) or not arg for arg in smoke_args):
+            raise ValueError('smoke_args must be an argument list')
         for field in ('groups', 'after'):
             values = row.get(field, [])
             if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
@@ -108,11 +127,35 @@ def phases(root, group, interpreters, runner, *, environment=None):
         raise ValueError('Declare runner arguments with exactly one {directory} argument.')
     rows = discover(root, group)
     result = []
+    contract = structure_contract(root)
+    if contract:
+        interpreter = interpreters.get(contract['interpreter'])
+        if not interpreter:
+            raise ValueError('Configure structure checker interpreter: ' + contract['interpreter'])
+        result.append(Phase('test-structure', (str(interpreter), *contract['command']),
+                            str(root), timeout=120, environment=dict(environment or {}), kind='setup'))
+    smoke_rows = [row for row in rows if row.get('smoke_args')]
+    smoke_ids = tuple(row['id'] + '.smoke' for row in smoke_rows)
+    reserved = {row['id'] for row in rows}
+    if any(name in reserved for name in smoke_ids):
+        raise ValueError('Smoke phase IDs collide with declared suites')
+    for row in smoke_rows:
+        interpreter = interpreters.get(row['interpreter'])
+        if not interpreter:
+            raise ValueError('Configure the test interpreter: ' + row['interpreter'])
+        dependencies = tuple(name + '.smoke' for name in row['after'] if any(r['id'] == name for r in smoke_rows))
+        if contract:
+            dependencies = ('test-structure', *dependencies)
+        result.append(Phase(row['id'] + '.smoke', (str(interpreter),
+            *(row['directory'] if arg == '{directory}' else arg for arg in runner), *row['smoke_args']),
+            str(root), timeout=row['timeout'], dependencies=dependencies,
+            environment=dict(environment or {}), effect='test'))
     for row in rows:
         interpreter = interpreters.get(row['interpreter'])
         if not interpreter:
             raise ValueError('Configure the test interpreter: ' + row['interpreter'])
         result.append(Phase(row['id'], (str(interpreter), *(row['directory'] if arg == '{directory}' else arg for arg in runner)),
-            str(root), timeout=row['timeout'], dependencies=tuple(row['after']),
+            str(root), timeout=row['timeout'], dependencies=tuple(dict.fromkeys(
+                (*(['test-structure'] if contract else []), *smoke_ids, *row['after']))),
             environment=dict(environment or {}), effect='test'))
     return tuple(result)

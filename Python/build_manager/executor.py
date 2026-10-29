@@ -1,6 +1,5 @@
-"""Sequential phase execution, dependency gates, bounded waits and process cleanup."""
+"""Bounded workflow orchestration, dependency gates and owned process cleanup."""
 from contextlib import ExitStack
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -16,10 +15,8 @@ from commonUtils.runtime.streams import file_sha256
 from commonUtils.runtime.operations import OperationCancelled
 from .locking import workspace_lock
 from .redaction import Redactor
-
-
-def timestamp():
-    return datetime.now(timezone.utc).isoformat()
+from .run_recording import RunRecorder, timestamp
+from .scheduling import phase_is_ready, skip_reason, final_status
 
 
 def signal_group(group, sig):
@@ -114,35 +111,7 @@ class Executor:
                              reviewed_at=timestamp())
         elif engine_review is not None:
             raise ValueError('Engine review does not match a pending engine change.')
-        def sanitize(value, redact):
-            if isinstance(value, str):
-                # Serialized values are independent strings, not consecutive
-                # lines of a PEM stream. Discover inherited secrets once per
-                # report, rather than scanning the environment for every field.
-                redact.private_key = False
-                return redact(value)
-            if isinstance(value, dict):return {key:sanitize(item, redact) for key,item in value.items()}
-            if isinstance(value, (tuple,list)):return [sanitize(item, redact) for item in value]
-            return value
-        def save():
-            from .profiles import save_json
-            save_json(output/'result.json',sanitize(report, Redactor(os.environ.get(name) for name in plan.secret_environment)))
-        started = time.monotonic()
-        from .history import valid_seconds
-        previous_seconds = report.get('seconds', 0) if resume else 0
-        if not valid_seconds(previous_seconds) or not isinstance(report.get('attempts', []), list):
-            raise ValueError('Retained run timing is invalid; preserve and inspect a new run.')
-        attempt_started_at = timestamp()
-        def finish_timing():
-            elapsed = time.monotonic() - started
-            report.update(finished_at=timestamp(), attempt_seconds=elapsed, seconds=previous_seconds + elapsed)
-            attempt = dict(started_at=attempt_started_at, finished_at=report['finished_at'],
-                           seconds=elapsed, status=report['status'])
-            if not retry_failed:
-                attempt['retry_failed'] = False
-            if report.get('error'):
-                attempt['error'] = report['error']
-            report.setdefault('attempts', []).append(attempt)
+        recorder = RunRecorder(output, report, plan.secret_environment, resume=resume)
         resources = Resources(getattr(self, 'resource_directory', None))
         def execute(phase):
             try:
@@ -188,8 +157,8 @@ class Executor:
                 report.pop('error', None)
                 report['status'] = 'running'
                 report['phases'] = list(rows.values())
-                report['attempt_started_at'] = attempt_started_at
-                save()
+                report['attempt_started_at'] = recorder.attempt_started_at
+                recorder.save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
                 retry_after = {}
@@ -198,21 +167,20 @@ class Executor:
                     while pending or running:
                         changed = False
                         for phase in list(pending):
-                            if len(running)>=plan.max_workers:break
-                            if phase.reuse_key and any(active.reuse_key == phase.reuse_key for active, _ in running.values()):
-                                # Let the first equivalent suite produce its receipt without
-                                # occupying another worker waiting on the same evidence lock.
+                            if len(running) >= plan.max_workers:
+                                break
+                            if not phase_is_ready(phase,
+                                    running=tuple(active for active, _ in running.values()),
+                                    pending=pending, rows=rows, max_workers=plan.max_workers,
+                                    retry_after=retry_after, now=time.monotonic(),
+                                    cancelled=self.cancelled.is_set()):
                                 continue
-                            if not self.cancelled.is_set() and time.monotonic() < retry_after.get(phase.id, 0):continue
-                            if any(name not in rows or rows[name]['status'] in {'running', 'retrying'} for name in (*phase.dependencies, *phase.waits_for)):continue
-                            if phase.always and running and not phase.dependencies and not phase.waits_for:continue
-                            if phase.always and not phase.dependencies and not phase.waits_for and plan.max_workers>1 and any(not p.always for p in pending):continue
-                            blocked = any(rows[name]['status']!='passed' for name in phase.dependencies)
+                            reason = skip_reason(phase, rows, cancelled=self.cancelled.is_set())
                             row = None
                             effect = phase.effect if phase.effect!='inherit' else plan.effect
-                            if (self.cancelled.is_set() or blocked) and not phase.always:
-                                row = dict(id=phase.id,required=phase.required,status='skipped',
-                                           reason='cancelled' if self.cancelled.is_set() else 'dependency did not pass',seconds=0)
+                            if reason:
+                                row = dict(id=phase.id, required=phase.required, status='skipped',
+                                           reason=reason, seconds=0)
                             elif not phase.always:
                                 try:
                                     for dependency in phase.dependencies:verify_artifacts(rows[dependency])
@@ -223,20 +191,24 @@ class Executor:
                                                        reason='Review exact retained artifacts and destination before this effect.',seconds=0)
                                 except (OSError,ValueError) as error:
                                     row = dict(id=phase.id,required=phase.required,status='failed',error=str(error),seconds=0)
-                            pending.remove(phase);changed=True
+                            pending.remove(phase)
+                            changed = True
                             if row is not None:
-                                rows[phase.id]=row;self.event(dict(type='phase',**row))
+                                rows[phase.id] = row
+                                self.event(dict(type='phase', **row))
                             else:
                                 rows[phase.id]=dict(id=phase.id,required=phase.required,status='running',effect=effect,operation_id=str(uuid4()))
                                 report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
-                                save() # Persist intent before any child or remote request can start.
+                                # Persist intent before any child or remote request can start.
+                                recorder.save()
                                 running[pool.submit(execute,phase)]=(phase,effect)
                             report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
-                            save()
+                            recorder.save()
                         if running:
                             done,_=wait(running,timeout=.05,return_when=FIRST_COMPLETED)
                             for future in done:
-                                phase,effect=running.pop(future);row=future.result()
+                                phase, effect = running.pop(future)
+                                row = future.result()
                                 row['operation_id']=rows[phase.id]['operation_id']
                                 row['effect']=effect
                                 if (row['status'] == 'failed' and row.get('exit_code') in phase.retry_exit_codes
@@ -254,8 +226,11 @@ class Executor:
                                     pending.append(phase)
                                 elif phase.id in retry_history:
                                     row.update(retry_count=len(retry_history[phase.id]), retry_attempts=retry_history[phase.id])
-                                if effect in EXTERNAL and row['status']!='passed':row['status']='unknown'
-                                rows[phase.id]=row;self.event(dict(type='phase',**row));changed=True
+                                if effect in EXTERNAL and row['status'] != 'passed':
+                                    row['status'] = 'unknown'
+                                rows[phase.id] = row
+                                self.event(dict(type='phase', **row))
+                                changed = True
                         if not changed and not running and pending:
                             if any(p.id in retry_after for p in pending) and not self.cancelled.is_set():
                                 if any(row['status'] == 'awaiting_review' for row in rows.values()):
@@ -265,12 +240,8 @@ class Executor:
                                 raise RuntimeError('Workflow dependencies cannot make progress.')
                         if changed:
                             report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
-                            save()
-                statuses=[row['status'] for row in report['phases'] if row['required']]
-                cleanup_failed=any(p.always and p.required and p.id in rows and rows[p.id]['status']!='passed' for p in plan.phases)
-                report['status']=('unknown' if 'unknown' in statuses else 'failed' if cleanup_failed else
-                    'awaiting_review' if 'awaiting_review' in statuses else 'cancelled' if self.cancelled.is_set() else
-                    'failed' if any(status!='passed' for status in statuses) else 'passed')
+                            recorder.save()
+                report['status'] = final_status(plan, rows, cancelled=self.cancelled.is_set())
                 from .retention import durable_hold
                 owner = str(output.resolve())
                 if report['status'] in {'awaiting_review','unknown'}:
@@ -278,17 +249,19 @@ class Executor:
                     paths.update(str(Path(value).parent) for phase in plan.phases for value in phase.artifacts if Path(value).exists())
                     paths.update(str(Path(value).with_suffix('')) for value in plan.resource_locks if Path(value).with_suffix('').is_dir())
                     report['holds'] = sorted(set(report.get('holds', ())) | paths)
-                    for path in report['holds']:durable_hold(path,owner)
+                    for path in report['holds']:
+                        durable_hold(path, owner)
                 else:
-                    for path in report.get('holds', ()):durable_hold(path,owner,release=True)
+                    for path in report.get('holds', ()):
+                        durable_hold(path, owner, release=True)
                     report['holds'] = []
-                finish_timing()
-                save()
+                recorder.finish_timing(retry_failed=retry_failed)
+                recorder.save()
         except (OSError, ValueError, RuntimeError) as error:
             uncertain=any(row.get('status') in {'unknown','running'} and row.get('effect') in EXTERNAL for row in report['phases'])
             report.update(status='unknown' if uncertain else 'cancelled' if self.cancelled.is_set() else 'failed', error=Redactor()(str(error)))
-            finish_timing()
-            save()
+            recorder.finish_timing(retry_failed=retry_failed)
+            recorder.save()
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
         return report
 

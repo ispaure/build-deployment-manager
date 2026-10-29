@@ -1,7 +1,10 @@
 # Project test organization contract
 
-Logistics and Blue Hole own their suites and must expose the same manager-facing
-contract. The manager never imports their test modules, searches sibling checkouts,
+New projects can follow [the runnable onboarding example](adding-project-tests.md)
+before adopting the contracts below. Existing test roots can map to these kinds;
+a directory reorganization is not required to connect a project.
+
+Each project owns its suites and exposes the manager-facing contract below. The manager never imports their test modules, searches sibling checkouts,
 installs project dependencies or decides release eligibility.
 
 ## Layout and suite identity
@@ -10,8 +13,9 @@ Manager contracts live in `Python/tests/` and run from the repository root with
 `.venv/bin/python -m build_manager.contracts`. Logistics application tests also
 live in `Python/tests/`; its build-tooling tests remain with their owning tooling.
 
-Use a project-owned test root with `unit`, `contracts`, `integration`, `ui`,
-`native` and `acceptance` groups (existing roots may map into these groups).
+Keep a project-owned test root. Use `unit`, `contracts`, `integration`, `ui`,
+`native` and `acceptance` to describe test kinds; existing folders can map to
+those kinds without moving their files.
 Fixtures belong alongside the narrowest owning group. Keep raw reports, logs,
 screenshots and temporary packages in ignored project test-results storage.
 Use stable suite IDs such as `portable.contracts`, `desktop.ui`, `android.native`,
@@ -44,6 +48,17 @@ IDs and combine any focused pattern within that suite, never broaden it silently
 No suite selected preserves the adapter's full declared-suite behavior. Old
 descriptors remain supported. Presets may declare a `suite` ID as well as platform,
 operation and backend. Descriptor updates retain registration-based authorization; validation and identity checks still apply.
+
+## Execution stages and source validation
+
+Projects using smoke/regression/extended scopes declare their checker through the
+[test-manifest structure contract](test-manifests.md#test-structure-and-smoke-gates).
+The checker validates all declared test sources before test phases can execute and
+reports malformed or missing labels as preflight errors. Keep execution stages in a
+project/shared enum, with a module default and explicit class/method overrides when
+needed. Descriptor `tier` continues to describe a suite's test kind; `TestStage`
+describes when its cases run. The manager consumes the checker and smoke arguments
+through phase dependencies, without importing the enum or test modules.
 
 ## Plans and evidence
 
@@ -198,3 +213,15 @@ Projects must separately verify coverage, changed inputs, platform/toolchain
 applicability and cleanup before composing a new continuation plan. An undeclared
 temporary binary is not certified merely because the check's retained reports
 remain available. Provider and device outcomes require their own reconciliation.
+
+
+## Reporting case stages
+
+A case may carry a validated `stage` of `smoke`, `regression` or `extended`.
+`reporting.write_junit` writes it as a testcase property named `test_stage`;
+`test_results.read_junit` retains it in case facts. Duplicate or unknown values
+are report errors. Missing properties preserve compatibility with older reports.
+Bounded live test-progress events also accept the same optional `stage` field;
+these remain advisory and cannot replace final evidence. Results exposes a Stage
+column/filter in Tests, a Stage column in Timing, and stage text in case details
+and live tooltips. A display filter does not narrow acceptance or alter execution.

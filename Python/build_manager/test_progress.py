@@ -32,6 +32,11 @@ def parse_test_progress(line):
             if not isinstance(value, str) or len(value) > (8000 if key == 'message' else 1000):
                 return None
             result[key] = value
+        if event.get('stage') is not None:
+            from .test_results import STAGE_LABELS
+            if not isinstance(event['stage'], str) or event['stage'] not in STAGE_LABELS:
+                return None
+            result['stage'] = event['stage']
         if not result['name']:
             return None
         if kind.endswith('finished'):

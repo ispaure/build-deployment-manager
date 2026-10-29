@@ -1,15 +1,44 @@
 """One review map and a persistent, synchronized task/evidence inspector."""
 import shlex
 import json
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QLabel, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .grouped_workflow_ui import GroupedFlowView
 from .plan_summary import captured_choices, phase_title, summary_rows, destination_identity
-from .workflow_ui import WorkflowFlow, blocking_prerequisite, display_states, state_label, step_time, update_test_children, time_share
+from .workflow_ui import WorkflowFlow
+from .workflow_presentation import blocking_prerequisite, display_states, state_label, step_time
+from .test_tree_ui import update_test_children, time_share
 from .ui_components import style_tabs
+
+
+class DisclosureToggle(QToolButton):
+    """Keep the full caption accessible without forcing the review width."""
+    def __init__(self):
+        super().__init__()
+        self.full_text = ''
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+
+    def setText(self, text):
+        self.full_text = text
+        self.setAccessibleName(text)
+        self.setToolTip(text)
+        self.elide()
+
+    def elide(self):
+        QToolButton.setText(self, self.fontMetrics().elidedText(
+            self.full_text, Qt.TextElideMode.ElideRight, max(0, self.width() - 32)))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.elide()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in {QEvent.Type.FontChange, QEvent.Type.StyleChange}:
+            self.elide()
 
 
 class Disclosure(QWidget):
@@ -18,7 +47,7 @@ class Disclosure(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        self.toggle = QToolButton()
+        self.toggle = DisclosureToggle()
         self.toggle.setText(label)
         self.toggle.setCheckable(True)
         self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -215,7 +244,7 @@ class ReviewPlanView(QWidget):
 
     def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='', preview=True):
         self.plan, self.fields, self.summary = plan, fields, summary
-        from .run_ui import plan_overview
+        from .workflow_presentation import plan_overview
         self.overview.setPlainText(plan_overview(plan))
         self.plan_data.setPlainText(json.dumps(plan.data() if hasattr(plan, 'data') else vars(plan),
                                                 default=vars, indent=2))

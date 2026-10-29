@@ -39,10 +39,6 @@ class ConfigurationSection(QWidget):
 
 
 class ConfigurationView(QWidget):
-    names = ('preset', 'operation', 'platform', 'backend', 'suite', 'revision',
-             'pattern', 'build_override', 'release_tag', 'run_controls', 'advanced_toggle',
-             'goal', 'platform_checks', 'platform_backends', 'destination_checks', 'readiness', 'preset_note', 'run_fields')
-
     def __init__(self, project, parent=None):
         super().__init__(parent)
         self.project = project
@@ -613,6 +609,40 @@ class ConfigurationView(QWidget):
             control = item.toggle
         self.ensureWidgetVisible(control)
         control.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def selection(self):
+        from .preparation import WorkflowSelection
+        choices = self.choices()
+        choices['run_overrides'] = self.run_fields.values()
+        return WorkflowSelection.from_choices(choices)
+
+    def preset_snapshot(self):
+        """Capture displayed inputs, including inherited defaults, for a preset."""
+        from PySide6.QtWidgets import QPlainTextEdit
+        choices = self.choices()
+        choices['run_overrides'] = {
+            name: field.toPlainText() if isinstance(field, QPlainTextEdit) else field.text()
+            for name, field in self.run_fields.controls.items()
+        }
+        return choices
+
+    def preset_matches(self, saved):
+        choices = self.preset_snapshot()
+        saved = dict(saved)
+        saved.setdefault('run_overrides', {})
+        inherited = {row['id']: row.get('default', '') for row in self.run_fields.fields
+                     if row.get('workflow_option') and row['id'] not in saved['run_overrides']}
+        choices['run_overrides'] = {
+            key: value for key, value in choices['run_overrides'].items()
+            if key in saved['run_overrides'] or (key in self.run_fields.edited
+                and (key not in inherited or value != inherited[key]))
+        }
+        for name in ('platform_backends', 'run_options'):
+            choices[name] = {key: choices[name].get(key) for key in saved.get(name, {})}
+        return all(choices.get(key) == value for key, value in saved.items())
+
+    def defaults_loading(self):
+        return self.run_fields.timer.isActive()
 
     def choices(self):
         return dict(build_override=self.build_override.value(),

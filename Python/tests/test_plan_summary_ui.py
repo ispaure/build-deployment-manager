@@ -201,7 +201,7 @@ class PlanSummaryTests(unittest.TestCase):
         self.assertEqual(run.flow.pages.currentIndex(), 0)
         self.assertEqual(run.flow.canvas.positions, review.flow.canvas.positions)
         self.assertTrue(panel.stage_heading.isHidden())
-        with patch('build_manager.run_ui.time.monotonic', return_value=100.):
+        with patch('build_manager.run_state.time.monotonic', return_value=100.):
             panel.run_view.update_phase(dict(id='android', status='running', seconds=12))
         self.assertEqual(run.selected, 'android')
         self.assertEqual(run.rows['android'].text(1), 'Running')

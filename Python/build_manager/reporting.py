@@ -23,6 +23,12 @@ def write_junit(path, suite, cases):
     root.set('skipped', str(sum(case['status'] == 'skipped' for case in cases)))
     for case in cases:
         node = ET.SubElement(root, 'testcase', name=clean(case['name']), classname=clean(case.get('classname', suite)))
+        if case.get('stage') is not None:
+            from .test_results import STAGE_LABELS
+            if case['stage'] not in STAGE_LABELS:
+                raise ValueError('Unsupported test execution stage.')
+            properties = ET.SubElement(node, 'properties')
+            ET.SubElement(properties, 'property', name='test_stage', value=case['stage'])
         if case.get('seconds') is not None:
             node.set('time', str(case['seconds']))
         outcome = {'failed': 'failure', 'error': 'error', 'skipped': 'skipped'}.get(case['status'])

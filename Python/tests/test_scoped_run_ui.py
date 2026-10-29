@@ -121,10 +121,10 @@ class ScopedRunTests(unittest.TestCase):
             self.assertIn('Previous run: ' + previous, item.toolTip(2))
 
     def test_running_and_never_started_timings_match_graph_and_inspector(self):
-        with patch('build_manager.run_ui.time.monotonic', return_value=100):
+        with patch('build_manager.run_state.time.monotonic', return_value=100):
             self.view.update_phase(dict(id='env', status='running'))
         self.grouped.open_group('platform.android')
-        with patch('build_manager.run_ui.time.monotonic', return_value=112):
+        with patch('build_manager.run_state.time.monotonic', return_value=112):
             self.view.tick()
             self.assertIn('12.00s', self.view.flow.canvas.cards['env'][1].text())
             self.assertIn('12.00s', self.view.selection_info.text())
@@ -174,7 +174,7 @@ class ScopedRunTests(unittest.TestCase):
         self.assertTrue(all(row['status'] == 'queued' for row in self.view.facts.values()))
 
     def test_rehydrated_running_duration_does_not_restart_at_zero(self):
-        with patch('build_manager.run_ui.time.monotonic', return_value=100):
+        with patch('build_manager.run_state.time.monotonic', return_value=100):
             self.view.reset(self.plan, [dict(id='env', status='running', seconds=25)])
             self.view.run_choices.flow.open_group('platform.android')
             self.view.tick()

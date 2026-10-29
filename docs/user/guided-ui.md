@@ -540,3 +540,23 @@ can be used for local tests, Debug and Release device packages, Firebase and
 TestFlight. GitHub-hosted execution requires committed source; GitHub source
 releases also require a clean checkout matching that commit. Latest commit
 excludes edits without committing them. Selecting a source never commits or pushes it.
+
+
+### Inspect test execution stages
+
+In Results → Tests, a **Stage** column appears beside Outcome when the selected
+scope contains stage metadata. Choose **All stages**, **Smoke**, **Regression**,
+**Extended** or **Unspecified** in the stage filter. It combines with search and
+outcome filters; the shown/total count explains narrowed results. These controls
+filter displayed evidence and do not change which tests execute. **Show problems**
+clears the stage filter so a failure in another stage remains visible.
+
+Timing rows also show Stage beside Duration, helping identify expensive extended
+checks. Selected case details and live task/test tooltips retain stage information.
+Stage describes execution scope: smoke covers quick core checks, regression covers
+ordinary behavior, and extended covers expensive or comprehensive checks. Separate
+stage cards are unnecessary because the existing step cards already show execution
+and dependency gates. Older or unlabeled reports show Unspecified in mixed results;
+stage controls are hidden when the entire scope lacks metadata. No stage is inferred
+from test names, phase names or outcomes. Stage labels are text, independent of the
+outcome colors.

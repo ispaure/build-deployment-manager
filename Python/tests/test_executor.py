@@ -44,9 +44,10 @@ class ExecutionTests(unittest.TestCase):
         from build_manager.redaction import Redactor
         plan = replace(self.plan(self.phase('work', 'print("finished")')),
                        source={'inventory': ['fixture ' + str(index) for index in range(2000)]})
-        with patch('build_manager.executor.Redactor', wraps=Redactor) as redactor:
+        with patch('build_manager.run_recording.Redactor', wraps=Redactor) as redactor:
             report = self.run_plan(plan)
         self.assertEqual(report['status'], 'passed')
+        self.assertGreater(redactor.call_count, 0)
         self.assertLess(redactor.call_count, 20)
         self.assertEqual(report['source'], plan.source)
 

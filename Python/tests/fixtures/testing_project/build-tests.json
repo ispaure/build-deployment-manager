@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "suites": [
+    {"id": "labels", "directory": "tests", "groups": ["validation"]}
+  ]
+}

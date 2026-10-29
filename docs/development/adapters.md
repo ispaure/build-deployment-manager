@@ -1,5 +1,8 @@
 # Adapter contract and ownership
 
+Start with [the runnable project-test walkthrough](adding-project-tests.md) when
+connecting a new project. This page is the protocol and ownership reference.
+
 Run-field descriptors may set `workflow_option: true` for a non-secret choice
 that applies to validation, delivery and advanced workflows. Guided views place
 these controls with validation settings. They use the existing per-preset
