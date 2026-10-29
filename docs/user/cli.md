@@ -265,3 +265,8 @@ which metadata files change and lockfile consistency. This does not save a local
 profile, commit source, publish or allocate a provider build number. Review and
 commit the edit before preparing a release plan. Unsupported adapters fail rather
 than receiving a guessed file edit.
+
+To continue reviewed independent deliveries without repeating failed checks, add
+`--no-retry-failed` to `resume`. Failed checks and their blocked consumers remain
+failed or skipped in the retained report; this option never approves a delivery
+or bypasses its dependencies.

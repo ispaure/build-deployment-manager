@@ -134,6 +134,7 @@ def parser_for_cli():
         command.add_argument('--expect-identity', help='Require the reviewed plan SHA256')
         command.add_argument('--confirm', action='store_true', help='Confirm authorized external effects')
         command.add_argument('--events', action='store_true', help='Stream JSONL events before the final result')
+    resume.add_argument('--no-retry-failed', action='store_true', help='Keep failed checks and blocked steps; continue independently ready work only')
     resume.add_argument('--approval-identity', action='append', default=[], help='Reviewed pending STEP=SHA256 from review')
     resume.add_argument('--engine-review-identity', help='Explicitly reviewed old/new engine identity from review; preserves provenance')
     for name in ('status', 'logs', 'review'):
@@ -258,6 +259,7 @@ def execute(args, api):
         with cancellation() as cancelled:
             report = run_plan(prepared if command == 'start' else args.output / 'plan.json' if command == 'resume' else args.plan, args.output,
                               confirmed=args.confirm, resume=command == 'resume',
+                              retry_failed=not args.no_retry_failed if command == 'resume' else True,
                               approval_identities=assignments(args.approval_identity) if command == 'resume' else None,
                               expected_identity=args.expect_identity, engine_review=args.engine_review_identity if command == 'resume' else None, cancelled=cancelled,
                               event=event if args.events else None)

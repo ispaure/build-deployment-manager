@@ -185,7 +185,7 @@ def review_run(output, *, cancelled=None):
 
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
-             expected_identity=None, cancelled=None, event=None, engine_review=None):
+             expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True):
     """Run a trusted Plan/path; reviewed identities authorize only matching pending steps.
 
     This call blocks until completion or review. Cancellation is a threading.Event.
@@ -220,7 +220,8 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
                 raise ValueError('Reviewed artifact identity changed; inspect the current preparation.')
             approvals.append(permission)
     return Executor(cancelled=cancelled, event=event).run(
-        plan, output, confirmed=confirmed, resume=resume, approvals=approvals, engine_review=engine_review)
+        plan, output, confirmed=confirmed, resume=resume, approvals=approvals, engine_review=engine_review,
+        retry_failed=retry_failed)
 
 
 def read_logs(output, step, *, tail_lines=40, max_bytes=16384):

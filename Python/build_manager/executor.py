@@ -80,13 +80,15 @@ class Executor:
         self.resource_directory = resource_directory
         self.evidence_directory = evidence_directory
 
-    def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None):
+    def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None, retry_failed=True):
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
         from .identity import runtime_identity, engine_review_identity
         from .models import Plan
         from .resources import Resources
         from .workflows import EXTERNAL, recover, review_identity, verify_artifacts
         plan = Plan.from_data(plan.data())
+        if not resume and not retry_failed:
+            raise ValueError('Retaining failed phases requires resuming an existing run.')
         if plan.effect in EXTERNAL and not confirmed:
             raise ValueError('This operation requires explicit confirmation after reviewing the plan.')
         engine = runtime_identity()
@@ -136,6 +138,8 @@ class Executor:
             report.update(finished_at=timestamp(), attempt_seconds=elapsed, seconds=previous_seconds + elapsed)
             attempt = dict(started_at=attempt_started_at, finished_at=report['finished_at'],
                            seconds=elapsed, status=report['status'])
+            if not retry_failed:
+                attempt['retry_failed'] = False
             if report.get('error'):
                 attempt['error'] = report['error']
             report.setdefault('attempts', []).append(attempt)
@@ -171,7 +175,10 @@ class Executor:
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
                 previous = recover(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []
-                rows = {row['id']:row for row in previous if row['status'] in {'passed','unknown'}}
+                retained = {'passed', 'unknown'}
+                if not retry_failed:
+                    retained.update({'failed', 'skipped', 'cancelled', 'timeout', 'interrupted'})
+                rows = {row['id']:row for row in previous if row['status'] in retained}
                 if migration is not None:
                     migration['retained_phases'] = list(rows)
                     report.setdefault('engine_history', []).append(migration)

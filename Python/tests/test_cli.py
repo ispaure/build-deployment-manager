@@ -179,6 +179,33 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('resume', output)
         self.assertEqual(self.invoke('review', output)['approvals'], [])
 
+    def test_ready_delivery_can_continue_without_retrying_failed_checks(self):
+        failed_marker = self.root / 'failed-count'
+        delivered = self.root / 'independent-delivery'
+        artifact = self.root / 'ready-artifact'
+        plan, path = self.plan(
+            self.phase('failed-check', f'from pathlib import Path; p=Path({str(failed_marker)!r}); p.write_text(p.read_text()+"x" if p.exists() else "x"); raise SystemExit(1)'),
+            self.phase('blocked', 'raise AssertionError("blocked delivery must remain blocked")', dependencies=('failed-check',), effect='upload'),
+            self.phase('prepare', f'from pathlib import Path; Path({str(artifact)!r}).write_text("verified bytes")', artifacts=(str(artifact),)),
+            self.phase('deliver', f'from pathlib import Path; p=Path({str(delivered)!r}); assert not p.exists(); p.touch()', dependencies=('prepare',), effect='upload'))
+        output = self.root / 'partial-delivery'
+        self.invoke('run', path, '--output', output, code=3)
+        original = json.loads((output / 'result.json').read_text())
+        retained = {row['id']: row for row in original['phases'] if row['id'] in {'failed-check', 'blocked'}}
+        digest = self.invoke('review', output)['approvals'][0]['identity']
+        self.invoke('resume', output, '--no-retry-failed', '--confirm', '--approval-identity', 'deliver=wrong', code=1)
+        self.assertFalse(delivered.exists())
+        result = self.invoke('resume', output, '--no-retry-failed', '--confirm', '--approval-identity', 'deliver=' + digest, code=1)
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(delivered.exists())
+        self.assertEqual(failed_marker.read_text(), 'x')
+        report = json.loads((output / 'result.json').read_text())
+        self.assertEqual({row['id']: row for row in report['phases'] if row['id'] in retained}, retained)
+        self.assertFalse(report['attempts'][-1]['retry_failed'])
+        self.invoke('resume', output, '--no-retry-failed', code=1)
+        self.assertEqual(failed_marker.read_text(), 'x')
+        self.assertEqual(self.invoke('review', output)['approvals'], [])
+
     def test_changed_artifact_and_unknown_effect_cannot_be_retried(self):
         artifact = self.root / 'candidate'
         plan, path = self.plan(

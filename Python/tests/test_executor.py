@@ -217,6 +217,12 @@ class ExecutionTests(unittest.TestCase):
         self.assertTrue(cleaned.exists())
         self.assertEqual(json.loads((self.root / 'result/result.json').read_text())['status'], 'cancelled')
 
+    def test_retaining_failures_requires_an_existing_run(self):
+        plan = self.plan(self.phase('work', 'raise AssertionError("never admitted")'))
+        with self.assertRaisesRegex(ValueError, 'resuming an existing run'):
+            Executor().run(plan, self.root / 'result', retry_failed=False)
+        self.assertFalse((self.root / 'result').exists())
+
     def test_workspace_conflict_is_a_structured_failure(self):
         plan = self.plan(self.phase('blocked', 'raise AssertionError("never")'))
         with workspace_lock(self.root / 'workspace/operation.lock'):

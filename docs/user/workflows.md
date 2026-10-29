@@ -62,6 +62,13 @@ After reviewing an awaiting step, use `--resume --confirm --approve-step STEP`.
 Passed work is reused after checksum verification; only unsuccessful harmless
 steps retry. Manager/dependency or plan identity changes require a new inspection.
 
+Use CLI `resume --no-retry-failed` to continue independently ready deliveries
+while preserving failed checks and their blocked steps. Review and approve the
+exact pending delivery identities as usual. Passed artifacts are still verified;
+unknown effects still require reconciliation. The overall run remains failed
+until its required checks pass. A normal resume retries unsuccessful harmless
+checks when you are ready to address them.
+
 Resuming after a workspace admission failure keeps that failure and its message
 in the attempt history. Once the new attempt acquires its resources, the current
 outcome no longer shows the old admission error. Original failed attempts and
