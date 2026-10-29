@@ -6,10 +6,39 @@ import time
 from uuid import UUID
 
 
+def _run_tool(argv, *, env, capture_output, text, timeout):
+    """A timeout must not wait forever for a kernel-stuck Apple tool to exit."""
+    if not capture_output or not text:
+        raise ValueError('Apple tools require captured text output.')
+    process = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            try:
+                process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(
+                    f'Apple tool PID {process.pid} did not exit after its deadline and kill request. '
+                    'Outcome is unverified; inspect the macOS host before retrying.') from None
+            raise
+        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    finally:
+        # Popen's context manager waits without a deadline on exit. Close only
+        # our pipes here; an unreaped PID remains explicit recovery evidence.
+        process.stdout.close()
+        process.stderr.close()
+
+
 class AppleSimulators:
     def __init__(self, environment=None, *, runner=None):
         self.environment = dict(os.environ, **(environment or {}))
-        self.runner = runner or subprocess.run
+        self.runner = runner or _run_tool
 
     def invoke(self, *arguments, timeout=60):
         result = self.runner(['xcrun', 'simctl', *arguments], env=self.environment,

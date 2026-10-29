@@ -44,3 +44,17 @@ Google's [host requirements](https://developer.android.com/studio/install) and
 those vendor constraints. The x64 follow-ups must verify compatible images and
 KVM/WHPX acceleration on real x64 machines before enabling those manager paths.
 No translated-binary, physical-device or hosted fallback is selected automatically.
+
+## Apple tools that do not exit
+
+Simulator inventory and lifecycle commands have explicit deadlines. If a command
+exceeds its deadline, the manager requests termination and allows at most three
+more seconds for that process to exit. If macOS still cannot retire it, the
+operation fails with the unresolved process ID and an unverified outcome. It does
+not retry the command, infer completion from partial output or wait indefinitely.
+
+Preserve that failure and inspect the reported process on the Mac before retrying.
+A process stuck in kernel exit can require host recovery; repeatedly launching
+more commands does not establish readiness. Resume only after the selected tools
+can complete normally. Existing personal simulators are never reset or deleted
+as a workaround.

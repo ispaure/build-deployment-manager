@@ -67,3 +67,37 @@ class SimulatorLeaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'real shutdown failure'):
                 client.remove(DEVICE,'Owned fixture')
             self.assertEqual(invoke.call_count,1)
+
+
+class AppleToolDeadlineTests(unittest.TestCase):
+    def test_unreapable_tool_fails_with_pid_without_unbounded_wait_or_retry(self):
+        import subprocess
+        from unittest.mock import Mock, patch
+        process = Mock(pid=321, returncode=None)
+        process.communicate.side_effect = [subprocess.TimeoutExpired('simctl', 60),
+                                          subprocess.TimeoutExpired('simctl', 3)]
+        with patch('build_manager.apple_simulators.subprocess.Popen', return_value=process) as spawn:
+            with self.assertRaisesRegex(RuntimeError, 'PID 321.*unverified'):
+                AppleSimulators().devices()
+        self.assertEqual(spawn.call_count, 1)
+        self.assertEqual([call.kwargs['timeout'] for call in process.communicate.call_args_list], [60, 3])
+        process.kill.assert_called_once()
+        process.wait.assert_not_called()
+        process.stdout.close.assert_called_once()
+        process.stderr.close.assert_called_once()
+
+    def test_real_timed_out_child_is_retired_and_never_reported_as_success(self):
+        import subprocess
+        import sys
+        from build_manager.apple_simulators import _run_tool
+        with self.assertRaises(subprocess.TimeoutExpired):
+            _run_tool([sys.executable, '-c', 'import time; time.sleep(20)'],
+                      env=None, capture_output=True, text=True, timeout=.05)
+
+    def test_actual_exit_code_and_output_are_preserved(self):
+        import sys
+        from build_manager.apple_simulators import _run_tool
+        result = _run_tool([sys.executable, '-c', 'print("evidence"); raise SystemExit(7)'],
+                           env=None, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 7)
+        self.assertEqual(result.stdout.strip(), 'evidence')
