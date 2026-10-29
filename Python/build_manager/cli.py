@@ -99,7 +99,14 @@ def parser_for_cli():
         command.add_argument('--release-tag', default='')
         command.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
         command.add_argument('--output', type=Path, required=True, help='Prepared plan JSON file')
+    sub.choices['plan'].add_argument('--exclude-destination', action='append', default=[],
+                                    help='Omit a saved preset delivery destination for this run only')
     sub.add_parser('show-plan', help='Read a trusted plan without executing it').add_argument('plan', type=Path)
+    storage = sub.add_parser('storage', help='List or explicitly remove adapter-owned generated outputs')
+    storage.add_argument('--project')
+    storage.add_argument('--delete', action='append', default=[], metavar='GROUP=NAME',
+                         help='Exact group and direct output name from storage inventory; repeat for each output')
+    storage.add_argument('--confirm', action='store_true', help='Confirm reviewed generated-output deletion')
     retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
@@ -112,6 +119,8 @@ def parser_for_cli():
     start = sub.add_parser('start', help='Prepare and run a saved project preset; delivery still pauses for review')
     start.add_argument('--project')
     start.add_argument('--preset', required=True)
+    start.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
+    start.add_argument('--exclude-destination', action='append', default=[], help='Omit one delivery destination for this run; keeps all platform validation')
     start.add_argument('--output', type=Path, help='Fresh run directory; defaults to project results')
     run = sub.add_parser('run', help='Execute a reviewed trusted plan and return a compact outcome')
     run.add_argument('plan', type=Path)
@@ -156,6 +165,18 @@ def execute(args, api):
         return dict(status=command)
     if command in ('capabilities', 'inputs', 'presets'):
         return getattr(api, command)(args.project)
+    if command == 'storage':
+        if not args.delete:
+            if args.confirm:
+                raise ArgumentError('Choose exact storage outputs with --delete before confirming.')
+            return dict(entries=api.storage_inventory(args.project))
+        selections = {}
+        for value in args.delete:
+            group, separator, name = value.partition('=')
+            if not separator or not group or not name:
+                raise ArgumentError('Storage deletion requires GROUP=NAME from the inventory.')
+            selections.setdefault(group, []).append(name)
+        return api.delete_storage(selections, project=args.project, confirmed=args.confirm)
     if command == 'history':
         return api.history(args.project, args.limit)
     if command == 'save-preset':
@@ -165,11 +186,15 @@ def execute(args, api):
                                project=args.project, replace=args.replace)
     if command == 'plan' and args.preset:
         if any((args.operation, args.target, args.backend, args.suite, args.pattern,
-                args.run_value, args.release_tag, args.revision != 'working-tree')):
+                args.release_tag, args.revision != 'working-tree')):
             raise ValueError('Preset planning uses its saved choices; do not combine explicit operation arguments.')
-        prepared = api.prepare_preset(args.preset, project=args.project)
+        prepared = api.prepare_preset(args.preset, project=args.project,
+                run_overrides=assignments(args.run_value) if args.run_value else None,
+                exclude_destinations=args.exclude_destination)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
+    if command == 'plan' and args.exclude_destination:
+        raise ArgumentError('Destination exclusions require --preset.')
     if command in ('plan', 'journey'):
         options = dict(revision=args.revision, release_tag=args.release_tag)
         if args.run_value:
@@ -218,7 +243,9 @@ def execute(args, api):
                 args.output = bridge.results_directory / (datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:8])
             if args.output.exists():
                 raise ValueError('Use a fresh output directory or resume the retained run.')
-            prepared = api.prepare_preset(args.preset, project=args.project)
+            prepared = api.prepare_preset(args.preset, project=args.project,
+                run_overrides=assignments(args.run_value) if args.run_value else None,
+                exclude_destinations=args.exclude_destination)
         lock = Lock()
         def event(value):
             with lock:

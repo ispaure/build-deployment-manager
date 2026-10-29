@@ -69,6 +69,11 @@ if request['action'] == 'plan':
     result = dict(project='Fixture', operation='Check', source=request['values'],
         workspace=str(Path.cwd() / 'workspace'), phases=[dict(id='check',
         argv=[sys.executable, '-c', "print('project child')"], cwd=str(Path.cwd()))])
+elif request['action'] == 'storage_inventory':
+    result = [dict(group='Fixtures', name='old', path=str(Path.cwd() / 'generated/old'), protected='')]
+elif request['action'] == 'delete_storage':
+    assert request['values']['selections'] == {'Fixtures': ['old']}
+    result = dict(removed=['old'], skipped=[])
 elif request['action'] == 'settings':
     result = {'notes': {'value': 'project default'}}
 else:
@@ -207,6 +212,39 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('start', '--project', key, '--preset', 'Everyday', '--output', output, code=1)
         self.invoke('plan', '--project', key, '--preset', 'missing', '--output', path, code=1)
         self.invoke('plan', '--project', key, '--preset', 'Everyday', '--backend', 'Local', '--output', path, code=1)
+        self.invoke('plan', '--project', key, '--preset', 'Everyday', '--exclude-destination', 'devices', '--output', path, code=1)
+
+    def test_preset_run_inputs_are_validated_ephemeral_and_shared_with_start(self):
+        root, key = self.fixture_project()
+        api = ManagerAPI(self.registry)
+        choices = dict(operation='Check', platform='native', backend='Local',
+                       run_overrides={'notes': 'saved'})
+        api.save_preset('Release', choices, project=key)
+        path = self.root / 'override-plan.json'
+        self.invoke('plan', '--project', key, '--preset', 'Release',
+                    '--run-value', 'notes=current tester notes', '--output', path)
+        self.assertEqual(Plan.load(path).source['run_overrides'], {'notes': 'current tester notes'})
+        self.assertEqual(api.presets(key)['saved']['Release'], choices)
+        self.invoke('plan', '--project', key, '--preset', 'Release',
+                    '--run-value', 'undeclared=value', '--output', self.root / 'bad.json', code=1)
+        output = self.root / 'override-run'
+        self.assertEqual(self.invoke('start', '--project', key, '--preset', 'Release',
+                                    '--run-value', 'notes=run only', '--output', output)['status'], 'passed')
+        self.assertEqual(Plan.load(output / 'plan.json').source['run_overrides'], {'notes': 'run only'})
+        self.assertEqual(api.presets(key)['saved']['Release'], choices)
+
+    def test_storage_requires_reviewed_selection_and_confirmation(self):
+        root, key = self.fixture_project()
+        entries = self.invoke('storage', '--project', key)['entries']
+        self.assertEqual(entries[0]['name'], 'old')
+        (root / 'adapter-called').unlink()
+        self.invoke('storage', '--project', key, '--delete', 'Fixtures=old', code=1)
+        self.assertFalse((root / 'adapter-called').exists())
+        self.invoke('storage', '--project', key, '--delete', 'invalid', '--confirm', code=2)
+        self.assertFalse((root / 'adapter-called').exists())
+        outcome = self.invoke('storage', '--project', key, '--delete', 'Fixtures=old', '--confirm')
+        self.assertEqual(outcome['removed'], ['old'])
+        self.assertTrue((root / 'adapter-called').exists())
 
     def test_journey_presets_use_selected_platforms_hosts_and_inputs(self):
         root, key = self.fixture_project()
@@ -224,6 +262,12 @@ print(json.dumps(dict(schema=1, result=result)))
             bridge.platforms=('native',); bridge.journey_capability={'platforms':{'native':{'backend':'Local'}}}
             with patch.object(api, '_project', return_value=bridge):
                 self.assertEqual(api.prepare_preset('Delivery').identity, plan.identity)
+                api.prepare_preset('Delivery', exclude_destinations=['devices'])
+                self.assertEqual(make.call_args.args, ('deliver', ['native'], []))
+                self.assertEqual(choices['selected_destinations'], ['devices'])
+                with self.assertRaisesRegex(ValueError, 'selected by this preset'):
+                    api.prepare_preset('Delivery', exclude_destinations=['unknown'])
+                api.prepare_preset('Delivery')
         self.assertEqual(make.call_args.args, ('deliver', ['native'], ['devices']))
         self.assertEqual(make.call_args.kwargs['backends'], {'native':'Local'})
         self.assertEqual(make.call_args.kwargs['revision'], 'HEAD')

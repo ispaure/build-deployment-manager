@@ -45,6 +45,17 @@ $target=OwnedPath $p.file
 RUN = OWNED + r'''
 $directory=OwnedPath $p.directory;$reports=OwnedPath $p.reports
 $null=New-Item -ItemType Directory -Path $reports -Force
+# A lost guest-tools request can arrive after its controller retries. Claim this
+# exact invocation atomically before admitting any process, including duplicates.
+$claim=Join-Path $reports ('admission-'+$p.invocation+'.claim')
+try {
+ $file=[IO.File]::Open($claim,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+ $file.Dispose()
+} catch {
+ if (!(Test-Path -LiteralPath $claim)) { throw }
+ @{state='admitted';operation=$p.operation;invocation=$p.invocation;token=$p.token}|ConvertTo-Json -Compress
+ return
+}
 $stdout=Join-Path $reports 'runner.stdout.log';$stderr=Join-Path $reports 'runner.stderr.log'
 $active=OwnedPath 'active.json'
 @{pid=$PID;started=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o');operation=$p.operation;invocation=$p.invocation;token=$p.token}|ConvertTo-Json|Set-Content -LiteralPath $active -Encoding UTF8
@@ -166,47 +177,60 @@ class WindowsGuest:
         invocation = uuid4().hex
         values = dict(self.values, python=python, command_line=subprocess.list2cmdline(argv),
                       directory=directory, reports=reports, environment=environment, invocation=invocation)
-        process = subprocess.Popen(self.client.powershell_command(self.vm), stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-        payload = self.client.powershell_payload(RUN, values)
         started = time.monotonic()
         from .guest_progress import GuestHeartbeat
         heartbeat = GuestHeartbeat(progress, started)
-        heartbeat.emit('waiting')
-        try:
-            while True:
-                try:
-                    stdout, stderr = process.communicate(input=payload, timeout=.2)
-                    break
-                except subprocess.TimeoutExpired:
-                    payload = None
-                    heartbeat.emit('waiting')
-                    if cancelled.is_set() or time.monotonic() - started > timeout:
-                        self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
-                        try:
-                            process.communicate(timeout=3)
-                        except subprocess.TimeoutExpired:
-                            process.terminate()
-                        return 130 if cancelled.is_set() else 124
-            if process.returncode:
-                from .redaction import Redactor
-                if process.returncode == 255 and any(detail in stderr for detail in
-                        (b'PrlJob_GetRetCode: Invalid argument', b'PrlJob_GetResult: Invalid argument')):
-                    # Read proof from this invocation, never rerun accepted work.
-                    recovered = self.recover_completion(reports, invocation, started, timeout, cancelled,
-                                                        progress=heartbeat.emit)
-                    if recovered is not None:
-                        return recovered
-                # Prevent an admitted-but-delayed invocation from starting work
-                # after the controller has already reported an unverified exit.
-                self.call_idempotent(WRITE, values=dict(file='cancel-'+self.values['operation']), data=b'cancel')
-                raise RuntimeError('Windows operation transport failed: ' + Redactor()(stderr.decode(errors='replace')[-2000:]))
-            return self.completion_code(json.loads(stdout), invocation)
-        finally:
-            if process.poll() is None:
-                self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
-                process.terminate()
-                process.wait(timeout=3)
+        # Retry only the same deduplicated invocation. An admitted worker is
+        # always reconciled through its actual receipt/liveness, never replayed.
+        for attempt in range(3):
+            process = subprocess.Popen(self.client.powershell_command(self.vm), stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            payload = self.client.powershell_payload(RUN, values)
+            heartbeat.emit('waiting')
+            try:
+                while True:
+                    try:
+                        stdout, stderr = process.communicate(input=payload, timeout=.2)
+                        break
+                    except subprocess.TimeoutExpired:
+                        payload = None
+                        heartbeat.emit('waiting')
+                        if cancelled.is_set() or time.monotonic() - started > timeout:
+                            self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
+                            try:
+                                process.communicate(timeout=3)
+                            except subprocess.TimeoutExpired:
+                                process.terminate()
+                            return 130 if cancelled.is_set() else 124
+                lost = process.returncode == 255 and any(detail in stderr for detail in
+                    (b'PrlJob_GetRetCode: Invalid argument', b'PrlJob_GetResult: Invalid argument'))
+                if not process.returncode:
+                    record = json.loads(stdout)
+                    self.validate_completion(record, invocation)
+                    if 'exit' in record:
+                        return self.completion_code(record, invocation)
+                    if record.get('state') != 'admitted':
+                        raise ValueError('Windows worker returned no admission or completion proof.')
+                elif not lost:
+                    self.transport_failed(stderr)
+                recovered = self.recover_completion(reports, invocation, started, timeout, cancelled,
+                                                    progress=heartbeat.emit)
+                if recovered is not None:
+                    return recovered
+                if attempt == 2:
+                    self.transport_failed(stderr)
+            finally:
+                if process.poll() is None:
+                    self.call(CANCEL, values=dict(invocation=invocation), timeout=30)
+                    process.terminate()
+                    process.wait(timeout=3)
+
+    def transport_failed(self, stderr):
+        from .redaction import Redactor
+        # Fence an admitted-but-delayed invocation before reporting failure.
+        self.call_idempotent(WRITE, values=dict(file='cancel-'+self.values['operation']), data=b'cancel')
+        detail = stderr.decode(errors='replace')[-2000:] or 'No live worker or verified completion receipt.'
+        raise RuntimeError('Windows operation transport failed: ' + Redactor()(detail))
 
     def recover_completion(self, reports, invocation, started, timeout, cancelled, *, progress=None):
         absent_since = time.monotonic()

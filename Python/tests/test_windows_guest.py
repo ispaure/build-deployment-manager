@@ -47,6 +47,41 @@ class WindowsEvidenceTests(unittest.TestCase):
                 self.assertEqual(spawn.call_count, 1)
                 self.assertEqual(read.call_count, 1)
 
+    def test_lost_request_before_admission_retries_the_same_invocation(self):
+        from build_manager.parallels import Parallels
+        guest = WindowsGuest(Parallels('/fixture/prlctl'), '00000000-0000-0000-0000-000000000001',
+                             'workspace', 'token', 'operation')
+        lost = Mock(returncode=255)
+        lost.communicate.return_value = (b'', b'PrlJob_GetRetCode: Invalid argument')
+        lost.poll.return_value = 255
+        success = Mock(returncode=0)
+        success.communicate.return_value = (json.dumps(dict(exit=0, token='token',
+            operation='operation', invocation='current')).encode(), b'')
+        success.poll.return_value = 0
+        with patch('build_manager.windows_guest.uuid4', return_value=Mock(hex='current')), \
+             patch('build_manager.windows_guest.subprocess.Popen', side_effect=[lost, success]) as spawn, \
+             patch.object(guest, 'recover_completion', return_value=None), patch.object(guest, 'call') as write:
+            self.assertEqual(guest.run('python', ['fixture'], 'source', 'reports', {}, Event(), timeout=10), 0)
+        self.assertEqual(spawn.call_count, 2)
+        first = json.loads(lost.communicate.call_args.kwargs['input'])
+        second = json.loads(success.communicate.call_args.kwargs['input'])
+        self.assertEqual(first, second)
+        self.assertEqual(first['values']['invocation'], 'current')
+        write.assert_not_called()  # Do not fence the request before its safe retry.
+
+    def test_duplicate_admission_waits_for_verified_worker_exit(self):
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        process = Mock(returncode=0)
+        process.communicate.return_value = (json.dumps(dict(state='admitted', token='token',
+            operation='operation', invocation='current')).encode(), b'')
+        process.poll.return_value = 0
+        with patch('build_manager.windows_guest.uuid4', return_value=Mock(hex='current')), \
+             patch('build_manager.windows_guest.subprocess.Popen', return_value=process) as spawn, \
+             patch.object(guest, 'recover_completion', return_value=7) as recover:
+            self.assertEqual(guest.run('python', ['fixture'], 'source', 'reports', {}, Event(), timeout=10), 7)
+        self.assertEqual(spawn.call_count, 1)
+        recover.assert_called_once()
+
     def test_missing_or_stale_completion_never_implies_success(self):
         from build_manager.parallels import Parallels
         guest = WindowsGuest(Parallels('/fixture/prlctl'), '00000000-0000-0000-0000-000000000001',
@@ -54,7 +89,7 @@ class WindowsEvidenceTests(unittest.TestCase):
         process = Mock(returncode=255)
         process.communicate.return_value = (b'', b'PrlJob_GetRetCode: Invalid argument')
         process.poll.return_value = 255
-        with patch('build_manager.windows_guest.subprocess.Popen', return_value=process), patch.object(guest, 'call', return_value=b''):
+        with patch('build_manager.windows_guest.subprocess.Popen', return_value=process), patch.object(guest, 'call', return_value=b''), patch.object(guest, 'recover_completion', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'transport failed'):
                 guest.run('python', ['fixture'], 'source', 'reports', {}, Event(), timeout=10)
         for patch_record in (dict(token='other'), dict(operation='other'), dict(invocation='old'), dict(exit=True)):

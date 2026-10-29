@@ -127,8 +127,11 @@ Save exact source/toolchain evidence under ignored `test-results/`.
 Windows guest commands publish an atomic completion receipt tied to the workspace,
 operation and individual invocation before returning their result. If Parallels
 loses a job handle, the manager reads that receipt or supervises the matching live
-worker within the original timeout. It never replays the command. Missing or
-mismatched proof remains a failure; actual nonzero exits remain failures.
+worker within the original timeout. Each invocation claims admission atomically.
+If no worker or receipt is found after a known lost-handle error, the controller
+may resend that same invocation up to three times; duplicate admission cannot
+launch the command again. Missing or mismatched completion proof remains a
+failure; actual nonzero exits remain failures.
 Cancellation requested before admission prevents the child from starting.
 Only explicitly idempotent setup, evidence collection and owned removal retry
 the known Parallels lost-handle errors, at most three times.

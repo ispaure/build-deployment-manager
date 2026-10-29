@@ -52,18 +52,31 @@ class ManagerAPI:
         self.registry.save_preset(bridge.key, name, choices)
         return dict(project=bridge.key, preset=name.strip(), choices=choices)
 
-    def prepare_preset(self, name, *, project=None):
+    def prepare_preset(self, name, *, project=None, run_overrides=None, exclude_destinations=None):
         bridge = self._project(project)
         saved = bridge.row.get('presets', {})
         if name not in saved and name not in bridge.workflow_presets:
             raise ValueError('Unknown project preset: ' + name)
         choices = saved[name] if name in saved else bridge.workflow_presets[name]
         self.registry.validate_selections(choices)
+        if exclude_destinations:
+            if choices.get('goal') != 'deliver':
+                raise ValueError('Destination exclusions require a delivery preset.')
+            if (not isinstance(exclude_destinations, (list, tuple))
+                    or any(not isinstance(value, str) for value in exclude_destinations)
+                    or set(exclude_destinations) - set(choices.get('selected_destinations', []))):
+                raise ValueError('Exclude only destinations selected by this preset.')
+            choices = dict(choices, selected_destinations=[value for value in choices.get('selected_destinations', [])
+                                                          if value not in exclude_destinations])
         options = dict(revision=choices.get('revision', 'working-tree'),
                        pattern=choices.get('pattern', ''), release_tag=choices.get('release_tag', ''),
                        build_override=str(choices['build_override']) if choices.get('build_override') else '')
-        if choices.get('run_overrides'):
-            options['run_overrides'] = dict(choices['run_overrides'])
+        inputs = dict(choices.get('run_overrides', {}))
+        if run_overrides is not None:
+            from .run_fields import validate_overrides
+            inputs.update(validate_overrides(bridge.run_fields, run_overrides))
+        if inputs:
+            options['run_overrides'] = inputs
         goal = choices.get('goal', 'advanced')
         if goal in ('validate', 'deliver'):
             if not bridge.journey_capability:
@@ -90,6 +103,20 @@ class ManagerAPI:
         except KeyError as error:
             raise ValueError('Advanced presets need operation, platform and backend.') from error
         return bridge.make_plan(operation, platform, backend, **options)
+
+    def storage_inventory(self, project=None):
+        """List only adapter-declared generated outputs, including active/pinned holds."""
+        return self._project(project).call('storage_inventory')
+
+    def delete_storage(self, selections, *, project=None, confirmed=False):
+        if not confirmed:
+            raise ValueError('Explicit storage deletion requires --confirm after reviewing inventory.')
+        if (not isinstance(selections, dict) or not selections
+                or any(not isinstance(group, str) or not group or not isinstance(names, list)
+                       or not names or any(not isinstance(name, str) or not name for name in names)
+                       for group, names in selections.items())):
+            raise ValueError('Select declared storage groups and direct output names.')
+        return self._project(project).call('delete_storage', selections=selections, timeout=600)
 
     def history(self, project=None, limit=20):
         if type(limit) is not int or not 1 <= limit <= 100:

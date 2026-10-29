@@ -65,7 +65,12 @@ artifact/recipient review and uses ordinary `review`/`resume`; saved presets nev
 contain approvals. `--confirm` remains necessary for a plan with an overall
 external effect. Use `plan --preset` followed by ordinary `run` when you need to
 inspect the complete plan before execution. Preset planning rejects explicit
-operation/host/source/input overrides rather than silently mixing configurations.
+operation/host/source overrides rather than silently mixing configurations. Both
+`plan --preset` and `start --preset` accept explicit `--run-value field=value`
+for declared per-run inputs, such as tester notes or recipient choices. These
+replace matching saved inputs for this plan only; other saved inputs remain and
+the preset is unchanged. Unknown fields and secret values are rejected through
+the normal input validation before project planning.
 
 Save choices using the same selection schema as the GUI:
 
@@ -230,3 +235,24 @@ For a project destination that explicitly supports device-only delivery, omit
 `--platform` from `journey --goal deliver` to select no tests. The project still
 validates that selection; provider releases or destinations requiring tests reject
 it. Tests explicitly selected remain prerequisites of dependent delivery.
+
+## Clean up generated outputs
+
+`build-manager storage --project "Project name"` asks the trusted project adapter
+for its owned output inventory. Entries identify their cleanup group, direct child
+name and active/pinned protection. Projects without storage support report an
+unsupported adapter action; the manager never scans arbitrary folders.
+
+After reviewing the inventory, remove selected outputs with repeated
+`--delete 'GROUP=NAME' --confirm`. The project revalidates ownership, pins and
+active leases under the same locks used by its GUI cleanup. Manual cleanup may
+remove recent outputs; automatic retention age/count rules remain unchanged.
+Save needed evidence first. This removes generated artifacts, not installed apps,
+signing credentials, build counters or source checkouts.
+
+Delivery presets also accept repeated `--exclude-destination NAME` in `plan` and
+`start`. This explicitly omits a selected delivery destination for this run only,
+for example an unavailable physical-device destination. All selected platforms and
+validation gates stay included, and the saved preset is unchanged. Excluding an
+unknown destination or using this option without a delivery preset is rejected.
+Inspect `show-plan` to verify the resulting destinations before executing.
