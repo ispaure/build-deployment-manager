@@ -110,9 +110,12 @@ class Parallels:
 
     def start(self, selector):
         original = self.selected(selector)
-        if original['status'] != 'running':
+        if original['status'] == 'suspended':
+            from .vm import resume_dedicated_guest
+            resume_dedicated_guest(original, client=self)
+        elif original['status'] != 'running':
             if original['status'] != 'stopped':
-                raise ValueError('Selected guest is suspended or busy; choose a stopped/running test guest explicitly.')
+                raise ValueError('Selected guest is busy; wait for its power transition to finish.')
             subprocess.run([self.executable, 'start', original['uuid']], check=True, timeout=120)
         return original
 

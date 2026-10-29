@@ -49,6 +49,37 @@ class DedicatedVMTests(unittest.TestCase):
         with self.owned(), patch.object(self.vm, 'run', return_value=json.dumps([dict(Home='/personal/guest.pvm')])):
             with self.assertRaisesRegex(ValueError, 'outside'): self.vm.selected()
 
+    def test_run_resumes_only_recorded_guest_and_preserves_original_state(self):
+        from build_manager.vm import resume_dedicated_guest
+        from build_manager.parallels import Parallels
+        with self.owned(status='suspended') as run, patch.object(self.vm, 'status', return_value={'state': 'running'}):
+            self.vm.power('start')
+            run.assert_any_call('resume', self.record['uuid'])
+        with self.owned(status='suspended'), patch('build_manager.vm.LinuxVM', return_value=self.vm), patch.object(self.vm, 'power') as power:
+            resume_dedicated_guest(dict(uuid=self.record['uuid']), client=self.client, checkout=self.folder.name)
+            power.assert_called_once_with('start')
+        row = dict(uuid=self.record['uuid'], name=self.vm.name, status='suspended')
+        client = Parallels('/fixture/prlctl')
+        with patch.object(client, 'selected', return_value=row), patch('build_manager.vm.resume_dedicated_guest') as resume:
+            self.assertEqual(client.start(row['uuid'])['status'], 'suspended')
+            resume.assert_called_once_with(row, client=client)
+
+    def test_resume_rejects_unowned_moved_and_busy_guests_without_mutation(self):
+        from build_manager.vm import resume_dedicated_guest
+        with patch.object(self.vm, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'not an owned'):
+                resume_dedicated_guest(dict(uuid=self.record['uuid']), client=self.client, checkout=self.folder.name)
+            run.assert_not_called()
+        with self.owned(status='suspended'), patch.object(self.vm, 'run', return_value=json.dumps([dict(Home='/personal/guest.pvm')])) as run:
+            with self.assertRaisesRegex(ValueError, 'outside'):
+                self.vm.power('start')
+            self.assertEqual([c.args[0] for c in run.call_args_list], ['list'])
+        for state in ('starting', 'stopping', 'pausing', 'paused'):
+            with self.subTest(state=state), self.owned(status=state) as run:
+                with self.assertRaisesRegex(ValueError, 'busy'):
+                    self.vm.power('start')
+                self.assertNotIn('resume', [c.args[0] for c in run.call_args_list])
+
     def test_existing_vm_reused_without_resetting_hardware_or_disks(self):
         with self.owned(), patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'configure') as configure:
             result = self.vm.ensure()

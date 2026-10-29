@@ -26,6 +26,13 @@ Surviving disks are never silently replaced. A damaged or partially imported
 disk requires inspection; automatic recovery does not mean automatic deletion.
 All initialization and power mutations share one checkout-level lock.
 
+Starting an owned suspended guest resumes its existing session. A selected test
+run does this automatically only after matching the manager's ownership receipt,
+UUID and bundle path. The CLI and Test machines Start action use the same power
+boundary. Busy transitions still stop the operation; suspended personal or held
+guests require an explicit operator action in Parallels. Guest readiness and native
+test results are checked afterward; a successful resume does not imply either.
+
 Fresh guests start with blanket host isolation and host folders, profiles,
 clipboard and cloud sharing disabled. Parallels guest commands require the
 blanket isolation setting to be released separately; the manager does not change

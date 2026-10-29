@@ -29,6 +29,19 @@ def dedicated_guest(kind, checkout=None):
     return record['uuid'] if record and row else ''
 
 
+def resume_dedicated_guest(selected, *, client, checkout=None):
+    """Resume only this checkout's recorded test guest; never adopt a held VM."""
+    checkout = checkout or Path(__file__).resolve().parents[2]
+    for cls in (LinuxVM, WindowsVM):
+        vm = cls(checkout, client)
+        record = vm.receipt()
+        if record and record['uuid'] == selected['uuid'].strip('{}'):
+            # power rechecks the UUID, bundle path and current state under its lock.
+            vm.power('start')
+            return
+    raise ValueError('Suspended guest is not an owned dedicated test machine; resume it explicitly in Parallels.')
+
+
 class VM:
     """Reuse our recorded guest, register its relocated bundle, or create it missing.
 
@@ -177,14 +190,15 @@ class VM:
                 raise ValueError('Create or recover this dedicated VM first.')
             if (action == 'start' and row['status'] == 'running') or (action == 'stop' and row['status'] == 'stopped'):
                 return self.status()
-            if row['status'] not in ('stopped', 'running'):
-                raise ValueError('VM is busy or suspended; inspect it in Parallels before continuing.')
+            allowed = ('stopped', 'running', 'suspended') if action == 'start' else ('stopped', 'running')
+            if row['status'] not in allowed:
+                raise ValueError('VM is busy; inspect it in Parallels before continuing.')
             if action == 'start':
                 record['ever_started'] = True
                 save_json(self.record, record)
             # ACPI shutdown remains usable before guest tools are installed.
             if action == 'stop': self.run(action, record['uuid'], '--acpi')
-            else: self.run(action, record['uuid'])
+            else: self.run('resume' if row['status'] == 'suspended' else action, record['uuid'])
         return self.status()
 
     def status(self):
