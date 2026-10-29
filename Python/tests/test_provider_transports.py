@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
 
-from build_manager.app_store_connect import API, AppStoreConnectClient, NoRedirect, SigningDependencyError, token, wait_for_processed_build
+from build_manager.app_store_connect import API, AppStoreConnectClient, LookupUnavailable, NoRedirect, SigningDependencyError, token, wait_for_processed_build
 from build_manager.firebase import FirebaseCLI, FirebaseError
 from build_manager.providers import ProviderOutcomeUnknown
 
@@ -70,6 +70,42 @@ class AppStoreTransportTests(unittest.TestCase):
             expected = RuntimeError if method == 'GET' else ProviderOutcomeUnknown
             with self.subTest(method=method), self.assertRaises(expected):
                 client.request(method, '/v1/betaGroups', body={} if method != 'GET' else None)
+            self.assertEqual(client.opener.open.call_count, 1)
+
+    def test_processing_lookup_outage_recovers_without_reupload_or_deadline_reset(self):
+        client = Mock()
+        ready = {'id': 'build', 'attributes': {'processingState': 'VALID'}}
+        client.list.side_effect = [LookupUnavailable('offline'), [ready]]
+        sleep = Mock()
+        self.assertEqual(wait_for_processed_build(client, app_id='app', number='41', version='2.0',
+            platform='IOS', timeout=10, interval=30, sleep=sleep, clock=Mock(side_effect=[0, 7])), ready)
+        sleep.assert_called_once_with(3)
+        self.assertEqual(client.list.call_count, 2)
+        self.assertEqual(client.list.call_args_list[0], client.list.call_args_list[1])
+        client.request.assert_not_called()
+
+    def test_processing_lookup_outage_exhausts_original_deadline_and_other_errors_stop(self):
+        client = Mock()
+        client.list.side_effect = LookupUnavailable('offline')
+        sleep = Mock()
+        with self.assertRaises(LookupUnavailable):
+            wait_for_processed_build(client, app_id='app', number='41', version='2.0', platform='IOS',
+                timeout=10, interval=6, sleep=sleep, clock=Mock(side_effect=[0, 4, 10]))
+        sleep.assert_called_once_with(6)
+        client.list.side_effect = RuntimeError('HTTP 401')
+        with self.assertRaisesRegex(RuntimeError, '401'):
+            wait_for_processed_build(client, app_id='app', number='41', version='2.0', platform='IOS',
+                timeout=10, interval=6, sleep=sleep)
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_only_transient_read_responses_are_poll_retryable(self):
+        for method, code, retryable in [('GET', 503, True), ('GET', 429, True), ('GET', 401, False),
+                                        ('POST', 503, False), ('PATCH', 429, False)]:
+            client, _, _ = self.client()
+            client.opener.open.side_effect = HTTPError(API + '/v1/builds', code, '', {}, io.BytesIO(b'{}'))
+            with self.subTest(method=method, code=code), self.assertRaises(RuntimeError) as failure:
+                client.request(method, '/v1/builds')
+            self.assertEqual(isinstance(failure.exception, LookupUnavailable), retryable)
             self.assertEqual(client.opener.open.call_count, 1)
 
     def test_processing_wait_is_exact_bounded_and_calls_project_validation(self):

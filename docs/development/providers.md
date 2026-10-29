@@ -35,7 +35,10 @@ platform=..., timeout=..., interval=..., validate=..., progress=...)` polls the
 exact selected build. The caller supplies its audience/expiry validator and
 progress presentation. Ambiguous matches, failed processing and exhausted waits
 fail visibly. No upload is initiated by polling. Injectable clock/sleep support
-portable bounded-wait tests.
+portable bounded-wait tests. Transient read-only connection failures and HTTP
+429/500/502/503/504 responses during this poll retry the same exact lookup within
+the original deadline. Authentication, malformed responses and policy failures
+still stop immediately; uploads and other writes are never retried by polling.
 
 App identities, group selection, locale/notes preservation, review/compliance
 states, notification choices and additive assignment policy stay with the

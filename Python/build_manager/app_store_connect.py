@@ -37,6 +37,10 @@ def token(auth, now=None):
     return (message + b'.' + encode(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))).decode()
 
 
+class LookupUnavailable(RuntimeError):
+    """A read-only lookup may be retried within its existing polling deadline."""
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -72,11 +76,12 @@ class AppStoreConnectClient:
             except (ValueError, AttributeError, TypeError):
                 detail = 'See the App Store Connect build and beta review information.'
             detail = Redactor((bearer,))(detail)
-            raise RuntimeError(f'App Store Connect HTTP {error.code}: {detail}') from None
+            failure = LookupUnavailable if method.upper() in {'GET', 'HEAD'} and error.code in {429, 500, 502, 503, 504} else RuntimeError
+            raise failure(f'App Store Connect HTTP {error.code}: {detail}') from None
         except (URLError, TimeoutError, OSError):
             if method.upper() not in {'GET', 'HEAD'}:
                 raise ProviderOutcomeUnknown('App Store Connect outcome is unknown. Reconcile this operation before retrying; do not re-upload the build.') from None
-            raise RuntimeError('Could not reach App Store Connect. Retry the lookup; do not re-upload the build.') from None
+            raise LookupUnavailable('Could not reach App Store Connect. Retry the lookup; do not re-upload the build.') from None
 
     def list(self, path, **params):
         result = self.request('GET', path, params=params)
@@ -100,9 +105,19 @@ def wait_for_processed_build(client, *, app_id, number, version, platform, timeo
         raise ValueError('Build processing wait limits must be positive.')
     deadline = clock() + timeout
     while True:
-        builds = client.list('/v1/builds', **{'filter[app]': app_id, 'filter[version]': number,
-                            'filter[preReleaseVersion.version]': version,
-                            'filter[preReleaseVersion.platform]': platform, 'limit': 200})
+        try:
+            builds = client.list('/v1/builds', **{'filter[app]': app_id, 'filter[version]': number,
+                                'filter[preReleaseVersion.version]': version,
+                                'filter[preReleaseVersion.platform]': platform, 'limit': 200})
+        except LookupUnavailable:
+            # This is only a GET of the same exact build. Keep the original
+            # deadline; authentication/policy failures and writes still stop.
+            remaining = deadline - clock()
+            if remaining <= 0:
+                raise
+            progress()
+            sleep(min(interval, remaining))
+            continue
         if len(builds) > 1:
             raise ValueError('Multiple builds match the exact app, platform, version and build number.')
         if builds:
