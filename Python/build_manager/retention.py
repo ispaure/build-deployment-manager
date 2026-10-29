@@ -16,7 +16,19 @@ def linked(path):
 
 
 def remove_tree(path):
-    """Remove caller-owned scratch, including Windows read-only Git objects."""
+    """Remove caller-owned scratch, bounding Windows executable-release waits."""
+    deadline = time.monotonic() + 3
+    while True:
+        try:
+            return _remove_tree_once(path)
+        except PermissionError as error:
+            if (os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32, 33)
+                    or time.monotonic() >= deadline):
+                raise
+            time.sleep(.05)
+
+
+def _remove_tree_once(path):
     path = Path(path)
     def readonly(function, name, error):
         target = Path(name)

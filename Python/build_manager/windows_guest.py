@@ -132,18 +132,32 @@ Compress-Archive -LiteralPath $items -DestinationPath $zip -Force
 '''
 
 REMOVE = OWNED + r'''
+function ExtendedPath([string]$path) {
+ if ($path.StartsWith('\\?\')) { return $path }
+ $path=[IO.Path]::GetFullPath($path)
+ if ($path.StartsWith('\\')) { return '\\?\UNC\'+$path.Substring(2) }
+ return '\\?\'+$path
+}
 function RemoveTree([string]$path) {
- $item=Get-Item -LiteralPath $path -Force
- if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-  if ($item.PSIsContainer) { [IO.Directory]::Delete($path) } else { [IO.File]::Delete($path) }
- } elseif ($item.PSIsContainer) {
-  foreach ($child in Get-ChildItem -LiteralPath $path -Force) { RemoveTree $child.FullName }
+ $path=ExtendedPath $path
+ # PowerShell 5's filesystem provider can enumerate a long child but then
+ # fail Get-Item on it. Use extended .NET paths consistently, without following
+ # reparse points or changing the token/containment checks above.
+ $attributes=[IO.File]::GetAttributes($path)
+ if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
+  if ($attributes -band [IO.FileAttributes]::Directory) { [IO.Directory]::Delete($path) } else { [IO.File]::Delete($path) }
+ } elseif ($attributes -band [IO.FileAttributes]::Directory) {
+  foreach ($child in [IO.Directory]::EnumerateFileSystemEntries($path)) { RemoveTree $child }
   [IO.Directory]::Delete($path)
  } else {
-  $item.IsReadOnly=$false;[IO.File]::Delete($path)
+  [IO.File]::SetAttributes($path,($attributes -band (-bnot [IO.FileAttributes]::ReadOnly)))
+  [IO.File]::Delete($path)
  }
 }
-foreach ($relative in $p.paths) { $target=OwnedPath $relative;if (Test-Path -LiteralPath $target) { RemoveTree $target } }
+foreach ($relative in $p.paths) {
+ $target=ExtendedPath (OwnedPath $relative)
+ if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) { RemoveTree $target }
+}
 '''
 
 

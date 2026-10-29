@@ -88,3 +88,35 @@ class ResourceLockTests(unittest.TestCase):
             self.assertEqual(report['status'], 'failed')
             self.assertEqual(report['phases'], [])
             self.assertIn('owns this workspace', report['error'])
+
+
+class WindowsReleaseWaitTests(unittest.TestCase):
+    def test_transient_windows_handle_retries_but_other_failures_do_not(self):
+        from unittest.mock import patch
+        from build_manager.retention import remove_tree
+        error = PermissionError('held executable')
+        error.winerror = 32
+        with patch('build_manager.retention.os.name', 'nt'), \
+                patch('build_manager.retention._remove_tree_once', side_effect=[error, None]) as remove, \
+                patch('build_manager.retention.time.sleep'):
+            remove_tree('owned fixture')
+            self.assertEqual(remove.call_count, 2)
+        error.winerror = 13
+        with patch('build_manager.retention.os.name', 'nt'), \
+                patch('build_manager.retention._remove_tree_once', side_effect=error) as remove:
+            with self.assertRaises(PermissionError):
+                remove_tree('owned fixture')
+            self.assertEqual(remove.call_count, 1)
+
+    def test_persistent_windows_lock_remains_a_bounded_failure(self):
+        from unittest.mock import patch
+        from build_manager.retention import remove_tree
+        error = PermissionError('persistent lock')
+        error.winerror = 5
+        with patch('build_manager.retention.os.name', 'nt'), \
+                patch('build_manager.retention._remove_tree_once', side_effect=error) as remove, \
+                patch('build_manager.retention.time.monotonic', side_effect=[0, 0, 4]), \
+                patch('build_manager.retention.time.sleep'):
+            with self.assertRaises(PermissionError):
+                remove_tree('owned fixture')
+            self.assertEqual(remove.call_count, 2)

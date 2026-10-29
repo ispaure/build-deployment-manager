@@ -159,3 +159,11 @@ no automatic forced shutdown or VM deletion. Keep installation media and initial
 private credentials until setup has been verified, then retain them according to
 the owner's desired recreation policy. This folder is not ordinary run scratch
 and is never swept by project build retention.
+
+## Owned Windows cleanup
+
+Guest cleanup uses extended filesystem paths, including when a generated source
+or encrypted fixture exceeds the normal Windows path limit. It checks the
+workspace token and containment before deletion, removes links without following
+their targets and clears read-only file attributes when necessary. A genuine
+cleanup failure stays visible; it does not turn the test result into success.
