@@ -338,7 +338,7 @@ class SettingsDialog(QDialog):
 
     def change_version(self):
         value, accepted = QInputDialog.getText(self, 'Change tracked app version',
-            'App version (this edits pyproject.toml and requires a commit):')
+            'App version (this edits tracked project metadata and requires a commit):')
         if not accepted:
             return
         if QMessageBox.question(self, 'Edit tracked source?', 'Change the source app version to ' + value + '?',

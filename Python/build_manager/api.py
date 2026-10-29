@@ -34,6 +34,9 @@ class ManagerAPI:
         bridge = self._project(project)
         return dict(fields=bridge.run_fields, defaults=bridge.run_defaults(), choices=bridge.run_choices())
 
+    def set_app_version(self, value, project=None):
+        return self._project(project).set_app_version(value)
+
     def prepare_plan(self, operation, target, backend, *, project=None, **values):
         return self._project(project).make_plan(operation, target, backend, **values)
 

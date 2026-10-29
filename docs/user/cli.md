@@ -256,3 +256,12 @@ for example an unavailable physical-device destination. All selected platforms a
 validation gates stay included, and the saved preset is unchanged. Excluding an
 unknown destination or using this option without a delivery preset is rejected.
 Inspect `show-plan` to verify the resulting destinations before executing.
+
+## Edit the tracked app version
+
+`build-manager set-version 0.1.16 --project PROJECT` sends an explicit source edit
+to the same trusted adapter used by Settings. The project owns version syntax,
+which metadata files change and lockfile consistency. This does not save a local
+profile, commit source, publish or allocate a provider build number. Review and
+commit the edit before preparing a release plan. Unsupported adapters fail rather
+than receiving a guessed file edit.

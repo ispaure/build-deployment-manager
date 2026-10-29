@@ -80,6 +80,9 @@ def parser_for_cli():
         command.add_argument('--project')
         if name == 'history':
             command.add_argument('--limit', type=int, default=20)
+    version = sub.add_parser('set-version', help='Explicitly edit the trusted project’s tracked app version')
+    version.add_argument('value')
+    version.add_argument('--project')
     plan = sub.add_parser('plan', help='Prepare a project-owned operation without executing it')
     plan.add_argument('--project')
     plan.add_argument('--preset', help='Use a saved or suggested project preset')
@@ -163,6 +166,8 @@ def execute(args, api):
     if command in ('select', 'remove', 'trust'):
         getattr(registry, command)(args.project)
         return dict(status=command)
+    if command == 'set-version':
+        return api.set_app_version(args.value, args.project)
     if command in ('capabilities', 'inputs', 'presets'):
         return getattr(api, command)(args.project)
     if command == 'storage':

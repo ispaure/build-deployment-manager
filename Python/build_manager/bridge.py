@@ -147,6 +147,12 @@ class ProjectBridge:
             return {}
         return self.call('run_choices', cancelled=cancelled, timeout=30)
 
+    def set_app_version(self, value):
+        """Explicit tracked-source edit; version policy stays with the adapter."""
+        if not isinstance(value, str) or not value or len(value) > 100:
+            raise ValueError('Supply a project app version.')
+        return self.call('set_app_version', version=value, timeout=30)
+
     def save_settings(self, values):
         return self.store_settings(values)
 

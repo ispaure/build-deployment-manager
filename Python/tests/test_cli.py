@@ -74,6 +74,11 @@ elif request['action'] == 'storage_inventory':
 elif request['action'] == 'delete_storage':
     assert request['values']['selections'] == {'Fixtures': ['old']}
     result = dict(removed=['old'], skipped=[])
+elif request['action'] == 'set_app_version':
+    value = request['values']['version']
+    if value != '0.1.16': raise ValueError('Fixture version is unsupported')
+    Path('version.txt').write_text(value)
+    result = dict(version=value)
 elif request['action'] == 'settings':
     result = {'notes': {'value': 'project default'}}
 else:
@@ -82,6 +87,14 @@ print(json.dumps(dict(schema=1, result=result)))
 ''')
         key = self.invoke('add', root)['registration']
         return root, key
+
+    def test_version_edit_uses_trusted_project_bridge_and_propagates_rejection(self):
+        root, key = self.fixture_project()
+        result = self.invoke('set-version', '0.1.16', '--project', key)
+        self.assertEqual(result['version'], '0.1.16')
+        self.assertEqual((root / 'version.txt').read_text(), '0.1.16')
+        self.invoke('set-version', 'unsupported', '--project', key, code=1)
+        self.assertEqual((root / 'version.txt').read_text(), '0.1.16')
 
     def test_discover_prepare_execute_and_read_project_history(self):
         root, key = self.fixture_project()
