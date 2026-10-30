@@ -34,8 +34,11 @@ class Phase:
     reuse_key: str = ''
     approval_required: bool = True
     reuse_probe: tuple[str, ...] = ()
+    infrastructure_recovery: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        from .infrastructure_recovery import validate_policy
+        validate_policy(self)
         if type(self.approval_required) is not bool or not self.approval_required and not (
                 self.effect == 'deploy' or self.effect == 'upload' and self.provider in {'firebase', 'testflight'}
                 or self.effect in {'upload', 'publish', 'dispatch'} and self.provider == 'github'):
@@ -104,7 +107,16 @@ class Plan:
         if not self.project or not self.phases or self.effect not in {'inspect', 'test', 'build', 'deploy', 'upload', 'publish', 'dispatch'}:
             raise ValueError('Invalid operation plan.')
         seen = set()
+        recovery_resources = {}
         for phase in self.phases:
+            if phase.infrastructure_recovery:
+                policy = phase.infrastructure_recovery
+                resource = policy['resource']
+                if self.capacities.get(resource, 1) != 1:
+                    raise ValueError('Infrastructure recovery requires an exclusive target resource.')
+                target = (policy['environment'], policy['target'])
+                if recovery_resources.setdefault(target, resource) != resource:
+                    raise ValueError('All tests recovering the same target must share its resource lock.')
             if phase.id in seen or any(dependency not in seen for dependency in (*phase.dependencies, *phase.waits_for)):
                 raise ValueError('Phase IDs must be unique and dependencies must precede their consumers.')
             if any(phase.environment.get(name) for name in self.secret_environment):
@@ -118,6 +130,8 @@ class Plan:
         data = asdict(self)
         # Keep legacy plan hashes stable when scheduling-only edges are absent.
         for phase in data['phases']:
+            if not phase['infrastructure_recovery']:
+                phase.pop('infrastructure_recovery')
             if phase['approval_required']:
                 phase.pop('approval_required')
             if not phase['reuse_probe']:

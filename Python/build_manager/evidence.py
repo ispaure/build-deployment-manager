@@ -76,7 +76,9 @@ class EvidenceCache:
             return None
 
     def execute(self, phase, output, action, *, cancelled=lambda: False):
-        if not phase.reuse_key:
+        # Recovery admission and its attempt evidence belong to this run. Never
+        # bypass an interrupted recovery journal with a cached successful test.
+        if not phase.reuse_key or phase.infrastructure_recovery:
             return action()
         if phase.reuse_probe:
             # The project rechecks source/toolchain inputs at execution time.

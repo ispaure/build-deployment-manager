@@ -45,6 +45,103 @@ checks separate from installation, and retain identity/signature/approval checks
 immediately before the actual effect. Unused retry fields are omitted from plan
 serialization to preserve legacy hashes.
 
+### Opt-in test infrastructure recovery
+
+`Phase.infrastructure_recovery` opts an explicit `effect='test', kind='test'`
+unit into one infrastructure recovery per target per run. Existing adapters do
+not opt in automatically. The manager owns supervision, deadlines, admission,
+evidence and replay limits; the trusted adapter supplies isolated probe and
+repair commands using the appropriate lifecycle/transport APIs. It must define
+a repeatable test boundary and verify ownership and worker state on that platform.
+This contract does not add platform-specific repair commands to existing adapters.
+
+The policy is a dictionary with exactly these fields:
+
+```python
+infrastructure_recovery = {
+    'environment': 'android',  # 'ios' or 'vm' are also supported
+    'target': owned_target_identity,
+    'resource': target_resource,
+    'safe_to_repeat': True,
+    'probe': [project_python, runner, 'probe-test-environment'],
+    'recover': [project_python, runner, 'recover-test-environment'],
+    'inputs': {absolute_prepared_app_path: prepared_app_sha256},
+    'timeout': 120,
+}
+```
+
+Declare `{target_resource: 1}` in the phase's resources, with capacity one in
+the plan. All recovery policies for the same environment/target must use the
+same host-wide resource name. The lock remains held through both test attempts,
+diagnosis, repair and readiness. Choose a resource identity shared by every
+consumer of that target. Declare all prepared inputs needed to bind the repeat
+to the same app/payload; the manager checks their SHA-256 before the first test,
+before repair and before repeating. Inputs cannot also be declared test outputs.
+The test runner must write fresh declared reports for each attempt, using
+absolute output paths. Symlink and hard-link aliases of prepared inputs are
+also forbidden as test outputs.
+
+The probe is read-only. It exits zero and writes **only one JSON object** to
+stdout (maximum 64 KiB), with no stderr output because the supervisor captures
+both streams in the same log. Example evidence for a confirmed stopped environment:
+
+```json
+{
+  "schema": 1,
+  "target": "exact-target-identity-from-the-plan",
+  "state": "stopped",
+  "failure_kind": "infrastructure",
+  "owned": true,
+  "exclusive": true,
+  "worker_stopped": true,
+  "held": false
+}
+```
+
+`state` is `ready`, `stopped`, `disconnected`, or `unknown`. Only `stopped` and
+`disconnected`, with `failure_kind='infrastructure'`, permit repair. The probe
+must distinguish an app crash from an environment failure using retained test
+and platform evidence. A transport timeout, missing job handle, or missing app
+result alone does not prove that the guest or worker stopped. Reconcile remote
+worker/receipt state first. Known JUnit or streamed test failures, and incomplete
+local process cleanup, prevent automatic repair/replay even if a probe would
+otherwise authorize it. Unknown ownership, live workers, held VMs and personal
+devices must never yield the affirmative proof above.
+Reported streamed crashes, failures and timeouts remain recovery vetoes even
+when a later final report omits them; the result retains those observations.
+For these opted-in test units, a successful command exit that contradicts a
+reported failure also remains a failure, including on the repeated attempt.
+
+Hooks receive `BUILD_MANAGER_RECOVERY_TARGET` and
+`BUILD_MANAGER_RECOVERY_ACTION`. The action is `probe`, `restart` for a confirmed
+stopped target, or `reconnect` for a disconnected target. Repair must recheck
+ownership, holds and worker state immediately before mutation and honor the
+requested action. Reconnect must not reset a running guest. Restart must use
+the owned lifecycle; it must not rebuild the app, reset global simulator/ADB
+services, adopt a different device, or touch a personal/held VM. The post-repair
+probe must prove `ready` with the same ownership and worker guarantees. No test
+starts until that succeeds. Each hook runs through normal cancellation, process
+cleanup and redaction; all hooks share the policy timeout (1–600 seconds).
+The repeated test has the original phase timeout and exact command/environment.
+
+Each test attempt and hook retains a separate log and artifact directory under
+the run's `infrastructure-recovery/`. The result's `recovery` object includes
+attempts, checks and status. Admission is persisted before repair; a supervisor
+restart cannot reset the target budget. An interrupted admission requires
+inspection and a new run. A completed journal can reconcile an interrupted
+budget update without running commands again; restored successful phase evidence
+rechecks the prepared inputs. Malformed records fail closed. A successful repeat remains `status='passed'`, with
+`recovery.status='recovered'` and the visible result “Passed after infrastructure
+recovery.” A failed repeat stays failed, and later recovery-enabled phases on
+that target are skipped; unrelated targets can continue. Recovery-enabled phases bypass test
+evidence caching so retained recovery state cannot be hidden by a cache hit.
+Unused policy fields are omitted from serialization to preserve legacy hashes.
+
+Portable contract coverage lives in `test_infrastructure_recovery.py`; it uses
+harmless subprocesses and synthetic ownership evidence. Actual emulator/VM
+health classification and repair still require adapter integration and separate
+native acceptance with explicitly authorized test environments.
+
 A tracked `build-project.json` declares schema 1, adapter API 1, stable project ID,
 name, interpreter (a checkout-relative path or mapping by `sys.platform`), bridge
 script and capabilities. Inspection parses JSON only. Registration IDs distinguish

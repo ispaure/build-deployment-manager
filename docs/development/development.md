@@ -122,6 +122,10 @@ reconciled from the atomic completion receipt; pending work is observed, and onl
 verified absence permits another admission attempt. Cleanup waits on the extractor
 lease and retains small admission tombstones to reject delayed duplicates.
 
+Native PowerShell fixtures discard an inherited `PSModulePath` before invoking
+Windows PowerShell, so a PowerShell 7 host cannot redirect its built-in module
+discovery. Their real Windows acceptance also exercises an invalid parent path.
+
 Then run the affected consumer adapter tests with that project's interpreter and
 pin. A manager-only pass cannot establish its release gate inventory. The
 [validation guide](validation.md) records actual native coverage and remaining

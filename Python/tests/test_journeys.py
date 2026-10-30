@@ -1,5 +1,5 @@
 """Integrated intent, isolated bridge, real bounded delivery and credential boundaries."""
-from dataclasses import asdict, replace
+from dataclasses import replace
 import hashlib
 import json
 import os
@@ -207,19 +207,17 @@ class JourneyTests(unittest.TestCase):
 
     def test_legacy_plan_serialization_keeps_original_identity(self):
         plan = Plan('Fixture', 'Test', {}, (Phase('test', (sys.executable, '-c', 'pass'), str(self.root)),), str(self.root))
-        original = asdict(plan); original.pop('journey')
-        for phase in original['phases']:
-            phase.pop('waits_for')
-            phase.pop('label')
-            phase.pop('description')
-            phase.pop('section')
-            phase.pop('test_files')
-            phase.pop('retry_exit_codes')
-            phase.pop('retry_delay')
-            phase.pop('reuse_key')
-            phase.pop('approval_required')
-            phase.pop('reuse_probe')
+        # An actual legacy payload must not grow when Phase gains a field.
+        original = dict(project='Fixture', operation='Test', source={},
+            phases=(dict(id='test', argv=(sys.executable, '-c', 'pass'), cwd=str(self.root),
+                timeout=600, dependencies=(), environment={}, required=True, always=False,
+                kind='test', artifacts=(), effect='inherit', resources={}, artifact_types={},
+                provider='', stop_grace=1),), workspace=str(self.root), backend='local', effect='test',
+            secret_environment=('GH_TOKEN', 'GITHUB_TOKEN', 'FIREBASE_TOKEN'), resource_locks=(),
+            schema=1, max_workers=1, capacities={}, resources={}, settings={}, adapter={})
+        self.assertEqual(plan.data(), original)
         self.assertEqual(plan.identity, hashlib.sha256(json.dumps(original, sort_keys=True).encode()).hexdigest())
+        self.assertEqual(Plan.from_data(original).identity, plan.identity)
 
     def test_step_display_metadata_round_trips_and_changes_review_identity(self):
         phase = Phase('build', (sys.executable, '-V'), str(self.root), effect='build',

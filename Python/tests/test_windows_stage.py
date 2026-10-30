@@ -80,8 +80,12 @@ class LocalPowerShell:
                 script = script.replace(' Expand-Archive -LiteralPath',
                                         ' Start-Sleep -Seconds 6; Expand-Archive -LiteralPath')
         command = Parallels('unused-local-loader').powershell_command('00000000-0000-0000-0000-000000000001')[4:]
+        # A GitHub pwsh parent exports its PowerShell 7 module search path.
+        # Windows PowerShell 5 must discover its own built-in utility/archive modules.
+        environment = {key: value for key, value in os.environ.items()
+                       if key.upper() != 'PSMODULEPATH'}
         result = subprocess.run(command, input=Parallels.powershell_payload(script, values, data),
-                                capture_output=True, timeout=timeout)
+                                capture_output=True, timeout=timeout, env=environment)
         if result.returncode:
             raise RuntimeError(result.stderr.decode('utf-8', errors='replace'))
         if self.loss == 'after' and 'Expand-Archive -LiteralPath' in script:
@@ -98,6 +102,9 @@ class NativeStageTests(unittest.TestCase):
         self.root = Path(self.temp.name) / 'token'
         self.root.mkdir()
         (self.root / '.manager-owned.json').write_text('{"token":"token"}')
+        module_path = patch.dict(os.environ, {'PSMODULEPATH': str(self.root / 'incompatible-parent-modules')})
+        module_path.start()
+        self.addCleanup(module_path.stop)
         self.client = LocalPowerShell()
         self.guest = WindowsGuest(self.client, 'vm', str(self.root), 'token', 'operation')
         stream = io.BytesIO()

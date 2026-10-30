@@ -34,6 +34,8 @@ def read_report(path):
     for row in report['phases']:
         if not isinstance(row, dict) or not isinstance(row.get('id'), str) or not isinstance(row.get('status'), str):
             raise ValueError('Invalid result step.')
+        from .infrastructure_recovery import validate_result_recovery
+        validate_result_recovery(row)
         if row.get('seconds') is not None and not valid_seconds(row['seconds']):
             raise ValueError('Invalid step duration.')
         if not isinstance(row.get('tests', []), list) or not isinstance(row.get('artifacts', []), list):

@@ -478,6 +478,8 @@ class RunView(QWidget):
                 row.setText(0, getattr(phase, 'label', '') or key.rsplit('.', 1)[-1].replace('_', ' ').replace('-', ' ').capitalize())
                 row.setToolTip(0, title(phase))
                 row.setText(1, 'Reused' if fact.get('reused') else fact.get('status', 'planned').capitalize())
+                if fact.get('recovery', {}).get('status') == 'recovered':
+                    row.setText(1, 'Passed after recovery')
                 row.setToolTip(1, f'{len(cases)} reported tests')
                 row.setText(2, duration(fact.get('seconds')))
                 update_test_children(row, key, fact, self.phases[key], force=force)
@@ -673,6 +675,8 @@ class RunView(QWidget):
             self.steps.addTopLevelItem(self.rows[key])
         fact = self.state.update(event)
         self.rows[key].setText(1, 'reused' if fact.get('reused') else fact['status'].replace('_', ' '))
+        if fact.get('recovery', {}).get('status') == 'recovered':
+            self.rows[key].setText(1, 'passed after recovery')
         self.rows[key].setToolTip(1, fact.get('reason') or fact.get('error', ''))
         if event['status'] != 'running' and 'seconds' in event:
             self.rows[key].setText(2, duration(event['seconds']))

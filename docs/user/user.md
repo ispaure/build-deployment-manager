@@ -101,6 +101,21 @@ uses the same cancellation flow. Wait for the result before retrying; a timed-ou
 or interrupted external operation may already have reached its destination.
 Keep the result folder when reporting a problem.
 
+When a project opts a repeatable test into infrastructure recovery, Review plan
+shows that it may recover its owned emulator, iOS Simulator or test VM once.
+After a failure, the manager requires evidence that the environment failed and
+the old test worker is stopped. A timeout alone does not trigger a restart.
+Known app/test failures remain failures. Recovery checks and repair have a
+deadline; the target gets only one recovery attempt for the whole run.
+
+A successful repeat is labelled **Passed after infrastructure recovery**. Both
+test attempts and the environment checks remain in the result folder; select
+the step's Command details for their log paths. If repair fails or the test
+fails again, inspect that evidence before starting a new run. Cancelling stops
+recovery through the normal owned-process cleanup. Existing project adapters
+need to supply the recovery checks before this behavior becomes available;
+personal devices and held VMs are excluded.
+
 ## Continue a prepared delivery
 
 Read the authorization scope in Review plan before starting. For a fresh GUI

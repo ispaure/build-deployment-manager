@@ -125,11 +125,32 @@ class Executor:
                 with resources.acquire(phase.resources, plan.capacities, cancelled=self.cancelled,
                         timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always):
                     from .evidence import EvidenceCache
+                    from .infrastructure_recovery import execute as recover_infrastructure
+                    def run_attempt(command, directory):
+                        if not phase.infrastructure_recovery:
+                            return self.run_phase(command, directory, plan.secret_environment)
+                        first_event = True
+                        def relay(value):
+                            nonlocal first_event
+                            value = dict(value)
+                            if first_event:
+                                # UI facts merge partial events. New attempts and
+                                # hooks must not inherit the previous test inventory.
+                                value.update(tests=[], live_tests=[], test_files=[], artifacts=[],
+                                    observed_test_failures=[], tests_provisional=True,
+                                    current_test=None, error='', summary='', cleanup_error='',
+                                    exit_code=None, recovery={})
+                                first_event = False
+                            if value.get('log'):
+                                value['log'] = str((directory / value['log']).relative_to(output.resolve()))
+                            self.event(value)
+                        return self.run_phase(command, directory, plan.secret_environment, event=relay)
                     return EvidenceCache(self.evidence_directory).execute(phase, output,
-                        lambda: self.run_phase(phase, output, plan.secret_environment),
+                        lambda: recover_infrastructure(phase, output, run_attempt,
+                            cancelled=self.cancelled.is_set, event=self.event),
                         cancelled=self.cancelled.is_set)
-            except (OSError, ValueError, RuntimeError) as error:
-                return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() else 'failed',
+            except (OSError, ValueError, RuntimeError, OperationCancelled) as error:
+                return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() or isinstance(error, OperationCancelled) else 'failed',
                             error=Redactor()(str(error)),seconds=0)
         try:
             with ExitStack() as locks:
@@ -265,10 +286,11 @@ class Executor:
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
         return report
 
-    def run_phase(self, phase, output, secret_environment):
+    def run_phase(self, phase, output, secret_environment, *, event=None):
+        emit = self.event if event is None else event
         row = dict(id=phase.id, required=phase.required, kind=phase.kind,
                    started_at=timestamp(), status='running', log=phase.id + '.log')
-        self.event(dict(type='phase', **row))
+        emit(dict(type='phase', **row))
         started = time.monotonic()
         environment = dict(os.environ, **phase.environment)
         environment['BUILD_MANAGER_TEST_PROGRESS'] = '1'
@@ -300,6 +322,13 @@ class Executor:
             nonlocal streaming_tests, next_stream_snapshot
             streaming_tests = True
             kind = event.pop('kind')
+            if (phase.infrastructure_recovery and kind.endswith('finished')
+                    and event.get('status') in {'failed', 'error', 'crashed', 'timeout'}):
+                # Final JUnit ingestion replaces live snapshots, but must not
+                # erase a reported app/test failure and authorize automatic replay.
+                failures = row.setdefault('observed_test_failures', [])
+                if len(failures) < 100:
+                    failures.append(dict(event, kind=kind))
             if kind.startswith('file_'):
                 file_states[event['name']] = dict(event, status='running' if kind == 'file_started' else event['status'])
                 if kind == 'file_started':
@@ -320,7 +349,7 @@ class Executor:
             if kind.startswith('file_') or time.monotonic() >= next_stream_snapshot:
                 update.update(test_files=row['test_files'], live_tests=row['live_tests'])
                 next_stream_snapshot = time.monotonic() + .25
-            self.event(update)
+            emit(update)
 
         def report_progress():
             nonlocal next_report_check
@@ -348,7 +377,7 @@ class Executor:
             if changed:
                 row.update(live_tests=[case for cases in live_cases.values() for case in cases],
                            tests_provisional=True)
-                self.event(dict(type='phase', **row))
+                emit(dict(type='phase', **row))
 
         try:
             if os.name == 'nt':
@@ -396,13 +425,14 @@ class Executor:
                     stream.write(line)
                     stream.flush()
                     tail = (tail + line.splitlines())[-6:]
-                    self.event(dict(type='output', phase=phase.id, text=line))
+                    emit(dict(type='output', phase=phase.id, text=line))
             reader.join(timeout=5)
             process.wait(timeout=5)
             row['exit_code'] = process.returncode
             if row['status'] == 'running':
                 row['status'] = 'passed' if process.returncode == 0 else 'failed'
-            if phase.artifacts and row['status'] in {'passed', 'failed'}:
+            if phase.artifacts and (row['status'] in {'passed', 'failed'}
+                    or phase.infrastructure_recovery and row['status'] == 'timeout'):
                 # Final retained evidence replaces interim snapshots; it must
                 # never append duplicate tests or trust the live snapshot.
                 row.pop('tests', None)

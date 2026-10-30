@@ -61,3 +61,13 @@ class HistoryTests(unittest.TestCase):
         path.write_text(json.dumps(report))
         with self.assertRaisesRegex(ValueError, 'duration'):
             read_report(path)
+
+    def test_bad_recovery_evidence_is_rejected_before_ui(self):
+        path = self.fixture()
+        report = json.loads(path.read_text())
+        for value in (None, [], dict(environment='android', target='owned', status='recovered',
+                                    attempts=[{}], checks=[])):
+            report['phases'][0]['recovery'] = value
+            path.write_text(json.dumps(report))
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'recovery'):
+                read_report(path)

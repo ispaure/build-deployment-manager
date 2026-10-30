@@ -56,6 +56,25 @@ class ReviewWorkspaceTests(unittest.TestCase):
         panel.stages.setCurrentIndex(0)
         self.app.processEvents()
 
+    def test_recovery_scope_and_recovered_pass_are_visible(self):
+        policy = dict(environment='android', target='owned-fixture', resource='fixture:owned',
+                      safe_to_repeat=True, inputs={str(self.root / 'prepared.apk'): 'a' * 64}, timeout=120,
+                      probe=[sys.executable, 'probe.py'], recover=[sys.executable, 'repair.py'])
+        self.plan = replace(self.plan, phases=tuple(
+            replace(phase, effect='test', kind='test', resources={'fixture:owned': 1},
+                    infrastructure_recovery=policy) if phase.id == 'android' else phase
+            for phase in self.plan.phases))
+        self.before = self.plan.data()
+        self.panel.present_plan(self.plan)
+        self.view.inspect_phase('android')
+        self.assertIn('One infrastructure recovery attempt', self.view.fact_values['Notes'].text())
+        self.assertIn('repair.py', self.view.command.toPlainText())
+        self.view.set_facts({'android': dict(status='passed', recovery=dict(status='recovered',
+            attempts=[dict(status='failed', log='first/native.log')], checks=[]))})
+        self.view.inspect_phase('android')
+        self.assertEqual(self.view.fact_values['Result'].text(), 'Passed after infrastructure recovery')
+        self.assertIn('first/native.log', self.view.command.toPlainText())
+
     def test_sidebar_uses_independent_tree_and_details_panes_without_outer_scroll(self):
         view = self.view
         self.assertNotIsInstance(view.inspector, QScrollArea)

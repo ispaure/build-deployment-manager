@@ -418,6 +418,8 @@ class ReviewPlanView(QWidget):
             state, reason = states[key]
             fact = self.facts.get(key, {})
             row.setText(1, 'Reused' if fact.get('reused') else {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
+            if fact.get('recovery', {}).get('status') == 'recovered':
+                row.setText(1, 'Passed after recovery')
             elapsed = step_time(self.facts.get(key, {}), state) or 'Not recorded'
             row.setText(2, '—' if elapsed in {'Not started', 'Not recorded'} else elapsed)
             row.setToolTip(1, reason)
@@ -545,6 +547,9 @@ class ReviewPlanView(QWidget):
             for case in fact.get('tests', ()):
                 if case.get('status') in {'failed', 'error'}:
                     lines.append(case['name'] + ' · ' + case['status'] + '\n' + str(case.get('message', '')))
+            for observation in fact.get('observed_test_failures', ()):
+                lines.append('Runner reported: ' + observation.get('name', 'test') + ' · '
+                             + observation['status'] + '\n' + observation.get('message', ''))
             if reason and reason not in (fact.get('error'), fact.get('reason')):
                 lines.append(reason)
             self.error_summary.setText(str(fact.get('error') or fact.get('reason') or state_label(state)).splitlines()[0])
@@ -569,7 +574,7 @@ class ReviewPlanView(QWidget):
         elif state == 'waiting_resource':
             self.set_fact('Result', reason)
         else:
-            self.set_fact('Result', state_label(state))
+            self.set_fact('Result', 'Passed after infrastructure recovery' if fact.get('recovery', {}).get('status') == 'recovered' else state_label(state))
         self.set_fact('Outputs', '\n'.join(path.replace('\\', '/').rsplit('/', 1)[-1] for path in phase.artifacts) or 'No output files declared')
         self.fact_values['Outputs'].setToolTip('\n'.join(phase.artifacts))
         effect = phase.effect if phase.effect != 'inherit' else self.plan.effect
@@ -581,6 +586,9 @@ class ReviewPlanView(QWidget):
         self.set_fact('Delivery', delivery)
         _, later, shared = summary_rows(self.plan, self.fields)
         notes = []
+        recovery = getattr(phase, 'infrastructure_recovery', {})
+        if recovery:
+            notes.append('One infrastructure recovery attempt is authorized for this repeatable test on ' + recovery['target'] + '.')
         for row in later:
             if key in row['keys']:
                 for line in row['detail'].splitlines():
@@ -610,6 +618,16 @@ class ReviewPlanView(QWidget):
         if phase.always:
             technical.append('Runs after prerequisites finish, including after failure.')
         technical.extend(resource_details(self.plan, key))
+        if recovery:
+            technical.extend(['Infrastructure probe: ' + shlex.join(recovery['probe']),
+                              'Infrastructure repair: ' + shlex.join(recovery['recover']),
+                              'Recovery deadline: ' + str(recovery['timeout']) + ' seconds'])
+        evidence = fact.get('recovery', {})
+        if evidence:
+            technical.append('Infrastructure recovery: ' + evidence.get('status', 'unknown'))
+            for attempt in (*evidence.get('attempts', ()), *evidence.get('checks', ())):
+                technical.append('Retained ' + attempt.get('operation', 'test attempt') + ': '
+                                 + attempt['status'] + ' · ' + attempt.get('log', 'No log captured'))
         if phase.environment:
             technical.append('Environment references:\n' + '\n'.join(f'{name}={value}' for name, value in phase.environment.items()))
         self.command.setPlainText('\n\n'.join(technical))
