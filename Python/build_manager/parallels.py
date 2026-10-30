@@ -14,22 +14,7 @@ from uuid import UUID, uuid4
 from .redaction import Redactor
 
 
-STAGE = '''import base64,hashlib,io,json,os,pathlib,sys,tarfile
-path=pathlib.Path(sys.argv[1]); token=sys.argv[2]; expected=sys.argv[3]; uid=int(sys.argv[4]); gid=int(sys.argv[5])
-request=json.loads(sys.stdin.buffer.read())
-data=base64.b64decode(request['archive'],validate=True)
-runner=base64.b64decode(request['runner'],validate=True)
-if hashlib.sha256(runner).hexdigest()!=sys.argv[6]: raise ValueError('Guest helper digest mismatch')
-if hashlib.sha256(data).hexdigest()!=expected: raise ValueError('Source transfer digest mismatch')
-path.mkdir(parents=True,exist_ok=False)
-(path/'.manager-owned.json').write_text(json.dumps(dict(token=token)))
-with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive: archive.extractall(path/'source',filter='data')
-(path/'.manager-guest.py').write_bytes(runner)
-for root,dirs,files in os.walk(path):
- os.chown(root,uid,gid)
- for name in files: os.chown(os.path.join(root,name),uid,gid,follow_symlinks=False)
-print(json.dumps(dict(transferred_sha256=expected)))
-'''
+from .linux_stage import STAGE, INSPECT_STAGE
 
 OWNED = '''import json,pathlib,sys
 path=pathlib.Path(sys.argv[1]); token=sys.argv[2]
@@ -66,7 +51,8 @@ locks=[]
 directory=path/'.manager-invocations'
 if directory.is_symlink(): raise ValueError('Linked invocation directory')
 try:
- for lock in directory.glob('*.lock'):
+ stage_lock=path/'.manager-stage.lock'
+ for lock in ([stage_lock] if stage_lock.exists() else [])+list(directory.glob('*.lock')):
   fd=os.open(lock,os.O_RDWR|os.O_NOFOLLOW);locks.append(fd)
   deadline=time.monotonic()+3
   while True:
@@ -324,9 +310,41 @@ if ($exists) {
         runner = Path(__file__).with_name('guest.py').read_bytes()
         envelope = json.dumps(dict(archive=base64.b64encode(payload).decode(),
                                    runner=base64.b64encode(runner).decode())).encode()
-        self.execute(selector, ['python3', '-c', STAGE, workspace, token, digest, str(uid), str(gid),
-                                hashlib.sha256(runner).hexdigest()], data=envelope, timeout=180)
-        return digest
+        arguments = [workspace, token, digest, str(uid), str(gid), hashlib.sha256(runner).hexdigest()]
+        for attempt in range(3):
+            try:
+                self.execute(selector, ['python3', '-c', STAGE, *arguments], data=envelope, timeout=180)
+                return digest
+            except RuntimeError as error:
+                transient = '(255)' in str(error) and any(message in str(error) for message in
+                    ('Invalid argument', 'Unable to open new session'))
+                late_admission = attempt > 0 and 'FileExistsError' in str(error)
+                if not transient and not late_admission:
+                    raise
+                # A lost session can precede admission or follow a completed
+                # extraction. Inspect the bound receipt instead of overwriting
+                # the workspace or assuming that the transfer did not run.
+                deadline = time.monotonic() + 30
+                while True:
+                    state = json.loads(self.execute_idempotent(selector,
+                        ['python3', '-c', INSPECT_STAGE, *arguments], timeout=30))
+                    if state.get('state') == 'complete':
+                        expected = dict(token=token, archive_sha256=digest, uid=uid, gid=gid,
+                                        runner_sha256=arguments[-1])
+                        if state.get('identity') != expected:
+                            raise ValueError('Source staging completion identity changed.')
+                        return digest
+                    if state.get('state') == 'absent':
+                        if attempt == 2:
+                            raise error
+                        time.sleep(.5)
+                        break
+                    if state.get('state') != 'pending':
+                        raise ValueError('Invalid source staging inspection state.')
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('Source staging completion is unknown; preserve the owned workspace for recovery.') from error
+                    time.sleep(.2)
+        raise RuntimeError('Source staging did not complete.')
 
     def collect(self, selector, workspace, token, destination):
         raw = self.execute_idempotent(selector, ['python3', '-c', COLLECT, workspace, token], timeout=120)

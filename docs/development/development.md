@@ -190,3 +190,20 @@ scope after navigation. The dormant nested workflow browser remains disconnected
 
 See [adapter boundaries and consumer acceptance](adapters.md#boundaries-when-adding-another-project)
 for generic command/source owners and the explicit cross-consumer test plan.
+
+## Linux source-transfer admission
+
+`linux_stage.py` binds source extraction to its workspace token, archive digest,
+guest-helper digest and account identity. Exclusive directory creation admits
+one extractor; an atomic completion receipt is published only after extraction,
+helper installation and ownership updates. The staging lease is held before
+ownership becomes visible, and cleanup waits for that lease as well as worker
+invocations.
+
+On a recognized Parallels session error, `Parallels.stage` inspects this bound
+receipt. A completed transfer is reused; an absent namespace permits a bounded
+new admission attempt; an admitted transfer is observed without re-extraction.
+Unknown completion and mismatched identities fail closed and preserve recovery
+evidence. This recovery applies to source staging, never arbitrary commands or
+test failures. `test_linux_stage.py` injects failures before, during and after real
+extraction, including delayed admission and active-cleanup contention.
