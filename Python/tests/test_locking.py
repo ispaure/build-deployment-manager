@@ -16,3 +16,22 @@ class WorkspaceLockTests(unittest.TestCase):
                         self.fail('must not acquire')
             with workspace_lock(path):
                 self.assertTrue(path.exists())
+
+    def test_operation_lock_survives_workspace_removal_and_blocks_recreation(self):
+        from build_manager.locking import operation_lock_path
+        from build_manager.retention import remove_tree
+        with TemporaryDirectory() as folder:
+            workspace = Path(folder) / 'disposable'
+            workspace.mkdir()
+            logical = workspace / 'operation.lock'
+            with workspace_lock(logical):
+                self.assertFalse(logical.exists())
+                self.assertTrue(operation_lock_path(workspace).exists())
+                remove_tree(workspace)
+                self.assertFalse(workspace.exists())
+                with self.assertRaises(RuntimeError):
+                    with workspace_lock(logical):
+                        self.fail('removal must not bypass operation ownership')
+                self.assertFalse(workspace.exists())
+            with workspace_lock(logical):
+                self.assertFalse(workspace.exists())

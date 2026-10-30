@@ -155,7 +155,12 @@ provides useful sentence-level checks.
 ## commonUtils primitive ownership
 
 Workspace contention policy wraps `commonUtils.persistence.locking.file_lock`;
-the shared implementation owns OS lock acquisition/release. Manager JSON state
+the shared implementation owns OS lock acquisition/release. The logical
+`<workspace>/operation.lock` name resolves to a sibling
+`.<workspace-name>.operation.lock`, including names stored in retained plans.
+Executors, resource locks and retention therefore share one stable lock while
+Windows can delete the disposable workspace without deleting an open lock file.
+Upgrade execution hosts while their old engine processes are quiescent. Manager JSON state
 keeps its schema, indentation, newline and private parent-directory policy while
 delegating atomic byte publication with explicit private permissions and bounded
 Windows sharing retries. `Redactor` retains environment-secret selection around
