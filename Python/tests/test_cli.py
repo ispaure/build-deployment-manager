@@ -15,6 +15,7 @@ from unittest.mock import patch
 from build_manager import Phase, Plan
 from build_manager.api import ManagerAPI, read_logs, run_plan
 from build_manager.cli import main
+from build_manager.retention import remove_tree
 
 
 class CLITests(unittest.TestCase):
@@ -29,6 +30,9 @@ class CLITests(unittest.TestCase):
         self.temp = TemporaryDirectory(prefix='manager CLI café ')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        # Windows can briefly retain the exited venv launcher image. Use the
+        # same bounded removal policy as manager-owned build workspaces.
+        self.addCleanup(remove_tree, self.root)
         self.registry = self.root / 'private'
 
     def invoke(self, *args, code=0):

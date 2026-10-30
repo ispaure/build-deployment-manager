@@ -25,16 +25,55 @@ function OwnedPath([string]$name) {
 
 STAGE = OWNED + r'''
 $target=OwnedPath $p.folder
-if (Test-Path -LiteralPath $target) { throw 'Source workspace already exists' }
-$zip=OwnedPath ($p.folder+'.zip');[IO.File]::WriteAllBytes($zip,$transportInput)
-if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $p.sha256) { throw 'Source transfer hash mismatch' }
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archive=[IO.Compression.ZipFile]::OpenRead($zip)
-try { foreach ($entry in $archive.Entries) {
- $path=[IO.Path]::GetFullPath((Join-Path $target $entry.FullName))
- if (-not $path.StartsWith($target+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Archive escapes source workspace' }
-} } finally { $archive.Dispose() }
-Expand-Archive -LiteralPath $zip -DestinationPath $target
+$claim=OwnedPath ($p.folder+'.manager-stage.claim')
+$receipt=OwnedPath ($p.folder+'.manager-stage.json')
+$record=@{token=$p.token;operation=$p.operation;folder=$p.folder;sha256=$p.sha256}
+try {
+ $lease=[IO.File]::Open($claim,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read)
+} catch [IO.IOException] {
+ if (!(Test-Path -LiteralPath $claim)) { throw }
+ @{state='pending'}|ConvertTo-Json -Compress
+ return
+}
+try {
+ $bytes=[Text.Encoding]::UTF8.GetBytes(($record|ConvertTo-Json -Compress))
+ $lease.Write($bytes,0,$bytes.Length);$lease.Flush($true)
+ if (Test-Path -LiteralPath $target) { throw 'Source workspace already exists without completion' }
+ $zip=OwnedPath ($p.folder+'.zip');[IO.File]::WriteAllBytes($zip,$transportInput)
+ if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $p.sha256) { throw 'Source transfer hash mismatch' }
+ Add-Type -AssemblyName System.IO.Compression.FileSystem
+ $archive=[IO.Compression.ZipFile]::OpenRead($zip)
+ try { foreach ($entry in $archive.Entries) {
+  $path=[IO.Path]::GetFullPath((Join-Path $target $entry.FullName))
+  if (-not $path.StartsWith($target+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Archive escapes source workspace' }
+ } } finally { $archive.Dispose() }
+ Expand-Archive -LiteralPath $zip -DestinationPath $target
+ $record.state='complete'
+ $bytes=[Text.Encoding]::UTF8.GetBytes(($record|ConvertTo-Json -Compress))
+ $file=[IO.File]::Open($receipt+'.tmp',[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
+ try {$file.Write($bytes,0,$bytes.Length);$file.Flush($true)} finally {$file.Dispose()}
+ [IO.File]::Move($receipt+'.tmp',$receipt)
+ $record|ConvertTo-Json -Compress
+} finally { $lease.Dispose() }
+'''
+
+STAGE_STATE = OWNED + r'''
+$target=OwnedPath $p.folder
+$claim=OwnedPath ($p.folder+'.manager-stage.claim')
+$receipt=OwnedPath ($p.folder+'.manager-stage.json')
+foreach ($path in @($claim,$receipt)) {
+ if ((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Stage receipt cannot be a reparse point' }
+}
+if (Test-Path -LiteralPath $receipt) {
+ if (!(Test-Path -LiteralPath $target -PathType Container)) { throw 'Completed source staging was retired' }
+ Get-Content -LiteralPath $receipt -Raw
+} elseif (Test-Path -LiteralPath $claim) {
+ @{state='pending'}|ConvertTo-Json -Compress
+} elseif ((Test-Path -LiteralPath $target) -or (Test-Path -LiteralPath ($target+'.zip'))) {
+ throw 'Unclassified source staging exists; preserve it for recovery'
+} else {
+ @{state='absent'}|ConvertTo-Json -Compress
+}
 '''
 
 WRITE = OWNED + r'''
@@ -154,10 +193,30 @@ function RemoveTree([string]$path) {
   [IO.File]::Delete($path)
  }
 }
-foreach ($relative in $p.paths) {
- $target=ExtendedPath (OwnedPath $relative)
- if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) { RemoveTree $target }
-}
+$leases=New-Object 'System.Collections.Generic.List[System.IDisposable]'
+try {
+ foreach ($relative in $p.paths) {
+  $claim=OwnedPath ($relative+'.manager-stage.claim')
+  if ((Test-Path -LiteralPath $claim) -and ((Get-Item -LiteralPath $claim).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Stage lease cannot be a reparse point' }
+  & {
+   $deadline=[DateTime]::UtcNow.AddSeconds(3)
+   while ($true) {
+    try {
+     $lease=[IO.File]::Open($claim,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+     $leases.Add($lease);break
+    } catch [IO.IOException] {
+     if ([DateTime]::UtcNow -ge $deadline) { throw 'Source extractor still owns its stage lease; preserve workspace' }
+     Start-Sleep -Milliseconds 50
+    }
+   }
+  }
+ }
+ foreach ($relative in $p.paths) {
+  $target=ExtendedPath (OwnedPath $relative)
+  if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) { RemoveTree $target }
+ }
+ # Keep small claim tombstones so a delayed duplicate can never re-extract.
+} finally { foreach ($lease in $leases) { $lease.Dispose() } }
 '''
 
 
@@ -182,7 +241,31 @@ class WindowsGuest:
                 time.sleep(.5)
 
     def stage(self, folder, payload):
-        self.call(STAGE, values=dict(folder=folder, sha256=hashlib.sha256(payload).hexdigest()), data=payload, timeout=180)
+        values = dict(folder=folder, sha256=hashlib.sha256(payload).hexdigest())
+        expected = dict(token=self.values['token'], operation=self.values['operation'], **values)
+        deadline = time.monotonic() + 30
+        for attempt in range(3):
+            try:
+                state = json.loads(self.call(STAGE, values=values, data=payload, timeout=180))
+            except RuntimeError as error:
+                if '(255)' not in str(error) or not any(detail in str(error) for detail in (
+                        'PrlJob_GetRetCode: Invalid argument', 'PrlJob_GetResult: Invalid argument')):
+                    raise
+                state = None
+            while True:
+                if state is None:
+                    state = json.loads(self.call_idempotent(STAGE_STATE, values=values))
+                if state.get('state') == 'complete':
+                    if any(state.get(key) != value for key, value in expected.items()):
+                        raise RuntimeError('Windows source staging receipt identity mismatch.')
+                    return
+                if state.get('state') == 'absent':
+                    break
+                if state.get('state') != 'pending' or time.monotonic() >= deadline:
+                    raise RuntimeError('Windows source staging completion is unknown; preserve workspace for recovery.')
+                time.sleep(.5)
+                state = None
+        raise RuntimeError('Windows source staging was not admitted after bounded recovery.')
 
     def write(self, relative, data):
         self.call(WRITE, values=dict(file=relative), data=data)

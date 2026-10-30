@@ -114,6 +114,14 @@ portable contracts, not proof that a VM or personal device passed. Native Window
 process jobs, guest recovery and OS GUI ownership need their real platform checks.
 Use only explicitly authorized test hosts; never substitute a held personal VM.
 
+CLI fixtures remove their private temporary environments through the same bounded
+Windows executable-release cleanup used for owned workspaces. They still fail
+if a lock persists beyond that bound. Windows source staging admits one extractor
+per token, operation, destination and payload hash. A lost transport result is
+reconciled from the atomic completion receipt; pending work is observed, and only
+verified absence permits another admission attempt. Cleanup waits on the extractor
+lease and retains small admission tombstones to reject delayed duplicates.
+
 Then run the affected consumer adapter tests with that project's interpreter and
 pin. A manager-only pass cannot establish its release gate inventory. The
 [validation guide](validation.md) records actual native coverage and remaining
