@@ -180,3 +180,30 @@ class ParallelsTransportTests(unittest.TestCase):
                 'plan.json', str(os.getuid()), str(os.getgid())], input=base64.b64encode(b'new'), capture_output=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(target.read_bytes(), b'retained')
+
+    def test_lost_linux_result_retries_the_same_receipt_aware_invocation(self):
+        from threading import Event
+        from unittest.mock import MagicMock
+        client = Parallels('/fixture/prlctl')
+        processes = []
+        payloads = []
+        for code in (255, 0):
+            process = MagicMock(); process.poll.return_value = code; process.returncode = code
+            process.stdin = io.BytesIO()
+            process.stdin.close = lambda stream=process.stdin: payloads.append(stream.getvalue())
+            processes.append(process)
+        with patch('build_manager.parallels.subprocess.Popen', side_effect=processes) as spawn, patch('build_manager.parallels.time.sleep'):
+            self.assertEqual(client.run_owned(VM, '/var/tmp/owned', 'owned', 1000,
+                ['real-test'], {}, Event(), timeout=10), 0)
+        self.assertEqual(spawn.call_args_list[0], spawn.call_args_list[1])
+        self.assertEqual(payloads[0], payloads[1])
+        self.assertIn('--invocation', shlex.split(' '.join(spawn.call_args.args[0][3:])))
+
+    def test_linux_command_failure_is_not_a_transport_retry(self):
+        from threading import Event
+        from unittest.mock import MagicMock
+        process = MagicMock(); process.poll.return_value = 2; process.returncode = 2
+        with patch('build_manager.parallels.subprocess.Popen', return_value=process) as spawn:
+            self.assertEqual(Parallels('/fixture/prlctl').run_owned(VM, '/var/tmp/owned',
+                'owned', 1000, ['failed-test'], {}, Event(), timeout=10), 2)
+        self.assertEqual(spawn.call_count, 1)

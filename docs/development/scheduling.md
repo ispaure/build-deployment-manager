@@ -77,7 +77,7 @@ evidence lock. Other independent branches can use those workers.
 
 Owned Windows and Linux guest transports accept an optional advisory `progress`
 callback. Host-side heartbeats report elapsed waiting at most every 30 seconds;
-a change to Windows receipt reconciliation is reported immediately. These updates
+a change to invocation receipt reconciliation is reported immediately. These updates
 make no additional guest calls, do not invent test counts or guest activity, and
 cannot authorize a pass. The exact worker exit/receipt and collected reports stay
 authoritative. Presenter failures do not interrupt worker cleanup or change its
@@ -94,3 +94,13 @@ or durably held trees, active entry locks and grace period remain protected.
 The limit is soft when protected storage alone exceeds it. Allocation measurement
 skips links and junctions. Dry runs use the same selection as deletion and caller
 ownership is rechecked under each entry lock.
+
+Linux commands bind a unique invocation to the owned workspace and command digest.
+A transport exit 255 retries admission with the same invocation, at most three
+times under the original deadline. A lock inherited by the child prevents
+concurrent execution; a completed receipt returns the original exit code. An
+admission without verified completion fails closed and is never re-executed.
+Older staged helpers reject the invocation option before launching a child.
+Owned Linux removal waits briefly for invocation locks to retire before deleting
+reports. It retains the ownership marker until the content is gone, preserving
+retryable cleanup proof when a writer or filesystem error prevents removal.

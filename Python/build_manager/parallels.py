@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tarfile
 import time
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .redaction import Redactor
 
@@ -61,8 +61,35 @@ print(base64.b64encode(stream.getvalue()).decode())
 REMOVE = '''import pathlib,sys
 if not pathlib.Path(sys.argv[1]).exists(): raise SystemExit(0)
 ''' + OWNED + '''
-import shutil
-shutil.rmtree(path)
+import fcntl,os,shutil,time
+locks=[]
+directory=path/'.manager-invocations'
+if directory.is_symlink(): raise ValueError('Linked invocation directory')
+try:
+ for lock in directory.glob('*.lock'):
+  fd=os.open(lock,os.O_RDWR|os.O_NOFOLLOW);locks.append(fd)
+  deadline=time.monotonic()+3
+  while True:
+   try:
+    fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB);break
+   except BlockingIOError:
+    if time.monotonic()>=deadline: raise ValueError('Guest invocation is active; cleanup deferred')
+    time.sleep(.05)
+ # Completion writers have retired. Keep proof of ownership until all content
+ # is gone, so a failed removal can be inspected and retried safely.
+ marker=path/'.manager-owned.json'
+ for child in path.iterdir():
+  if child==marker: continue
+  if child.is_dir() and not child.is_symlink(): shutil.rmtree(child)
+  else: child.unlink()
+ marker.unlink()
+ try: path.rmdir()
+ except OSError:
+  fd=os.open(marker,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+  with os.fdopen(fd,'w') as output: json.dump(dict(token=token),output)
+  raise
+finally:
+ for fd in locks: os.close(fd)
 '''
 
 CANCEL = OWNED + '''
@@ -236,34 +263,50 @@ if ($exists) {
 
     def run_owned(self, vm, workspace, token, uid, argv, environment, cancelled, *, timeout, progress=None):
         payload = base64.b64encode(json.dumps(dict(argv=argv, environment=environment)).encode()).decode()
-        command = ['python3', workspace + '/.manager-guest.py', workspace, token, str(uid)]
-        # Parallels guest tools impose a command-line limit even for Linux.
-        # Carry trusted structured data over stdin, as the Windows transport does.
-        process = subprocess.Popen(self.command(vm, command), stdin=subprocess.PIPE)
-        try:
-            process.stdin.write(payload.encode())
-        finally:
-            process.stdin.close()
+        invocation = uuid4().hex
+        command = ['python3', workspace + '/.manager-guest.py', workspace, token, str(uid),
+                   '--invocation', invocation]
+        # Older helpers reject this option before launching any child. Replays
+        # are only admitted by the receipt-aware helper with the same token.
         started = time.monotonic()
         from .guest_progress import GuestHeartbeat
         heartbeat = GuestHeartbeat(progress, started)
-        try:
-            while process.poll() is None:
-                heartbeat.emit('waiting')
-                if cancelled.is_set() or time.monotonic() - started > timeout:
-                    self.cancel(vm, workspace, token)
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        process.terminate()
-                    return 130 if cancelled.is_set() else 124
-                time.sleep(.1)
-            return process.returncode
-        finally:
-            if process.poll() is None:
+        for attempt in range(3):
+            if cancelled.is_set() or time.monotonic() - started > timeout:
                 self.cancel(vm, workspace, token)
-                process.terminate()
-                process.wait(timeout=2)
+                return 130 if cancelled.is_set() else 124
+            process = subprocess.Popen(self.command(vm, command), stdin=subprocess.PIPE)
+            try:
+                try:
+                    try:
+                        process.stdin.write(payload.encode())
+                    finally:
+                        process.stdin.close()
+                except BrokenPipeError:
+                    # Guest tools can close stdin before reporting exit 255.
+                    # Reconcile through the same invocation after collecting it.
+                    pass
+                while process.poll() is None:
+                    heartbeat.emit('waiting')
+                    if cancelled.is_set() or time.monotonic() - started > timeout:
+                        self.cancel(vm, workspace, token)
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.terminate()
+                        return 130 if cancelled.is_set() else 124
+                    time.sleep(.1)
+                if process.returncode != 255 or attempt == 2:
+                    return process.returncode
+                # Even a genuine child exit 255 is reconciled, never rerun: the
+                # helper returns its saved result. Unknown admissions fail closed.
+                heartbeat.emit('reconciling')
+                time.sleep(.5)
+            finally:
+                if process.poll() is None:
+                    self.cancel(vm, workspace, token)
+                    process.terminate()
+                    process.wait(timeout=2)
 
     def stage(self, selector, snapshot, workspace, token, uid, gid, *, members=None):
         data = io.BytesIO()

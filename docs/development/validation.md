@@ -408,3 +408,12 @@ request bound to that exact identity. A bounded manifest is checked again after
 copy and extraction; the manager base commit and commonUtils pin remain fixed.
 Ordinary `verify` and `archive` calls still reject modified tracked source.
 Consumers must expose this only for local tests, never release or delivery.
+
+## Linux invocation reconciliation
+
+Real-process contracts verify that simultaneous admissions and later replays
+execute the child once and retain its original exit. A child-inherited lock
+remains held after supervisor loss; without a verified completion, admission
+fails closed. Changed command/environment digests and foreign workspace owners
+are rejected before another child can launch. Transport contracts cover exit-255
+reconciliation with the same invocation and propagation of ordinary failures.
