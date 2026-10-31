@@ -12,6 +12,8 @@ from .ui_components import style_dialog_buttons
 
 
 def interpreter_path(root, descriptor):
+    if 'commands' in descriptor:
+        return Path(sys.executable)
     value = descriptor['interpreter']
     return Path(root) / (value[sys.platform] if isinstance(value, dict) else value)
 
@@ -87,10 +89,13 @@ class AddProjectDialog(QDialog):
             root = Path(self.path.text().strip()).expanduser().resolve()
             descriptor, _ = inspect(root)
             python = interpreter_path(root, descriptor)
+            from .onboarding import readiness
+            ready = readiness(root)
             self.summary.setText(f"{descriptor['name']}\n"
                 + 'Available platforms: ' + ', '.join(descriptor['capabilities']['platforms'])
-                + '\n' + ('Python environment found.' if python.is_file() else
+                + '\n' + ('Built-in command project; no Python bridge required.' if 'commands' in descriptor else 'Python environment found.' if python.is_file() else
                             'Python environment is missing. You can add this project now and set up its environment before running.')
+                + '\n' + ready['message']
                 + '\nNext: check project settings, then choose what to test.')
             self.details.setPlainText(json.dumps(descriptor, indent=2))
             self.root = root

@@ -1,4 +1,5 @@
 """Standalone project selector; trusted adapters remain in separate processes."""
+from .adapter_sdk import supports
 import argparse
 from pathlib import Path
 
@@ -87,7 +88,7 @@ class ManagerWindow(QWidget):
                  ('Remove registration', lambda: self.remove(view))],
                 [('Accounts…', lambda: self.accounts(view)), ('Test machines…', lambda: self.test_machines(view)),
                  ('Check connections and settings…', lambda: view.verify_settings() if view.project else None),
-                 ('Clean up builds…', lambda: view.clean_builds() if view.project and hasattr(view.project, 'storage_inventory') else None)],
+                 ('Clean up builds…', lambda: view.clean_builds() if view.project and supports(view.project, 'storage_inventory') else None)],
                 [('App settings…', lambda: self.open_app_settings(view))]):
             if view.menu_actions:
                 menu.addSeparator()
@@ -336,9 +337,11 @@ class ManagerWindow(QWidget):
         from .project_setup_ui import interpreter_path
         row, descriptor = self.registry.resolve(view.project_key)
         python = interpreter_path(row['root'], descriptor)
-        if not python.is_file():
+        from .onboarding import readiness
+        ready = readiness(row['root'], descriptor)
+        if not ready['ready']:
             view.setup_card.show()
-            view.setup_summary.setText('Environment missing · This project needs its own Python environment before settings and plans can load.\n' + str(python))
+            view.setup_summary.setText(ready['message'])
             view.setup_action.setText('View setup instructions…')
 
     def next_setup_step(self, view=None):
@@ -349,10 +352,12 @@ class ManagerWindow(QWidget):
         from .project_setup_ui import interpreter_path
         row, descriptor = self.registry.resolve(view.project_key)
         python = interpreter_path(row['root'], descriptor)
-        if not python.is_file():
+        from .onboarding import readiness
+        ready = readiness(row['root'], descriptor)
+        if not ready['ready']:
             QMessageBox.information(view.window(), 'Set up this project’s environment',
                 f"Project: {descriptor['name']}\nFolder: {row['root']}\nExpected Python: {python}\n\n"
-                'Follow this project’s installation guide to create its environment. '
+                + ready['message'] + '\nFollow this project’s installation guide to repair its environment and adapter. '
                 'Keep its dependencies separate from the manager. Then open Project settings again.')
         else:
             view.edit_settings()
@@ -366,7 +371,8 @@ class ManagerWindow(QWidget):
         view.project_settings.setEnabled(not busy and view.project is not None)
         for label in ('Locate moved checkout…', 'Remove registration', 'Accounts…', 'Check connections and settings…'):
             view.menu_actions[label].setEnabled(available and not busy)
-        view.menu_actions['Clean up builds…'].setEnabled(not busy and view.project is not None and hasattr(view.project, 'storage_inventory'))
+        view.menu_actions['Check connections and settings…'].setEnabled(not busy and view.project is not None and supports(view.project, 'verification'))
+        view.menu_actions['Clean up builds…'].setEnabled(not busy and view.project is not None and supports(view.project, 'storage_inventory'))
 
     def set_active(self, value):
         docks = self.run_workspace.all_docks if self.run_workspace else []

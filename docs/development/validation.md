@@ -417,3 +417,44 @@ remains held after supervisor loss; without a verified completion, admission
 fails closed. Changed command/environment digests and foreign workspace owners
 are rejected before another child can launch. Transport contracts cover exit-255
 reconciliation with the same invocation and propagation of ordinary failures.
+
+## Project onboarding and guest workload generalization — 2026-10-31
+
+The final complete isolated manager contract run passed 687 tests across 98 modules,
+with four explicit native-Windows skips. Coverage includes single-file command registration, captured
+source execution, GUI/preset request compatibility, missing prerequisites,
+unsupported narrowing, adapter dispatch and optional-action availability.
+
+Guest lifecycle contracts inject staging, environment preparation, command,
+collection and cleanup failures. They check cancellation before guest access,
+plan/source/backend identity, required-phase evidence, retained failed setup
+receipts, isolated Windows operation environments and refusal to overwrite a
+preparation receipt. A local transport fixture additionally ran actual manager
+child processes with exit codes 0 and 7, collected their original reports and
+verified cleanup. This is real subprocess evidence, not native VM acceptance.
+
+Candidate-manager compatibility passed 43 focused Logistics and 13 BlueHole
+contracts with their own interpreters and commonUtils sources. Logistics fixtures
+now provide canonical capabilities and keep planner settings in disposable paths.
+BlueHole's profile test verifies distinct registration settings and preservation
+of legacy defaults. Consumer pins remain unchanged; these tests identify the
+explicit local candidate rather than claiming installed-pin or hosted acceptance.
+
+After explicit authorization for the two manager-owned test VMs, native Linux
+passed 685 tests across all 98 contract modules using an installed candidate and
+its pinned commonUtils. A final focused run passed 27 tests after the last lifecycle
+fixes. Both runs retrieved their original reports before removing owned workspaces.
+Native testing exposed omitted empty Git directories in ZIP transfers; archives
+now preserve these and a regression test verifies Git recognizes the extraction.
+Additional contracts verify unexpected setup errors become failed receipts and
+Windows cleanup distinguishes removed operations from retained public tools.
+The full Windows run executed all 98 modules (685 tests at that captured revision)
+and found one CLI Unicode-output failure. Python child output now defaults to
+UTF-8 to match the manager log decoder. A fresh Windows run passed 77 focused
+tests covering CLI/execution, guest lifecycle, command projects, SDK and onboarding,
+including the failed Unicode case and final lifecycle fixes. The full Windows
+aggregate was not repeated after that fix; the final local aggregate above was.
+Both dedicated VMs were restored to their initial suspended state. Isolated guest
+operations were cleaned after collection; the existing Windows public-tools
+workspace was retained. No personal or held VMs were accessed.
+Raw attempts and results remain in ignored test-results/adapter-generalization.

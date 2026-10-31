@@ -65,6 +65,14 @@ def parser_for_cli():
     parser = Parser(description=__doc__)
     parser.add_argument('--registry', type=Path, help='Explicit private config directory (before command)')
     sub = parser.add_subparsers(dest='command', required=True)
+    init = sub.add_parser('init-project', help='Create a command descriptor without overwriting existing files')
+    init.add_argument('path', type=Path)
+    init.add_argument('--name', required=True)
+    init.add_argument('--project-id', required=True)
+    init.add_argument('--command', nargs=argparse.REMAINDER, required=True, dest='argv')
+    check = sub.add_parser('check-project', help='Check registered adapter files/imports/settings without running workloads')
+    check.add_argument('--project')
+    check.add_argument('--prepare', action='store_true', help='Explicitly prepare every advertised combination; project preparation may capture sources or prune owned outputs')
     sub.add_parser('list', help='List project registrations')
     sub.add_parser('add', help='Register a trusted project checkout').add_argument('path', type=Path)
     for name in ('select', 'remove', 'trust', 'inspect'):
@@ -154,6 +162,12 @@ def parser_for_cli():
 def execute(args, api):
     registry = api.registry
     command = args.command
+    if command == 'init-project':
+        from .onboarding import scaffold
+        return scaffold(args.path, args.name, args.project_id, args.argv)
+    if command == 'check-project':
+        from .onboarding import check_adapter
+        return check_adapter(registry, args.project, prepare=args.prepare)
     if command == 'list':
         return registry.read()
     if command == 'add':
@@ -275,7 +289,7 @@ def main(argv=None):
         result = execute(args, ManagerAPI(args.registry))
         status = result.get('status')
         code = ({'passed': 0, 'awaiting_review': 3, 'cancelled': 130}.get(status, 1)
-                if command in ('run', 'resume', 'start') else 0)
+                if command in ('run', 'resume', 'start') else 1 if command == 'check-project' and status == 'failed' else 0)
         # Existing registration/planning fields stay at the top level.
         emit(dict(result, cli_schema=API_VERSION, command=command, ok=code == 0))
         return code

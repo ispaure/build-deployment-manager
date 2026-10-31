@@ -293,6 +293,9 @@ class Executor:
         emit(dict(type='phase', **row))
         started = time.monotonic()
         environment = dict(os.environ, **phase.environment)
+        # Logs and structured progress are decoded as UTF-8. Redirected Python
+        # output otherwise defaults to the Windows code page and loses Unicode.
+        environment.setdefault('PYTHONIOENCODING', 'utf-8')
         environment['BUILD_MANAGER_TEST_PROGRESS'] = '1'
         redact = Redactor(environment.get(name) for name in secret_environment)
         messages = Queue(maxsize=128)

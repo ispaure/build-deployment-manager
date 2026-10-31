@@ -111,3 +111,11 @@ Do not sweep `VM/`, credentials, application data or `test-results/` as caches.
 Dedicated [test machines](virtual-machines.md) have a separate authorized lifecycle.
 
 [User guide](user.md)
+
+## Integrate a simple command project
+
+A repository with existing local commands can use a single command descriptor,
+without a Python bridge. Use [init-project and check-project](cli.md#scaffold-and-check-a-project)
+for scaffolding and explicit diagnostics. The folder preview distinguishes missing
+adapter files from files that are present but have not been loaded. Registering a
+folder still does not install its dependencies or run its commands.

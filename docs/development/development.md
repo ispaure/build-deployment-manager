@@ -219,3 +219,5 @@ Unknown completion and mismatched identities fail closed and preserve recovery
 evidence. This recovery applies to source staging, never arbitrary commands or
 test failures. `test_linux_stage.py` injects failures before, during and after real
 extraction, including delayed admission and active-cleanup contention.
+
+- [Simple project integration and shared guest workloads](project-integration.md)

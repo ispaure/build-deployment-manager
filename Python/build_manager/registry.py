@@ -31,6 +31,13 @@ def inspect(root):
     if not isinstance(data,dict):raise ValueError('Project descriptor must be a JSON object.')
     if data.get('schema') != 1 or data.get('adapter_api') != 1:
         raise ValueError('Unsupported project/adapter schema; API 1 is required.')
+    if 'adapter_actions' in data and (not isinstance(data['adapter_actions'], list) or any(not isinstance(v, str) or not v for v in data['adapter_actions'])):
+        raise ValueError('Adapter actions must be a list of supported action names.')
+    if 'commands' in data:
+        from .command_project import normalize
+        if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name')):
+            raise ValueError('Declare project identity and name.')
+        return normalize(data), hashlib.sha256(raw).hexdigest()
     if type(data.get('dynamic_run_inputs', False)) is not bool:
         raise ValueError('Dynamic run inputs must be explicitly enabled or disabled.')
     if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name', 'bridge')):

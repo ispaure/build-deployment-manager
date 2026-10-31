@@ -47,6 +47,7 @@ class ToolbarGoalTests(unittest.TestCase):
             project.row = deepcopy(self.data['projects'][key])
             project.make_plan = Mock(side_effect=AssertionError('Intent must not start planning'))
             project.make_journey = Mock(side_effect=AssertionError('Intent must not start planning'))
+            project.verification_plan = Mock(side_effect=AssertionError('Intent must not start verification'))
             return project
         factory = patch('build_manager.app.ProjectBridge', side_effect=bridge)
         factory.start()

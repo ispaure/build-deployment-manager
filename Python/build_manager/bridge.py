@@ -31,20 +31,37 @@ class ProjectBridge:
         from .journeys import for_host
         self.journey_capability = for_host(self.descriptor.get('journey'))
 
+    def supports_action(self, action):
+        if 'commands' in self.descriptor:
+            return action in {'plan', 'settings', 'save_settings', 'run_defaults', 'run_choices'}
+        declared = self.descriptor.get('adapter_actions')
+        return action in declared if declared is not None else action in {'plan', 'settings', 'save_settings', 'verification'}
+
+    def storage_inventory(self):
+        if not self.supports_action('storage_inventory'):
+            raise ValueError('This adapter does not declare storage inventory.')
+        return self.call('storage_inventory')
+
+    def delete_storage(self, selections):
+        if not self.supports_action('delete_storage'):
+            raise ValueError('This adapter does not declare storage deletion.')
+        return self.call('delete_storage', selections=selections, timeout=600)
+
     def operations_for(self, target):
-        return tuple(self.descriptor['capabilities'].get('operations_by_target', {}).get(target, self.operations))
+        from .adapter_sdk import operations_for
+        return operations_for(self.descriptor, target)
 
     def backend_options(self, target, operation='Test'):
-        capabilities = self.descriptor['capabilities']
-        backends = capabilities.get('host_backends', {}).get(sys.platform, capabilities.get('backends', {}))
-        options = backends.get(target, ('Local',))
-        if isinstance(options, dict):options = options.get(operation, ())
-        return tuple(options)
+        from .adapter_sdk import backend_options
+        return backend_options(self.descriptor, target, operation)
 
     def call(self, action, *, cancelled=lambda: False, timeout=300, **values):
         row, descriptor = self.registry.resolve(self.key, trusted=True)
         if row['root'] != str(self.root) or descriptor != self.descriptor:
             raise ValueError('Adapter registration changed; select this project again.')
+        if 'commands' in descriptor:
+            from .command_project import call
+            return call(self.root, descriptor, action, values, cancelled)
         interpreter = descriptor['interpreter']
         if isinstance(interpreter, dict):
             interpreter = interpreter[sys.platform]

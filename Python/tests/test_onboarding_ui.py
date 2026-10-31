@@ -110,3 +110,37 @@ class OnboardingUITests(unittest.TestCase):
             view.complete(dict(status='unknown',seconds=1))
             self.assertIn('provider status',view.next_action.text())
             view.close()
+
+    def test_command_project_registers_without_python_bridge_and_disables_unsupported_actions(self):
+        from build_manager.onboarding import scaffold
+        from build_manager.preparation import preparation_request
+        import sys
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            scaffold(root, 'Commands', 'org.example.commands', [sys.executable, '-c', "print('fixture')"])
+            dialog = AddProjectDialog()
+            dialog.path.setText(str(root)); dialog.preview()
+            self.assertTrue(dialog.add_button.isEnabled())
+            self.assertIn('no Python bridge required', dialog.summary.text())
+            dialog.reject()
+            registry = Registry(root / 'registry'); registry.add(root)
+            window = ManagerWindow(registry)
+            try:
+                self.assertEqual(window.projects.currentText(), 'Commands')
+                self.assertFalse(window.menu_actions['Check connections and settings…'].isEnabled())
+                self.assertFalse(window.menu_actions['Clean up builds…'].isEnabled())
+                plan = preparation_request(window.panel.configuration.selection()).prepare(window.panel.project)
+                self.assertEqual(plan.operation, 'Check')
+            finally:
+                window.close(); self.app.processEvents()
+
+    def test_missing_bridge_is_visible_before_any_adapter_execution(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder) / 'project'
+            self.descriptor(root, 'missing bridge')
+            (root / 'bridge.py').unlink()
+            dialog = AddProjectDialog()
+            dialog.path.setText(str(root)); dialog.preview()
+            self.assertIn('bridge', dialog.summary.text())
+            self.assertTrue(dialog.add_button.isEnabled())
+            dialog.reject()

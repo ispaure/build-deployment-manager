@@ -56,24 +56,17 @@ def make_plan(values):
 
 
 def main():
-    request = json.load(sys.stdin)
-    if request.get('schema') != 1:
-        raise ValueError('Expected bridge request schema 1.')
-    action = request.get('action')
-    values = request.get('values', {})
-    if action == 'plan':
-        result = make_plan(values).data()
-    elif action == 'settings':
-        result = {}
-    elif action == 'save_settings':
+    from build_manager.adapter_sdk import serve
+    def save(values, context):
         if values.get('changes'):
             raise ValueError('This example has no project settings.')
-        result = {}
-    elif action == 'verification':
-        result = make_plan(dict(operation='Test', target='host', backend='Local')).data()
-    else:
-        raise ValueError('Unsupported example bridge action.')
-    print(json.dumps(dict(schema=1, result=result)))
+        return {}
+    serve({
+        'plan': lambda values, context: make_plan(values),
+        'settings': lambda values, context: {},
+        'save_settings': save,
+        'verification': lambda values, context: make_plan(dict(operation='Test', target='host', backend='Local')),
+    })
 
 
 if __name__ == '__main__':

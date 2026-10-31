@@ -270,3 +270,32 @@ To continue reviewed independent deliveries without repeating failed checks, add
 `--no-retry-failed` to `resume`. Failed checks and their blocked consumers remain
 failed or skipped in the retained report; this option never approves a delivery
 or bypasses its dependencies.
+
+## Scaffold and check a project
+
+For a local command workflow, create a single descriptor in an existing project:
+
+```sh
+build-manager init-project /path/to/project --name "My project" --project-id org.example.project --command /path/to/project/.venv/bin/python -m unittest discover
+```
+
+Arguments after `--command` belong to the project command. This creates
+`build-project.json` exclusively; it never overwrites an existing integration,
+registers the project, installs tools or executes the command. Edit `commands.source`
+to list the public files/directories needed by the command before preparing work.
+The initial source list is empty. See the [command format](../development/project-integration.md).
+
+Then add the folder through the GUI or CLI. For a registered checkout:
+
+```sh
+build-manager check-project --project org.example.project
+build-manager check-project --project org.example.project --prepare
+```
+
+The first command checks files/executable availability and explicitly loads the
+trusted adapter's settings protocol. This runs adapter code, but no workload.
+The second also prepares every advertised operation/platform/backend combination.
+Project preparation can capture sources or prune project-owned outputs; it does
+not execute returned plans. Missing platform prerequisites are reported as failed
+combinations, not skipped successes. Neither check certifies SDK/native readiness,
+publication or an actual test pass. Failed checks return a nonzero exit code.

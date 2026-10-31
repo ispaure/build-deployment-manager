@@ -1,4 +1,5 @@
 """Optional Qt presentation for an explicitly supplied project adapter."""
+from .adapter_sdk import supports
 import json
 import os
 from queue import Empty, Queue
@@ -165,7 +166,7 @@ class ManagerPanel(QWidget):
         self.settings = QPushButton('Project settings…', self)
         self.settings.clicked.connect(self.edit_settings)
         self.cleanup = QPushButton('Clean up builds…', self)
-        self.cleanup.setEnabled(hasattr(project, 'storage_inventory'))
+        self.cleanup.setEnabled(supports(project, 'storage_inventory'))
         self.cleanup.setToolTip('Review owned build outputs and delete selected or all unprotected entries.')
         self.cleanup.clicked.connect(self.clean_builds)
         self.resume = QPushButton('Continue a saved run…', self)
@@ -914,7 +915,7 @@ class ManagerPanel(QWidget):
         if not busy:
             self.configuration.update_mode()
         self.view_run.setEnabled(not busy and self.run_view.plan is not None)
-        self.cleanup.setEnabled(not busy and hasattr(self.project, 'storage_inventory'))
+        self.cleanup.setEnabled(not busy and supports(self.project, 'storage_inventory'))
         self.start.setEnabled(not busy and self.plan is not None)
         self.continue_run.setEnabled(not busy and bool(getattr(self, 'resumable', False)))
         self.continue_run.setVisible(not busy and bool(getattr(self, 'resumable', False)))

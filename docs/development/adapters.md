@@ -377,3 +377,10 @@ Consumers can expose an explicit candidate-library test hook. Such a check is
 separate from installed/pinned acceptance: it must preserve the consumer namespace
 and report the actual candidate source. This planner never updates a pin,
 submodule or subtree, and portable compatibility never implies release acceptance.
+
+## Simplified integrations
+
+For the command descriptor, additive adapter facade and shared guest lifecycle,
+see [project integration](project-integration.md). Existing API-1 bridges remain
+supported. Command projects derive capabilities from their operation catalog;
+custom adapters can use the same capability resolver as the manager.
