@@ -7,7 +7,7 @@ import unittest
 from dataclasses import replace
 
 from build_manager import Executor,Phase,Plan
-from build_manager.workflows import approve,recover
+from build_manager.workflows import approve,recover_phase_records
 
 
 class WorkflowTests(unittest.TestCase):
@@ -54,11 +54,11 @@ class WorkflowTests(unittest.TestCase):
         phase=self.phase('upload','pass',effect='upload')
         plan=Plan('Fixture','review',{},(phase,),str(self.root/'workspace'))
         report=dict(schema=1,plan_identity=plan.identity,phases=[dict(id='upload',status='running')])
-        with self.assertRaisesRegex(ValueError,'reconciliation'):recover(plan,report)
-        self.assertEqual(recover(plan,report,reconcile=lambda *_:dict(status='passed',operation_id=7))[0]['receipt']['operation_id'],7)
+        with self.assertRaisesRegex(ValueError,'reconciliation'):recover_phase_records(plan,report)
+        self.assertEqual(recover_phase_records(plan,report,reconcile=lambda *_:dict(status='passed',operation_id=7))[0]['receipt']['operation_id'],7)
         report['phases']=[dict(id='upload',status='passed',artifacts=[dict(path=str(artifact),sha256=hashlib.sha256(b'fixed').hexdigest())])]
         artifact.unlink()
-        with self.assertRaisesRegex(ValueError,'missing'):recover(plan,report)
+        with self.assertRaisesRegex(ValueError,'missing'):recover_phase_records(plan,report)
 
     def test_offline_recipient_does_not_block_other_delivery_review_or_repeat_build(self):
         package = self.root / 'package'

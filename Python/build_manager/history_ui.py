@@ -4,7 +4,7 @@ from pathlib import PurePath
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
     QStyle, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QHeaderView)
-from .run_ui import duration
+from .workflow_presentation import format_elapsed_time
 from .ui_components import search_shortcut
 
 
@@ -57,7 +57,8 @@ class RunHistoryView(QWidget):
                 pass
             state = row['status']
             item = QTreeWidgetItem([started or PurePath(row['path']).parent.name, row.get('operation', ''),
-                labels.get(state, state), duration(row.get('seconds')), actions.get(state, 'Inspect record')])
+                ('Retired · ' if row.get('retired') else '') + labels.get(state, state), format_elapsed_time(row.get('seconds')),
+                'View retained evidence' if row.get('retired') else actions.get(state, 'Inspect record')])
             item.setData(0, Qt.ItemDataRole.UserRole, row['path'])
             item.setData(0, Qt.ItemDataRole.UserRole + 1, state)
             item.setToolTip(0, row['path'])

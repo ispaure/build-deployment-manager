@@ -115,9 +115,9 @@ def make_plan(root, descriptor, values, cancelled=lambda: False):
     if not output_root.resolve().is_relative_to(root) or any(p.is_symlink() for p in (output_root, *output_root.parents) if root in p.parents):
         raise ValueError('Results must remain inside the project without links.')
     workspace = output_root / ('prepared-' + uuid4().hex)
-    snapshot, output = workspace / 'source', workspace / 'artifacts'
+    snapshot, artifact_directory = workspace / 'source', workspace / 'artifacts'
     snapshot.mkdir(parents=True)
-    output.mkdir()
+    artifact_directory.mkdir()
     try:
         hashes = {}
         for name, path in files.items():
@@ -131,16 +131,16 @@ def make_plan(root, descriptor, values, cancelled=lambda: False):
             from commonUtils.runtime.streams import file_sha256
             hashes[name] = file_sha256(target)
         def expand(text):
-            return text.replace('{source}', str(snapshot)).replace('{output}', str(output)).replace('{project}', str(root))
+            return text.replace('{source}', str(snapshot)).replace('{output}', str(artifact_directory)).replace('{project}', str(root))
         phases = []
         for row in descriptor['commands']['operations'][operation]:
             cwd = snapshot / row.get('cwd', '.')
             if not cwd.is_dir():
                 raise ValueError('Command working directory is absent from captured source.')
-            artifacts = tuple(str(output / p) for p in row.get('artifacts', []))
+            artifacts = tuple(str(artifact_directory / p) for p in row.get('artifacts', []))
             phases.append(Phase(**dict(row, argv=tuple(expand(v) for v in row['argv']), cwd=str(cwd),
                 environment={'PYTHONPATH': '', 'PYTHONHOME': '', **{k: expand(v) for k, v in row.get('environment', {}).items()}},
-                artifacts=artifacts, artifact_types={str(output / k): v for k, v in row.get('artifact_types', {}).items()})))
+                artifacts=artifacts, artifact_types={str(artifact_directory / k): v for k, v in row.get('artifact_types', {}).items()})))
         return Plan(descriptor['name'], operation, {'files_sha256': hashes, 'selection': 'captured working-tree',
             'commands_sha256': hashlib.sha256(json.dumps(descriptor['commands'], sort_keys=True).encode()).hexdigest()},
             tuple(phases), str(workspace), backend='Local', effect='build' if any(p.effect == 'build' for p in phases) else 'test')

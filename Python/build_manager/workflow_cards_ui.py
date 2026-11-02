@@ -4,7 +4,7 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF, QTran
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget, QProgressBar, QToolTip
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
 from .workflow_graph import layout_positions, visible_dependencies, connection_groups
-from .workflow_presentation import FAILED, title, effect_label, display_states, state_label, step_time
+from .workflow_presentation import FAILED, title, effect_label, display_states, state_label, format_step_time
 from .test_tree_ui import current_test_seconds
 
 SECTION_COLORS = {'Source': '#7296ca', 'Testing': '#71ab8b',
@@ -495,7 +495,7 @@ class FlowCanvas(QWidget):
             status, reason = self.states[phase.id]
             label = state_label(status)
             fact = facts.get(phase.id, {})
-            elapsed = step_time(fact, status)
+            elapsed = format_step_time(fact, status)
             if elapsed and not preview:
                 label += ' · ' + elapsed
             status_label.setText(label)
@@ -508,7 +508,7 @@ class FlowCanvas(QWidget):
             if fact.get('current_test'):
                 current = fact['current_test']
                 counts_label.setText(f'Running: {current["name"]} · ' +
-                    step_time(dict(seconds=current_test_seconds(current)), 'running'))
+                    format_step_time(dict(seconds=current_test_seconds(current)), 'running'))
                 counts_label.show()
             progress = card.findChild(QProgressBar, 'cardProgress')
             progress.setVisible(status == 'running')

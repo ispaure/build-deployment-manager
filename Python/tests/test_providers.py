@@ -3,7 +3,7 @@ import sys
 from unittest.mock import Mock
 import unittest
 from build_manager import Phase,Plan,Executor
-from build_manager.providers import settings_rows,require_provider
+from build_manager.providers import unimplemented_distribution_rows,require_provider
 
 
 class ProviderCapabilityTests(unittest.TestCase):
@@ -14,9 +14,9 @@ class ProviderCapabilityTests(unittest.TestCase):
                 phase=Phase('future',(sys.executable,'-c','raise AssertionError'),'.',effect='publish',provider=provider)
                 credentials();transport();Executor().run(Plan('fixture','future',{},(phase,),'.'),'unused')
         transport.assert_not_called();credentials.assert_not_called()
-        rows=settings_rows(('ios','android'))
+        rows=unimplemented_distribution_rows(('ios','android'))
         self.assertTrue(all(row['read_only'] and row['value'].startswith('Not implemented') for row in rows.values()))
-        self.assertEqual(settings_rows(('blender',)),{})
+        self.assertEqual(unimplemented_distribution_rows(('blender',)),{})
         for provider in ('testflight','firebase','github'):require_provider(provider)
 
 
@@ -39,7 +39,7 @@ class ProviderCapabilityTests(unittest.TestCase):
         from build_manager.ui import SettingsDialog
         app=QApplication.instance() or QApplication([])
         class Project:
-            def settings_view(self):return settings_rows(('ios','android'))
+            def settings_view(self):return unimplemented_distribution_rows(('ios','android'))
         dialog=SettingsDialog(Project())
         import time
         deadline = time.monotonic() + 5

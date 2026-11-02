@@ -34,7 +34,7 @@ class DedicatedVMTests(unittest.TestCase):
 
     def owned(self, status='stopped', state='installation-required'):
         self.record['state'] = state
-        save_json(self.vm.record, self.record)
+        save_json(self.vm.ownership_receipt_path, self.record)
         Path(self.record['bundle']).mkdir(exist_ok=True)
         self.client.inventory.return_value = [dict(name=self.vm.name, uuid=self.record['uuid'], status=status)]
         return patch.object(self.vm, 'run', return_value=json.dumps([dict(Home=self.record['bundle'])]))
@@ -42,12 +42,12 @@ class DedicatedVMTests(unittest.TestCase):
     def test_same_name_without_receipt_is_not_adopted_or_started(self):
         self.client.inventory.return_value = [dict(name=self.vm.name, uuid=self.record['uuid'], status='running')]
         with patch.object(self.vm, 'run') as run:
-            with self.assertRaisesRegex(ValueError, 'conflicting'): self.vm.selected()
+            with self.assertRaisesRegex(ValueError, 'conflicting'): self.vm.resolve_owned_guest()
             run.assert_not_called()
 
     def test_matching_uuid_moved_outside_vm_directory_is_rejected(self):
         with self.owned(), patch.object(self.vm, 'run', return_value=json.dumps([dict(Home='/personal/guest.pvm')])):
-            with self.assertRaisesRegex(ValueError, 'outside'): self.vm.selected()
+            with self.assertRaisesRegex(ValueError, 'outside'): self.vm.resolve_owned_guest()
 
     def test_run_resumes_only_recorded_guest_and_preserves_original_state(self):
         from build_manager.vm import resume_dedicated_guest
@@ -87,7 +87,7 @@ class DedicatedVMTests(unittest.TestCase):
             configure.assert_not_called()
 
     def test_unregistered_owned_bundle_is_registered_without_creating_a_new_disk(self):
-        save_json(self.vm.record, self.record); Path(self.record['bundle']).mkdir()
+        save_json(self.vm.ownership_receipt_path, self.record); Path(self.record['bundle']).mkdir()
         self.client.inventory.return_value = []
         with patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'run') as run, patch.object(self.vm, 'status', return_value={'state':'stopped'}):
             self.vm.ensure()
@@ -96,17 +96,17 @@ class DedicatedVMTests(unittest.TestCase):
     def test_partial_configuration_is_recovered_only_while_stopped(self):
         with self.owned(state='creating'), patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'configure') as configure:
             self.vm.ensure(); configure.assert_called_once_with(self.record['uuid'])
-            self.assertEqual(self.vm.receipt()['state'], 'installation-required')
+            self.assertEqual(self.vm.read_ownership_receipt()['state'], 'installation-required')
         with self.owned(status='running', state='creating'), patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'configure') as configure:
             with self.assertRaisesRegex(ValueError, 'partially'): self.vm.ensure()
             configure.assert_not_called()
 
     def test_missing_owned_guest_recreated_with_new_identity_without_accessing_other_guests(self):
-        save_json(self.vm.record, self.record)
+        save_json(self.vm.ownership_receipt_path, self.record)
         self.client.inventory.return_value = [dict(name='Held Fedora', uuid='unrelated', status='running')]
         with patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'configure'), patch.object(self.vm, 'run') as run, patch.object(self.vm, 'status', return_value={}):
             self.vm.ensure()
-            self.assertNotEqual(self.vm.receipt()['uuid'], self.record['uuid'])
+            self.assertNotEqual(self.vm.read_ownership_receipt()['uuid'], self.record['uuid'])
             self.assertEqual(run.call_args.args[:2], ('create', self.vm.name))
             self.assertNotIn('unrelated', str(run.call_args))
 
@@ -118,7 +118,7 @@ class DedicatedVMTests(unittest.TestCase):
 
     def test_windows_unattended_never_wipes_previously_started_guest(self):
         vm = WindowsVM(self.folder.name, self.client)
-        with patch.object(vm, 'ensure'), patch.object(vm, 'selected', return_value=(dict(ever_started=True),dict(status='stopped'))), patch.object(vm, 'initialize') as initialize:
+        with patch.object(vm, 'ensure'), patch.object(vm, 'resolve_owned_guest', return_value=(dict(ever_started=True),dict(status='stopped'))), patch.object(vm, 'initialize') as initialize:
             with self.assertRaisesRegex(ValueError, 'never-started'): vm.initialize_unattended('fixture.iso','0'*64)
             initialize.assert_not_called()
 
@@ -129,11 +129,11 @@ class DedicatedVMTests(unittest.TestCase):
                           dict(system='Linux', python_version=[3,14],git=None)]:
                 with patch.object(self.vm,'probe',return_value=proof):
                     with self.assertRaisesRegex(ValueError,'incomplete'): self.vm.readiness()
-            self.assertEqual(self.vm.receipt()['state'],'installation-required')
+            self.assertEqual(self.vm.read_ownership_receipt()['state'],'installation-required')
 
     def test_storage_and_receipt_symlinks_are_rejected(self):
-        directory_link(self.vm.record, Path(self.folder.name)/'elsewhere')
-        with self.assertRaisesRegex(ValueError,'symlink'): self.vm.receipt()
+        directory_link(self.vm.ownership_receipt_path, Path(self.folder.name)/'elsewhere')
+        with self.assertRaisesRegex(ValueError,'symlink'): self.vm.read_ownership_receipt()
 
     def test_windows_answer_keeps_security_and_does_not_enable_developer_mode(self):
         import xml.etree.ElementTree as ET
@@ -161,7 +161,7 @@ class DedicatedVMTests(unittest.TestCase):
             run.assert_not_called()
         self.assertFalse(vm.symlink_policy())
         record = dict(uuid=self.record['uuid'])
-        with patch.object(vm, 'selected', return_value=(record, dict(status='running'))), patch.object(vm, 'status', return_value={}), patch.object(vm, 'run') as run:
+        with patch.object(vm, 'resolve_owned_guest', return_value=(record, dict(status='running'))), patch.object(vm, 'status', return_value={}), patch.object(vm, 'run') as run:
             vm.enable_symlink_testing(approved=True)
             self.assertEqual(run.call_args.args[:3], ('exec', record['uuid'], 'reg.exe'))
             self.assertIn('AllowDevelopmentWithoutDevLicense', run.call_args.args)
@@ -174,7 +174,7 @@ class DedicatedVMTests(unittest.TestCase):
         vm = WindowsVM(self.folder.name, self.client)
         save_json(vm.root / 'windows-policy.json', dict(schema=1, developer_mode_approved=True))
         record = dict(uuid=self.record['uuid'], media='fixture.iso', media_sha256='0'*64)
-        with patch.object(vm, 'ensure'), patch.object(vm, 'selected', return_value=(record, dict(status='stopped'))), patch.object(vm, 'initialize'), patch.object(vm, 'run'), patch.object(vm, 'status'), patch('build_manager.vm_bootstrap.windows_seed', return_value=Path('seed.iso')) as seed:
+        with patch.object(vm, 'ensure'), patch.object(vm, 'resolve_owned_guest', return_value=(record, dict(status='stopped'))), patch.object(vm, 'initialize'), patch.object(vm, 'run'), patch.object(vm, 'status'), patch('build_manager.vm_bootstrap.windows_seed', return_value=Path('seed.iso')) as seed:
             vm.initialize_unattended('fixture.iso', '0'*64)
         seed.assert_called_once_with(vm.root, developer_mode=True)
 
@@ -197,11 +197,11 @@ class DedicatedVMTests(unittest.TestCase):
 
     def test_cached_recreation_recipe_uses_matching_initializer_and_clears_pending_state(self):
         recipe=dict(kind='fedora-cloud',media='/owned/media.qcow2',sha256='0'*64)
-        self.record['restore_recipe']=recipe;save_json(self.vm.record,self.record)
+        self.record['restore_recipe']=recipe;save_json(self.vm.ownership_receipt_path,self.record)
         with patch.object(self.vm,'_ensure_hardware',return_value={}),patch.object(self.vm,'initialize_cloud',return_value={'state':'first-boot-required'}) as initialize:
             self.vm.ensure()
             initialize.assert_called_once_with(recipe['media'],recipe['sha256'])
-            self.assertNotIn('restore_recipe',self.vm.receipt())
+            self.assertNotIn('restore_recipe',self.vm.read_ownership_receipt())
 
 
 class VMUITests(unittest.TestCase):

@@ -1,6 +1,7 @@
 """Application preferences, distinct from project-owned settings."""
 from pathlib import Path
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFormLayout,
     QLabel, QPushButton, QSpinBox, QVBoxLayout)
 from .profiles import load_profile, save_profile
@@ -54,6 +55,19 @@ class ApplicationSettingsDialog(QDialog):
             self.size.setValue(size)
         except (OSError, ValueError) as error:
             self.status.setText(str(error))
+        folder = self.path.parent / 'configuration'
+        open_folder = QPushButton('Open configuration folder')
+        open_folder.setToolTip(str(folder))
+        def show_folder():
+            from .configuration_files import ensure_configuration
+            try:
+                ensure_configuration(self.path.parent)
+                if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve()))):
+                    self.status.setText('Configuration folder: ' + str(folder))
+            except (OSError, ValueError, RuntimeError) as error:
+                self.status.setText(str(error))
+        open_folder.clicked.connect(show_folder)
+        layout.addWidget(open_folder)
         if project is not None:
             scope = QLabel('Selected project: ' + str(getattr(project, 'description', 'current checkout')))
             scope.setWordWrap(True)

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 from build_manager import Phase, Plan
 from build_manager.palette_ui import install_palette_refresh
 from build_manager.ui_components import style_button
-from build_manager.workflow_ui import WorkflowFlow
+from build_manager.workflow_ui import WorkflowGraphView
 
 
 class PaletteRefreshTests(unittest.TestCase):
@@ -54,7 +54,7 @@ class PaletteRefreshTests(unittest.TestCase):
 
     def test_palette_refresh_keeps_selection_manual_zoom_and_disabled_updates(self):
         plan = Plan('Fixture', 'Test', {}, (Phase('test', (sys.executable, '-V'), '.'),), '.')
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan)
         view.resize(600, 400)

@@ -4,7 +4,7 @@ from copy import deepcopy
 import sys
 
 
-def for_host(capability, host=None):
+def resolve_host_backends(capability, host=None):
     """Resolve an explicitly declared host mapping, never infer another backend."""
     if not capability:
         return capability
@@ -103,7 +103,7 @@ def destination_package(row, values):
     return variants.get(values.get(row.get('package_field'), row.get('package_default'))) if variants else row.get('package')
 
 
-def request(capability, goal, platforms, destinations, *, backends=None):
+def build_journey_intent(capability, goal, platforms, destinations, *, backends=None):
     if not capability:
         raise ValueError('This project has not declared integrated multi-platform workflows. Use an advanced operation.')
     if goal not in {'validate', 'deliver'} or len(set(platforms)) != len(platforms):
@@ -141,7 +141,7 @@ def request(capability, goal, platforms, destinations, *, backends=None):
 
 def validate_plan(plan, intent=None):
     """Reject undeclared effects, missing checks and bypassed destination validation gates."""
-    from .workflows import ancestors, EXTERNAL
+    from .workflows import transitive_dependency_ids, EXTERNAL
     data = plan.journey
     if not isinstance(data, dict) or data.get('schema') != 1 or data.get('goal') not in {'validate', 'deliver'}:
         raise ValueError('An integrated plan needs journey evidence schema 1.')
@@ -178,7 +178,7 @@ def validate_plan(plan, intent=None):
         for step in execution.get('steps', []):
             if (not isinstance(step,str) or step not in dispatches or step in declared_dispatches or phases[step].effect!='dispatch' or phases[step].always
                     or not phases[step].required
-                    or not all(step in ancestors(plan, gate) for gate in platforms[target])):
+                    or not all(step in transitive_dependency_ids(plan, gate) for gate in platforms[target])):
                 raise ValueError('Hosted checks must be required, reviewed dispatches upstream of their platform gate.')
             declared_dispatches.add(step)
     if declared_dispatches != dispatches:
@@ -214,7 +214,7 @@ def validate_plan(plan, intent=None):
             for step in details['steps']:
                 if step not in phases or step in owned or (step not in row['steps'] and
                         not (phases[step].effect == 'inspect' and phases[step].kind == 'connection'
-                             and any(step in ancestors(plan, action) for action in row['steps']))):
+                             and any(step in transitive_dependency_ids(plan, action) for action in row['steps']))):
                     raise ValueError('Recipient steps must identify unique delivery or connection work.')
                 owned.add(step)
         if recipients and not set(row['steps']).issubset(owned):
@@ -225,7 +225,7 @@ def validate_plan(plan, intent=None):
             phase = phases[step]
             if phase.always or phase.effect not in EXTERNAL or not phase.required:
                 raise ValueError('Delivery requires explicit reviewed effects on required non-cleanup steps.')
-            if not required_gates.issubset(ancestors(plan, step)):
+            if not required_gates.issubset(transitive_dependency_ids(plan, step)):
                 raise ValueError('Every delivery must depend on its required platform validation gates.')
             declared.add(step)
     if external != declared or (data['goal'] == 'validate' and external) or (data['goal'] == 'deliver' and not destinations):
@@ -246,3 +246,8 @@ def outcomes(plan, rows):
         return 'pending'
     return [(target, group(steps)) for target, steps in plan.journey.get('platforms', {}).items()] + [
         (row['identity'], group(row['steps'])) for row in plan.journey.get('destinations', {}).values()]
+
+
+# Compatibility names for adapter callers.
+request = build_journey_intent
+for_host = resolve_host_backends

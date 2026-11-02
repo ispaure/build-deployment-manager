@@ -31,7 +31,7 @@ def _inside(root, value):
     return path
 
 
-def discover(root, group):
+def resolve_test_group_suites(root, group):
     """Resolve a selected group's transitive prerequisites in stable execution order.
 
     Consumers explicitly opt dependency suites into their policy. Dependency owners
@@ -118,14 +118,14 @@ def discover(root, group):
     return ordered
 
 
-def phases(root, group, interpreters, runner, *, environment=None):
+def build_test_phases(root, group, interpreters, runner, *, environment=None):
     """Use the project's isolated runner and explicit interpreters; install nothing."""
     root = Path(root).resolve()
     if (not isinstance(runner, (list, tuple)) or not runner
             or any(not isinstance(arg, str) or not arg for arg in runner)
             or runner.count('{directory}') != 1):
         raise ValueError('Declare runner arguments with exactly one {directory} argument.')
-    rows = discover(root, group)
+    rows = resolve_test_group_suites(root, group)
     result = []
     contract = structure_contract(root)
     if contract:
@@ -159,3 +159,8 @@ def phases(root, group, interpreters, runner, *, environment=None):
                 (*(['test-structure'] if contract else []), *smoke_ids, *row['after']))),
             environment=dict(environment or {}), effect='test'))
     return tuple(result)
+
+
+# Compatibility names for existing project adapters.
+discover = resolve_test_group_suites
+phases = build_test_phases

@@ -3,7 +3,7 @@ import json
 from pathlib import PurePath
 
 from .plan_summary import phase_title
-from .workflows import ancestors
+from .workflows import transitive_dependency_ids
 
 
 def approval_cards(plan, report, steps, fields=(), previews=None):
@@ -34,7 +34,7 @@ def approval_cards(plan, report, steps, fields=(), previews=None):
                 recipients.append((field['label'], value))
             elif field.get('kind') == 'choice':
                 choices.append((field['label'], field.get('options', {}).get(value, value)))
-        needed = ancestors(plan, step) if phase else set()
+        needed = transitive_dependency_ids(plan, step) if phase else set()
         builds = []
         seen = set()
         for row in report.get('phases', ()):

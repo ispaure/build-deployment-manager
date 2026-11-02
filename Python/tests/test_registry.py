@@ -7,7 +7,7 @@ import sys
 from fixture_directory import TemporaryDirectory
 import unittest
 
-from build_manager.registry import Registry,inspect
+from build_manager.registry import Registry,read_project_descriptor
 from build_manager.bridge import ProjectBridge
 
 
@@ -17,7 +17,7 @@ class RegistryTests(unittest.TestCase):
         (root / 'bridge.py').write_text('import json,sys; r=json.load(sys.stdin); print(json.dumps(dict(schema=1,result=r)))')
         key = self.registry.add(root)
         result = ProjectBridge(self.registry).call('settings')
-        self.assertEqual(result['settings_profile'], str(self.registry.directory / 'projects' / key / 'profile.json'))
+        self.assertEqual(result['settings_profile'], str(self.registry.path.parent / 'context' / 'profile.json'))
         self.assertEqual(result['manager_checkout'], str(Path(__file__).resolve().parents[2]))
 
     def setUp(self):
@@ -77,19 +77,19 @@ class RegistryTests(unittest.TestCase):
         ka,kb=self.registry.add(a),self.registry.add(b)
         for key in (ka,kb):self.registry.trust(key)
         self.assertNotEqual(ProjectBridge(self.registry,ka).call('prefix'),ProjectBridge(self.registry,kb).call('prefix'))
-        with self.assertRaisesRegex(ValueError,'active'):self.registry.select(kb,active=True)
+        with self.assertRaisesRegex(ValueError,'active'):self.registry.select(kb,run_active=True)
         moved=self.root/'moved';a.rename(moved);self.registry.locate(ka,moved)
         self.assertTrue(self.registry.resolve(ka)[0]['trusted'])
         self.assertIn(str(moved), ProjectBridge(self.registry, ka).call('prefix'))
         self.registry.remove(kb);self.assertTrue(b.exists())
         descriptor=json.loads((moved/'build-project.json').read_text());descriptor['schema']=9
         (moved/'build-project.json').write_text(json.dumps(descriptor))
-        with self.assertRaisesRegex(ValueError,'schema'):inspect(moved)
+        with self.assertRaisesRegex(ValueError,'schema'):read_project_descriptor(moved)
 
     def test_malformed_descriptor_stops_before_adapter_execution(self):
         root=self.fixture('broken')
         (root/'build-project.json').write_text('[]')
-        with self.assertRaisesRegex(ValueError,'object'):inspect(root)
+        with self.assertRaisesRegex(ValueError,'object'):read_project_descriptor(root)
 
     def test_suite_metadata_is_validated_before_trust_and_selection_is_recorded(self):
         root = self.fixture('suites')

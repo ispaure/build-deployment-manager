@@ -122,8 +122,10 @@ class AccessibleFlowTests(unittest.TestCase):
                         patch.object(QMessageBox, 'question', side_effect=AssertionError('Unexpected approval popup')):
                     chooser.return_value.exec.return_value = 1
                     chooser.return_value.root = root
+                    chooser.return_value.registration_name.text.return_value = 'UI checkout'
                     window.add()
                     self.assertIsNotNone(window.panel)
+                    self.assertEqual(fixture.registry.resolve()[0]['name'], 'UI checkout')
                     self.assertTrue(fixture.registry.resolve(trusted=True)[0]['trusted'])
                 actions = [action.text() for button in window.buttons if hasattr(button, 'menu') and button.menu() is not None
                            for action in button.menu().actions()]

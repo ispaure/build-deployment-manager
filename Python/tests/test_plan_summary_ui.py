@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, QProcess
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from build_manager import Phase, Plan
-from build_manager.plan_summary import captured_choices, start_scope, summary_rows
+from build_manager.plan_summary import captured_choices, describe_start_behavior, summary_rows
 from build_manager.run_ui import RunView
 from build_manager.ui import ManagerPanel
 from test_journeys import integrated
@@ -42,10 +42,10 @@ class PlanSummaryTests(unittest.TestCase):
         self.assertEqual(now, [])
         self.assertEqual([row['keys'] for row in later], [('dispatch',), ('collect',)])
         self.assertIn('separate approval', later[0]['detail'])
-        self.assertIn('dependent work waits', start_scope(plan))
+        self.assertIn('dependent work waits', describe_start_behavior(plan))
         legacy = replace(plan, effect='dispatch', phases=(replace(plan.phases[0], effect='inherit'),))
         self.assertIn('confirmation before Start', summary_rows(legacy)[1][0]['detail'])
-        self.assertIn('asks for confirmation', start_scope(legacy))
+        self.assertIn('asks for confirmation', describe_start_behavior(legacy))
 
     def test_captured_values_follow_destination_scope_and_shared_values_appear_once(self):
         plan = integrated(self.root)
@@ -112,7 +112,7 @@ class PlanSummaryTests(unittest.TestCase):
         view.update_phase(dict(id='ios', status='failed', seconds=1))
         view.update_phase(dict(id='firebase', status='awaiting_review'))
         view.complete(dict(status='awaiting_review', seconds=2))
-        cards = view.run_choices.flow
+        cards = view.results_workspace.flow
         self.assertEqual(cards.canvas.states['deliver.firebase'][0], 'awaiting_review')
         self.assertEqual(cards.canvas.states['deliver.testflight'][0], 'blocked')
         cards.open_group('deliver.firebase')
@@ -134,7 +134,7 @@ class PlanSummaryTests(unittest.TestCase):
         view = RunView()
         self.addCleanup(view.close)
         view.reset(plan)
-        workspace = view.run_choices
+        workspace = view.results_workspace
         cards = workspace.flow
         overview_ids = tuple(cards.canvas.cards)
         cards.open_group('platform.android')
@@ -171,8 +171,8 @@ class PlanSummaryTests(unittest.TestCase):
         self.assertEqual(review.canvas.positions, layout_positions(proposal.phases))
         # New configuration must not relabel an existing reviewed run.
         panel.configuration.current_proposal = replace(proposal, phases=proposal.phases[:1])
-        panel.seed_run(plan)
-        run = panel.run_view.run_choices.flow
+        panel.initialize_results_workspace(plan)
+        run = panel.run_view.results_workspace.flow
         self.assertEqual(run.grouped.phases, proposal.phases)
         self.assertEqual(run.canvas.positions, review.canvas.positions)
         self.assertEqual(run.canvas.edges, review.canvas.edges)
@@ -191,10 +191,10 @@ class PlanSummaryTests(unittest.TestCase):
         review.flow.open_group('platform.android')
         review.splitter.setSizes([650, 500])
         self.app.processEvents()
-        panel.seed_run(plan)
+        panel.initialize_results_workspace(plan)
         panel.stages.setCurrentIndex(2)
         self.app.processEvents()
-        run = panel.run_view.run_choices
+        run = panel.run_view.results_workspace
         self.assertIsInstance(run, ReviewPlanView)
         self.assertEqual(run.selected, review.selected)
         self.assertEqual(run.flow.selected, review.flow.selected)
@@ -230,7 +230,7 @@ class PlanSummaryTests(unittest.TestCase):
         plan = replace(plan, phases=phases)
         panel = ManagerPanel(OtherProject(self.root))
         self.addCleanup(panel.close)
-        panel.seed_run(plan)
+        panel.initialize_results_workspace(plan)
         panel.session.buffer = json.dumps(dict(type='waiting', phase='android', resource='host.mobile-build',
             reason='Waiting for resource: host.mobile-build')) + '\n'
         panel.read_output()
@@ -240,7 +240,7 @@ class PlanSummaryTests(unittest.TestCase):
         self.assertEqual(view.facts['android']['status'], 'waiting_resource')
         self.assertIn('Host mobile build', panel.session.current_phase)
         self.assertNotIn('android', view.started)
-        cards = view.run_choices.flow
+        cards = view.results_workspace.flow
         self.assertIn('Host mobile build', cards.canvas.cards['platform.android'][2].text())
         cards.open_group('platform.android')
         self.assertIn('Shared resource: Host mobile build', view.selection_info.text())

@@ -9,7 +9,7 @@ from threading import Event, Lock
 from commonUtils.runtime.operations import OperationCancelled
 
 from .api import (API_VERSION, ManagerAPI, plan_info, read_logs, read_status,
-                  review_run, run_plan, summarize)
+                  review_run, run_plan, summarize_run_report)
 from .models import Plan
 from .redaction import Redactor
 
@@ -82,7 +82,9 @@ def parser_for_cli():
     check.add_argument('--project')
     check.add_argument('--prepare', action='store_true', help='Explicitly prepare every advertised combination; project preparation may capture sources or prune owned outputs')
     sub.add_parser('list', help='List project registrations')
-    sub.add_parser('add', help='Register a trusted project checkout').add_argument('path', type=Path)
+    add = sub.add_parser('add', help='Register a trusted project checkout')
+    add.add_argument('path', type=Path)
+    add.add_argument('--name', help='Unique local name for this checkout and its settings folder')
     for name in ('select', 'remove', 'trust', 'inspect'):
         sub.add_parser(name).add_argument('project')
     locate = sub.add_parser('locate')
@@ -126,6 +128,7 @@ def parser_for_cli():
     storage.add_argument('--delete', action='append', default=[], metavar='GROUP=NAME',
                          help='Exact group and direct output name from storage inventory; repeat for each output')
     storage.add_argument('--confirm', action='store_true', help='Confirm reviewed generated-output deletion')
+    storage.add_argument('--retire-workflow', metavar='NAME', help='Release one saved workflow’s holds and disable continuation; retain its evidence')
     retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
@@ -174,12 +177,12 @@ def execute(args, api):
         from .onboarding import scaffold
         return scaffold(args.path, args.name, args.project_id, args.argv)
     if command == 'check-project':
-        from .onboarding import check_adapter
-        return check_adapter(registry, args.project, prepare=args.prepare)
+        from .onboarding import probe_adapter
+        return probe_adapter(registry, args.project, prepare_plan_matrix=args.prepare)
     if command == 'list':
         return registry.read()
     if command == 'add':
-        return dict(registration=registry.add(args.path))
+        return dict(registration=registry.add(args.path, name=args.name))
     if command == 'locate':
         registry.locate(args.project, args.path)
         return dict(status='located')
@@ -194,6 +197,10 @@ def execute(args, api):
     if command in ('capabilities', 'inputs', 'presets'):
         return getattr(api, command)(args.project)
     if command == 'storage':
+        if args.retire_workflow:
+            if args.delete:
+                raise ArgumentError('Retire workflows separately from deleting outputs.')
+            return api.retire_run(args.retire_workflow, project=args.project, confirmed=args.confirm)
         if not args.delete:
             if args.confirm:
                 raise ArgumentError('Choose exact storage outputs with --delete before confirming.')
@@ -284,8 +291,8 @@ def execute(args, api):
                               retry_failed=not args.no_retry_failed if command == 'resume' else True,
                               approval_identities=assignments(args.approval_identity) if command == 'resume' else None,
                               expected_identity=args.expect_identity, engine_review=args.engine_review_identity if command == 'resume' else None, cancelled=cancelled,
-                              event=event if args.events else None)
-        return summarize(report, args.output)
+                              event=event if args.events else None, maintenance=api.storage_maintenance)
+        return summarize_run_report(report, args.output)
     raise ValueError('Unsupported command.')
 
 

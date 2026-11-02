@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QLabel
 from build_manager import Phase, Plan
 from build_manager.ui import ManagerPanel
 from build_manager.run_ui import RunView
-from build_manager.workflow_ui import WorkflowFlow
+from build_manager.workflow_ui import WorkflowGraphView
 import test_toolbar_goals_ui as toolbar_fixtures
 import test_recipient_ui as recipient_fixtures
 from test_journeys import integrated
@@ -122,7 +122,7 @@ class BlockerCardTests(unittest.TestCase):
 
     def test_fit_contains_complete_graph_and_keyboard_reveals_cards_after_zoom(self):
         plan = self.long_plan(); before = plan.data()
-        flow = WorkflowFlow(); self.addCleanup(flow.close)
+        flow = WorkflowGraphView(); self.addCleanup(flow.close)
         flow.resize(600, 500); flow.reset(plan, preview=True); flow.map_button.click(); flow.show()
         for _ in range(5): self.app.processEvents()
         self.assertEqual(flow.scroll.horizontalScrollBar().maximum(), 0)
@@ -145,7 +145,7 @@ class BlockerCardTests(unittest.TestCase):
         self.assertTrue(card.findChild(QLabel, 'approvalBadge').isHidden())
 
     def test_status_updates_preserve_map_pan_and_manual_zoom(self):
-        flow = WorkflowFlow(); self.addCleanup(flow.close)
+        flow = WorkflowGraphView(); self.addCleanup(flow.close)
         flow.resize(600, 500); flow.reset(self.long_plan()); flow.map_button.click(); flow.show()
         flow.set_facts({'step-0': dict(status='running')})
         for _ in range(5): self.app.processEvents()
@@ -175,7 +175,7 @@ class BlockerCardTests(unittest.TestCase):
         self.assertEqual(view.selected, 'ios')
         self.assertIn('Synthetic gate failed', view.detail.toPlainText())
         view.pages.setCurrentIndex(0)
-        grouped = view.run_choices.flow
+        grouped = view.results_workspace.flow
         grouped.open_group('deliver.firebase')
         self.assertEqual(view.blocking_key, 'ios')
         view.blocking_step.click()
@@ -190,14 +190,14 @@ class BlockerCardTests(unittest.TestCase):
         panel.run_view.update_phase(dict(id='ios', status='failed', error='Synthetic check failure'))
         panel.run_view.complete(dict(status='failed'))
         panel.stages.setCurrentIndex(2)
-        grouped = panel.run_view.run_choices.flow
+        grouped = panel.run_view.results_workspace.flow
         grouped.open_group('deliver.firebase')
         original = QFont(self.app.font()); self.addCleanup(self.app.setFont, original)
         font = QFont(original); font.setPointSize(14); self.app.setFont(font)
         self.window.resize(1024, 700); self.window.show()
         for _ in range(8): self.app.processEvents()
-        button = panel.run_view.run_choices.blocker
-        panel.run_view.run_choices.details_scroll.ensureWidgetVisible(button)
+        button = panel.run_view.results_workspace.blocker
+        panel.run_view.results_workspace.details_scroll.ensureWidgetVisible(button)
         self.app.processEvents()
         self.assertTrue(button.isVisible())
         ancestor = button.parentWidget()

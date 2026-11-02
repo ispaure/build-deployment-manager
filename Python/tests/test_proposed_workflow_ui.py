@@ -221,7 +221,7 @@ class ProposedWorkflowTests(unittest.TestCase):
             self.assertEqual(view.source_mode.currentData(), 'custom')
             self.assertFalse(panel.revision.isHidden())
             panel.revision.clear()
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             self.assertIn('Choose a source revision', panel.plan_feedback.text())
             self.assertFalse(panel.preparing)
             panel.project.make_journey.assert_not_called()
@@ -241,7 +241,7 @@ class ProposedWorkflowTests(unittest.TestCase):
                 executions={name: dict(backend='Local', steps=[]) for name in ('android', 'ios')}))
             panel.project.make_journey.side_effect = None
             panel.project.make_journey.return_value = plan
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             deadline = time.monotonic() + 5
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005)
@@ -266,7 +266,7 @@ class ProposedWorkflowTests(unittest.TestCase):
             panel.destination_checks['firebase'].setChecked(True)
             panel.project.make_journey.side_effect = ValueError('Delivery requires committed source.')
             view.sections['source'].toggle.setChecked(False)
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             deadline = time.monotonic() + 5
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005)

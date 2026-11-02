@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from build_manager import Phase, Plan
-from build_manager.device_retry import candidates, inspect, prepare
+from build_manager.device_retry import candidates, verify_retry_inputs, prepare
 from build_manager.api import run_plan, review_run
 
 
@@ -60,11 +60,11 @@ class DeviceRetryTests(unittest.TestCase):
         self.assertFalse(self.receipt.exists())
 
     def test_changed_original_or_prepared_bytes_block_retry(self):
-        digest = inspect(self.output, 'install-ipad')[-1]
+        digest = verify_retry_inputs(self.output, 'install-ipad')[-1]
         self.report['phases'][-1]['status'] = 'unknown'
         self.save()
         with self.assertRaisesRegex(ValueError, 'changed'):
-            inspect(self.output, 'install-ipad', digest)
+            verify_retry_inputs(self.output, 'install-ipad', digest)
         self.app.write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError, 'artifact'):
             prepare(self.output, 'install-ipad')

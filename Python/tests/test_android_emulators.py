@@ -17,8 +17,8 @@ class AndroidLeaseTests(unittest.TestCase):
                         workspace=str(client.workspace.resolve()),pid=123,process_started='owned launcher')
             client.marker.write_text(json.dumps(record))
             with patch.object(client,'invoke',side_effect=['build-manager-fixture\nOK','OK']), \
-                 patch('build_manager.process_identity.identity',side_effect=['defunct command',None,None]), \
-                 patch('build_manager.process_identity.stop_owned') as stop:
+                 patch('build_manager.process_identity.read_process_fingerprint',side_effect=['defunct command',None,None]), \
+                 patch('build_manager.process_identity.stop_owned_process') as stop:
                 client.cleanup()
                 stop.assert_not_called()
             self.assertFalse(client.marker.exists());self.assertFalse((client.workspace/'avds').exists())

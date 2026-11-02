@@ -7,8 +7,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from PySide6.QtWidgets import QApplication,QPushButton,QScrollArea
 from build_manager import Executor,Phase,Plan
-from build_manager.journeys import request,validate_plan
-from build_manager.workflows import approve,recover
+from build_manager.journeys import build_journey_intent,validate_plan
+from build_manager.workflows import approve,recover_phase_records
 from build_manager.registry import Registry
 from build_manager.app import ManagerWindow
 from build_manager.ui import ManagerPanel
@@ -45,7 +45,7 @@ class RunChoicesTests(unittest.TestCase):
             first=Executor().run(plan,root/'result')
             final=Executor().run(plan,root/'result',resume=True,approvals=[approve(plan,'launch-checks',first)])
             self.assertEqual(final['status'],'unknown')
-            with self.assertRaisesRegex(ValueError,'reconciliation'):recover(plan,final)
+            with self.assertRaisesRegex(ValueError,'reconciliation'):recover_phase_records(plan,final)
             data=plan.data();data['journey']['executions']={}
             with self.assertRaisesRegex(ValueError,'declared platform'):Plan.from_data(data)
 
@@ -70,7 +70,7 @@ class RunChoicesTests(unittest.TestCase):
                 panel.platform_backends['ios'].setCurrentText('Local fixture')
                 self.assertIsNone(panel.plan);self.assertFalse(panel.start.isEnabled())
                 with self.assertRaisesRegex(ValueError,'every selected platform'):
-                    request(project.journey_capability,'validate',['ios'],[],backends={})
+                    build_journey_intent(project.journey_capability,'validate',['ios'],[],backends={})
             finally:panel.close();self.app.processEvents()
 
     def test_single_settings_entry_and_whole_page_scroll(self):

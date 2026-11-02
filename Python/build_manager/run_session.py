@@ -2,7 +2,7 @@
 from uuid import uuid4
 from pathlib import Path
 from PySide6.QtCore import QObject, QElapsedTimer, QProcess, QTimer
-from .run_state import EventStream
+from .run_state import RunEventLineBuffer
 
 
 class RunSession(QObject):
@@ -15,7 +15,7 @@ class RunSession(QObject):
         self.elapsed, self.phase_elapsed = QElapsedTimer(), QElapsedTimer()
         self.clock = QTimer(self)
         self.clock.setInterval(1000)
-        self.events = EventStream()
+        self.events = RunEventLineBuffer()
         self.current_phase = 'queued'
         self.cancel_file = None
         self.failure = None

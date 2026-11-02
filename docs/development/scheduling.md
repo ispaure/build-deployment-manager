@@ -95,6 +95,23 @@ The limit is soft when protected storage alone exceeds it. Allocation measuremen
 skips links and junctions. Dry runs use the same selection as deletion and caller
 ownership is rechecked under each entry lock.
 
+Projects may set `keep=0` for explicitly disposable caches or scratch. Cache
+groups can use the enclosing build/snapshot lock while retaining packages and
+receipts in another group. Explicit user pins still win. The cleanup inventory
+includes allocated byte estimates and persistent protection reasons. The UI
+counts overlapping parent/cache groups once and separates deletable cache space
+from held package storage.
+
+`run_retirement.retire_run` serializes with the run supervisor, records retirement
+before releasing holds, validates hold paths against the saved plan, and removes
+only that run's owner keys. An interrupted retirement is retryable. Recovery and
+the executor reject retired runs, including retirement racing with admission.
+
+The optional `storage_maintenance` adapter action runs through the existing
+isolated bridge after CLI execution, only for the original still-trusted
+registration and descriptor identity. Project adapters own the roots and policy;
+the manager does not sweep shared SDKs, personal simulators or arbitrary folders.
+
 Linux commands bind a unique invocation to the owned workspace and command digest.
 A transport exit 255 retries admission with the same invocation, at most three
 times under the original deadline. A lock inherited by the child prevents

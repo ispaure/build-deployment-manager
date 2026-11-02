@@ -30,12 +30,16 @@ class GuestResultLifecycle:
         save_json(self.directory / 'result.json', self.result)
 
     def collect(self, collect, evidence, cleanup):
+        """Preserve keyword calls from project workload adapters."""
+        return self.collect_and_verify_report(collect, evidence, cleanup)
+
+    def collect_and_verify_report(self, retrieve_results, report_path, cleanup_workspace):
         try:
-            collect()
+            retrieve_results()
             self.collected = True
-            evidence = Path(evidence)
-            if evidence.is_file():
-                report = json.loads(evidence.read_text())
+            report_path = Path(report_path)
+            if report_path.is_file():
+                report = json.loads(report_path.read_text())
                 if not isinstance(report, dict):
                     raise ValueError('Guest report must be an object.')
                 if report['source'] != self.result['source'] or report['backend'] != self.backend:
@@ -50,7 +54,7 @@ class GuestResultLifecycle:
                     if report['status'] == 'passed' and any(statuses.get(p.id) != 'passed' for p in self.expected_plan.phases if p.required):
                         raise ValueError('Required guest phase evidence is missing or unsuccessful.')
                 self.result['phases'] = report['phases']
-                self.result['guest_result'] = str(evidence)
+                self.result['guest_result'] = str(report_path)
                 if self.result['status'] == 'passed' and report['status'] != 'passed':
                     raise ValueError('Guest exit status disagrees with its required test result.')
             elif self.result['status'] == 'passed':
@@ -59,7 +63,7 @@ class GuestResultLifecycle:
             self.result.update(status='failed', retrieval_error=str(error))
         if self.collected:
             try:
-                cleanup()
+                cleanup_workspace()
                 self.result[self.workspace_key + '_removed'] = True
             except Exception as error:
                 self.result.update(status='failed', cleanup_error=str(error))
@@ -299,7 +303,7 @@ def run_workload(session, *, snapshot, members, directory, source, backend, prep
         if attempted:
             try:
                 if session.exists():
-                    lifecycle.collect(lambda: session.collect(directory / 'guest'),
+                    lifecycle.collect_and_verify_report(lambda: session.collect(directory / 'guest'),
                         directory / 'guest' / session.evidence, session.cleanup)
                 elif result['status'] == 'passed':
                     result.update(status='failed', retrieval_error='Owned workspace disappeared before collection.')

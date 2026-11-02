@@ -32,7 +32,7 @@ def require_provider(provider):
         raise ValueError('Provider operation is not implemented: '+provider)
 
 
-def settings_rows(platforms):
+def unimplemented_distribution_rows(platforms):
     rows={}
     for key in ('app-store','google-play'):
         capability=CAPABILITIES[key]
@@ -74,3 +74,6 @@ class ProviderContract(Protocol):
     def preflight(self, effect: PreparedEffect) -> dict: ...
     def declare_effect(self, effect: PreparedEffect) -> PreparedEffect: ...
     def reconcile(self, operation_id: str, effect: PreparedEffect) -> OperationReceipt | None: ...
+
+
+settings_rows = unimplemented_distribution_rows  # Compatibility for project adapters.

@@ -28,7 +28,7 @@ class CardProgressTests(unittest.TestCase):
     def test_time_share_paints_duration_in_cell_at_larger_font_sizes(self):
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
-        from build_manager.workflow_ui import time_share, TimeShareDelegate, timing_duration
+        from build_manager.workflow_ui import time_share, TimeShareDelegate, format_compact_duration
         tree = QTreeWidget()
         self.addCleanup(tree.close)
         tree.setColumnCount(3)
@@ -51,7 +51,7 @@ class CardProgressTests(unittest.TestCase):
             self.assertFalse(tree.grab().isNull())
         for seconds, expected in ((None, '—'), (0, '0s'), (.000125, '0.12ms'),
                                   (.0125, '12.5ms'), (.999, '999ms'), (1, '1s'), (120, '120s')):
-            self.assertEqual(timing_duration(seconds), expected)
+            self.assertEqual(format_compact_duration(seconds), expected)
         time_share(tree, row, None, 40)
         self.assertIsNone(row.data(2, Qt.ItemDataRole.UserRole))
         self.assertEqual(row.text(2), '—')
@@ -82,13 +82,13 @@ class CardProgressTests(unittest.TestCase):
             self.assertTrue(view.canvas.cards['operation'][0].findChild(QProgressBar, 'cardProgress').isHidden())
 
     def test_live_card_and_fitted_map_geometry_stay_stable_across_updates(self):
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         with TemporaryDirectory() as directory:
             phases = (Phase('checks', (sys.executable, '-V'), directory),
                 Phase('deliver', (sys.executable, '-V'), directory,
                       dependencies=('checks',), effect='deploy'))
             plan = Plan('Fixture', 'Test', {}, phases, directory)
-            view = WorkflowFlow(graph_only=True)
+            view = WorkflowGraphView(graph_only=True)
             self.addCleanup(view.close)
             view.resize(900, 600)
             view.reset(plan)

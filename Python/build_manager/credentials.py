@@ -25,7 +25,7 @@ def reject_secrets(values):
                 raise ValueError('An inherited credential value cannot be saved; use its environment variable name.')
 
 
-def protected_reference(path, checkout=None):
+def resolve_external_credential_path(path, checkout=None):
     """Signing/credential files must live outside source checkouts, even if ignored."""
     candidate = Path(path).expanduser().resolve()
     if checkout and candidate.is_relative_to(Path(checkout).resolve()):
@@ -53,4 +53,7 @@ def validate_settings_changes(rows, values, checkout=None):
                  reference_kind not in {'environment-name', 'credential-helper'})):
             # Retain old pointers while editing unrelated fields. Never move,
             # copy or rewrite an existing credential file as a settings side effect.
-            protected_reference(value, checkout)
+            resolve_external_credential_path(value, checkout)
+
+
+protected_reference = resolve_external_credential_path  # Compatibility for project adapters.

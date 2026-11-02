@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import time
 import unittest
 
-from PySide6.QtWidgets import QApplication, QSpinBox
+from PySide6.QtWidgets import QApplication, QSpinBox, QMessageBox
 
 from build_manager.ui import SettingsDialog
 from build_manager.retention import delete_owned, lease, owned_entries
@@ -67,6 +67,40 @@ class SettingsAndStorageUITests(unittest.TestCase):
             self.app.processEvents()
             self.assertLess(time.monotonic(), deadline)
             time.sleep(.005)
+
+    def test_retirement_ui_works_without_project_storage_adapter_and_keeps_unknown_evidence(self):
+        import json
+        import sys
+        from unittest.mock import patch
+        from build_manager import Phase, Plan
+        from build_manager.retention import set_workflow_hold
+        from build_manager.history import load_run
+        from build_manager.storage_ui import StorageDialog
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve(); output = root / 'runs/old'; output.mkdir(parents=True)
+            workspace = root / 'workspace'; workspace.mkdir()
+            plan = Plan('Fixture', 'Upload', {}, (Phase('upload', (sys.executable, '-V'), str(root), effect='upload'),), str(workspace))
+            plan.save(output / 'plan.json')
+            (output / 'result.json').write_text(json.dumps(dict(schema=1, plan_identity=plan.identity, status='unknown',
+                phases=[dict(id='upload', status='unknown')], holds=[str(workspace)])))
+            set_workflow_hold(workspace, str(output))
+            class Project:
+                results_directory = root / 'runs'
+            dialog = StorageDialog(Project())
+            self.wait(dialog)
+            self.assertEqual(dialog.workflows.topLevelItemCount(), 1)
+            dialog.workflows.topLevelItem(0).setSelected(True)
+            self.assertTrue(dialog.retire.isEnabled())
+            with patch.object(QMessageBox, 'exec', return_value=QMessageBox.StandardButton.Yes), \
+                    patch.object(QMessageBox, 'information'):
+                dialog.retire_selected()
+                self.wait(dialog)
+            report = load_run(output / 'result.json')[1]
+            self.assertTrue(report['retirement'])
+            self.assertEqual(report['status'], 'unknown')
+            self.assertFalse(report['holds'])
+            self.assertEqual(dialog.workflows.topLevelItem(0).text(4), 'Retired')
+            dialog.close()
 
     def test_categories_retain_edits_tooltips_and_bounded_integer_save(self):
         class Project:

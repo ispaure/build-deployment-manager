@@ -61,6 +61,16 @@ class DependencySourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Commit manager'):
             verify(self.manager, self.pin)
 
+    def test_worktree_keyword_compatibility_preserves_pin_checks(self):
+        (self.manager / 'public.py').write_text('updated')
+        commits = verify(self.manager, self.pin, allow_manager_worktree_changes=True)
+        self.assertEqual(verify(self.manager, self.pin, working_tree=True), commits)
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            verify(self.manager, self.pin, allow_manager_worktree_changes=False, working_tree=True)
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            archive(self.manager, self.pin, 'zip', self.root / 'scratch',
+                    expected_worktree_fingerprint='a' * 64, working_tree='b' * 64)
+
     def test_invalid_kind_never_creates_transfer_sources(self):
         scratch = self.root / 'scratch'
         scratch.mkdir()
@@ -80,7 +90,7 @@ class DependencySourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Commit manager'):
                 archive(self.manager, self.pin, 'zip', scratch)
         with TemporaryDirectory() as scratch:
-            payload = archive(self.manager, self.pin, 'zip', scratch, working_tree=identity['fingerprint'])
+            payload = archive(self.manager, self.pin, 'zip', scratch, expected_worktree_fingerprint=identity['fingerprint'])
         with TemporaryDirectory() as extracted:
             with zipfile.ZipFile(io.BytesIO(payload)) as data:
                 self.assertNotIn('private-credential', data.namelist())

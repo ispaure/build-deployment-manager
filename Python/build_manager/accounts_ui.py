@@ -68,8 +68,8 @@ class AccountsDialog(QDialog):
         try:
             key=self.name.text().strip()
             if not key:raise ValueError('Choose an account reference name.')
-            self.store.account(key,provider=self.provider.currentText(),kind=self.kind.currentText(),reference=self.reference.text())
-            if self.project:self.store.select_account(self.project,key)
+            self.store.save_account_reference(key,provider=self.provider.currentText(),kind=self.kind.currentText(),reference=self.reference.text())
+            if self.project:self.store.bind_project_account(self.project,key)
         except (OSError,ValueError,RuntimeError) as error:
             QMessageBox.warning(self,'Reference not saved',str(error));return
         self.accept()

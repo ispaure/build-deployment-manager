@@ -47,7 +47,10 @@ def load_profile(path):
     path = Path(path)
     if not path.exists():
         return {}
-    result = json.loads(path.read_text())
+    try:
+        result = json.loads(path.read_text(encoding='utf-8'))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f'Invalid UTF-8 JSON in {path}: {error}') from error
     if not isinstance(result, dict) or result.get('schema') != 1 or not isinstance(result.get('values'), dict):
-        raise ValueError('Unsupported profile schema.')
+        raise ValueError(f'Unsupported profile schema in {path}.')
     return result['values']

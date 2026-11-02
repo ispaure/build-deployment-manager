@@ -29,7 +29,7 @@ results before adding native checks or delivery.
 | Execute it | `executor.py`, `resources.py`, `locking.py` | Process ownership, dependency gates, bounded concurrency, cleanup |
 | Keep and resume evidence | `history.py`, `workflows.py`, `retention.py` | Checksums, original plan, unknown outcomes and durable holds |
 | Present it | `configuration_ui.py`, `ui.py`, `run_ui.py`, `settings.py` | Selection values, Qt-thread ownership and explicit review |
-| Retain a GUI run/review | `run_session.py`, `review.py` | Parented process/timers and cancellable verification; stale selections cannot approve work |
+| Retain a GUI run/review | `run_session.py`, `continuation_review_ui.py` | Parented process/timers and cancellable verification; stale selections cannot approve work |
 | Retain interactive deployment launchers | `deployment_commands.py`, `deployment_commands_ui.py` | Project commands/policy; explicit input, target retention and sequential compatibility execution |
 | Reach another host | `parallels.py`, `windows_guest.py`, `guest.py` and platform adapters | Owned guest work, durable outcomes and actual native acceptance |
 
@@ -191,7 +191,7 @@ Windows process jobs and the existing process shutdown contracts remain separate
 `RunView` retains workflow selection, refresh coordination and subtest widgets.
 Headless `RunState` owns phase facts, measured timing, pending event merges and
 outcomes for live and retained runs. `RunSession` owns the Qt process and uses
-`EventStream` to retain incomplete output lines.
+`RunEventLineBuffer` to retain incomplete output lines.
 `run_inspector_ui.RunInspectorView` renders a selected phase from explicit plan,
 phase, captured facts and state/reason values, and preserves text selection/scroll
 for unchanged detail identity. `run_output_ui.RunOutputView` owns bounded redacted
@@ -221,3 +221,5 @@ test failures. `test_linux_stage.py` injects failures before, during and after r
 extraction, including delayed admission and active-cleanup contention.
 
 - [Simple project integration and shared guest workloads](project-integration.md)
+
+- [Configuration storage assessment](configuration-storage.md)

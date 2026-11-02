@@ -13,7 +13,7 @@ import re
 import subprocess
 from tempfile import TemporaryDirectory
 
-from .evidence import canonical
+from .evidence_cache import canonical
 
 NAMESPACE = 'build-manager-test-evidence-v1'
 MAX_BYTES = 4 * 1024 * 1024
@@ -38,11 +38,12 @@ def export_receipts(cache, phases, bindings, private_key, *, now=None):
     if not isinstance(bindings, dict) or not bindings:
         raise ValueError('Explicit public coverage bindings are required.')
     entries = []
-    key = cache.key()
+    # External cache implementations supply the original key/read protocol.
+    authentication_key = cache.key()
     for phase in phases:
         if not phase.reuse_key or phase.effect != 'test' or phase.kind != 'test' or phase.always:
             raise ValueError('Only input-bound test phases can be exported.')
-        receipt = cache.read(phase, key)
+        receipt = cache.read(phase, authentication_key)
         if receipt is None:
             raise ValueError('Missing or invalid authenticated receipt: ' + phase.id)
         row = receipt['row']

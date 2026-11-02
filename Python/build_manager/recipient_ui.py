@@ -3,7 +3,7 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QLineEdit, QPushButton
 
-from .run_fields import selection_ids
+from .run_fields import parse_multiselect_ids
 
 
 class RecipientPicker(QWidget):
@@ -17,7 +17,7 @@ class RecipientPicker(QWidget):
         self.items = QListWidget(); self.items.setFixedHeight(52)
         self.items.setAccessibleName('Choose deployment recipients')
         self.setFocusProxy(self.items)
-        self.items.itemChanged.connect(lambda *_: self.textChanged.emit())
+        self.items.itemChanged.connect(self.selection_changed)
         layout.addWidget(self.note); layout.addWidget(self.items)
         row = QHBoxLayout(); self.manual = QLineEdit()
         self.manual.setPlaceholderText('Paired device ID / Android serial')
@@ -29,6 +29,17 @@ class RecipientPicker(QWidget):
         self.manual.returnPressed.connect(self.add_manual)
         row.addWidget(self.manual); row.addWidget(self.add); row.addWidget(self.reload); layout.addLayout(row)
 
+    def selection_changed(self, item):
+        try:
+            parse_multiselect_ids(self.text())
+        except ValueError as error:
+            self.items.blockSignals(True)
+            item.setCheckState(Qt.CheckState.Unchecked)
+            self.items.blockSignals(False)
+            self.note.setText(str(error))
+            return
+        self.textChanged.emit()
+
     def setPlaceholderText(self, text):
         self.manual.setToolTip(text)
 
@@ -37,7 +48,7 @@ class RecipientPicker(QWidget):
                            if self.items.item(i).checkState() == Qt.CheckState.Checked])
 
     def setText(self, value):
-        selected = selection_ids(value)
+        selected = parse_multiselect_ids(value)
         self.set_choices(self.choices(), selected)
 
     def choices(self):
@@ -45,7 +56,7 @@ class RecipientPicker(QWidget):
                 for i in range(self.items.count())]
 
     def set_choices(self, rows, selected=None):
-        selected = selection_ids(self.text()) if selected is None else selected
+        selected = parse_multiselect_ids(self.text()) if selected is None else selected
         names = {row['id']: row['label'] for row in rows}
         for key in selected:
             names.setdefault(key, key + ' · saved selection')
@@ -62,10 +73,14 @@ class RecipientPicker(QWidget):
     def add_manual(self):
         key = self.manual.text().strip()
         try:
-            selection_ids(json.dumps([key]))
+            parse_multiselect_ids(json.dumps([key]))
         except ValueError as error:
             self.note.setText(str(error)); return
-        selected = selection_ids(self.text())
+        selected = parse_multiselect_ids(self.text())
         if key not in selected:
             selected.append(key)
+            try:
+                parse_multiselect_ids(json.dumps(selected))
+            except ValueError as error:
+                self.note.setText(str(error)); return
         self.set_choices(self.choices(), selected); self.manual.clear(); self.textChanged.emit()

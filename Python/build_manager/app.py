@@ -87,8 +87,8 @@ class ManagerWindow(QWidget):
                 [('Add project…', lambda: self.add(view)), ('Locate moved checkout…', lambda: self.locate(view)),
                  ('Remove registration', lambda: self.remove(view))],
                 [('Accounts…', lambda: self.accounts(view)), ('Test machines…', lambda: self.test_machines(view)),
-                 ('Check connections and settings…', lambda: view.verify_settings() if view.project else None),
-                 ('Clean up builds…', lambda: view.clean_builds() if view.project and supports(view.project, 'storage_inventory') else None)],
+                 ('Check connections and settings…', lambda: view.request_connection_check_plan() if view.project else None),
+                 ('Manage build storage…', lambda: view.open_storage_dialog() if view.project else None)],
                 [('App settings…', lambda: self.open_app_settings(view))]):
             if view.menu_actions:
                 menu.addSeparator()
@@ -261,7 +261,7 @@ class ManagerWindow(QWidget):
             finally:
                 panel.applying_preset = False
             panel.selection_changed.connect(lambda choices: self.guarded(
-                lambda: self.registry.selections(key, choices), panel))
+                lambda: self.registry.save_selections(key, choices), panel))
             self.install_presets(key, panel)
             panel.busy_changed.connect(self.set_active)
             panel.history_in_tabs = True
@@ -372,7 +372,7 @@ class ManagerWindow(QWidget):
         for label in ('Locate moved checkout…', 'Remove registration', 'Accounts…', 'Check connections and settings…'):
             view.menu_actions[label].setEnabled(available and not busy)
         view.menu_actions['Check connections and settings…'].setEnabled(not busy and view.project is not None and supports(view.project, 'verification'))
-        view.menu_actions['Clean up builds…'].setEnabled(not busy and view.project is not None and supports(view.project, 'storage_inventory'))
+        view.menu_actions['Manage build storage…'].setEnabled(not busy and view.project is not None)
 
     def set_active(self, value):
         docks = self.run_workspace.all_docks if self.run_workspace else []
@@ -386,7 +386,7 @@ class ManagerWindow(QWidget):
         dialog = AddProjectDialog(view.window())
         if dialog.exec():
             def register():
-                key = self.registry.add(dialog.root)
+                key = self.registry.add(dialog.root, name=dialog.registration_name.text().strip() or None)
                 self.registry.select(key)
                 self.refresh(view=view, selected=key)
             self.guarded(register, view)

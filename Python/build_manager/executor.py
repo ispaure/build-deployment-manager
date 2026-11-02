@@ -16,7 +16,7 @@ from commonUtils.runtime.operations import OperationCancelled
 from .locking import workspace_lock
 from .redaction import Redactor
 from .run_recording import RunRecorder, timestamp
-from .scheduling import phase_is_ready, skip_reason, final_status
+from .scheduling import can_consider_phase, skip_reason, final_status
 
 
 def signal_group(group, sig):
@@ -79,22 +79,24 @@ class Executor:
 
     def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None, retry_failed=True):
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-        from .identity import runtime_identity, engine_review_identity
+        from .identity import capture_engine_source_identity, engine_review_identity
         from .models import Plan
-        from .resources import Resources
-        from .workflows import EXTERNAL, recover, review_identity, verify_artifacts
+        from .resources import HostResourceSlots
+        from .workflows import EXTERNAL, recover_phase_records, review_identity, verify_artifacts
         plan = Plan.from_data(plan.data())
         if not resume and not retry_failed:
             raise ValueError('Retaining failed phases requires resuming an existing run.')
         if plan.effect in EXTERNAL and not confirmed:
             raise ValueError('This operation requires explicit confirmation after reviewing the plan.')
-        engine = runtime_identity()
+        engine = capture_engine_source_identity()
         if not engine['manager'].get('commit') or not engine['commonUtils'].get('commit'):
             raise ValueError('Execution requires an identifiable manager Git checkout and initialized commonUtils; install it explicitly with pip install --no-deps -e PATH.')
         output = Path(output)
         if resume:
             from .history import read_report
+            from .run_retirement import require_resumable
             report = read_report(output/'result.json')
+            require_resumable(report)
         else:
             output.mkdir(parents=True, exist_ok=False, mode=0o700)
             report = dict(schema=1, engine=engine, project=plan.project, operation=plan.operation,
@@ -112,19 +114,19 @@ class Executor:
         elif engine_review is not None:
             raise ValueError('Engine review does not match a pending engine change.')
         recorder = RunRecorder(output, report, plan.secret_environment, resume=resume)
-        resources = Resources(getattr(self, 'resource_directory', None))
+        resources = HostResourceSlots(getattr(self, 'resource_directory', None))
         def execute(phase):
             try:
                 from dataclasses import replace
-                from .workflows import ancestors
+                from .workflows import transitive_dependency_ids
                 if phase.effect in EXTERNAL:
-                    artifacts=[artifact for name in ancestors(plan,phase.id) for artifact in rows[name].get('artifacts',[])]
+                    artifacts=[artifact for name in transitive_dependency_ids(plan,phase.id) for artifact in rows[name].get('artifacts',[])]
                     phase=replace(phase,environment=dict(phase.environment,
                         BUILD_MANAGER_APPROVED_PLAN=plan.identity,BUILD_MANAGER_APPROVED_ARTIFACTS=json.dumps(artifacts),
                         BUILD_MANAGER_OPERATION_ID=rows[phase.id]['operation_id']))
                 with resources.acquire(phase.resources, plan.capacities, cancelled=self.cancelled,
                         timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always):
-                    from .evidence import EvidenceCache
+                    from .evidence_cache import EvidenceCache
                     from .infrastructure_recovery import execute as recover_infrastructure
                     def run_attempt(command, directory):
                         if not phase.infrastructure_recovery:
@@ -145,7 +147,7 @@ class Executor:
                                 value['log'] = str((directory / value['log']).relative_to(output.resolve()))
                             self.event(value)
                         return self.run_phase(command, directory, plan.secret_environment, event=relay)
-                    return EvidenceCache(self.evidence_directory).execute(phase, output,
+                    return EvidenceCache(self.evidence_directory).reuse_or_run_phase(phase, output,
                         lambda: recover_infrastructure(phase, output, run_attempt,
                             cancelled=self.cancelled.is_set, event=self.event),
                         cancelled=self.cancelled.is_set)
@@ -156,6 +158,9 @@ class Executor:
             with ExitStack() as locks:
                 from .retention import lease
                 locks.enter_context(workspace_lock(output/'supervisor.lock'))
+                if resume:
+                    # Retirement may have won the lock after our initial read.
+                    require_resumable(read_report(output / 'result.json'))
                 locks.enter_context(lease(output))
                 locks.enter_context(lease(plan.workspace))
                 locks.enter_context(workspace_lock(Path(plan.workspace) / 'operation.lock'))
@@ -164,7 +169,7 @@ class Executor:
                     event=lambda value:self.event(dict(value,phase='workflow'))))
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
-                previous = recover(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []
+                previous = recover_phase_records(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []
                 retained = {'passed', 'unknown'}
                 if not retry_failed:
                     retained.update({'failed', 'skipped', 'cancelled', 'timeout', 'interrupted'})
@@ -182,7 +187,7 @@ class Executor:
                 recorder.save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
-                retry_after = {}
+                retry_not_before_by_phase = {}
                 retry_history = {row['id']: row['retry_attempts'] for row in previous if row.get('retry_attempts')}
                 with ThreadPoolExecutor(max_workers=plan.max_workers) as pool:
                     while pending or running:
@@ -190,10 +195,10 @@ class Executor:
                         for phase in list(pending):
                             if len(running) >= plan.max_workers:
                                 break
-                            if not phase_is_ready(phase,
+                            if not can_consider_phase(phase,
                                     running=tuple(active for active, _ in running.values()),
                                     pending=pending, rows=rows, max_workers=plan.max_workers,
-                                    retry_after=retry_after, now=time.monotonic(),
+                                    retry_not_before_by_phase=retry_not_before_by_phase, now=time.monotonic(),
                                     cancelled=self.cancelled.is_set()):
                                 continue
                             reason = skip_reason(phase, rows, cancelled=self.cancelled.is_set())
@@ -243,7 +248,7 @@ class Executor:
                                     row.update(status='retrying', retry_count=len(history), retry_delay=phase.retry_delay,
                                                retry_attempts=history,
                                                reason='Temporarily unavailable; retrying automatically. Independent work continues.')
-                                    retry_after[phase.id] = time.monotonic() + phase.retry_delay
+                                    retry_not_before_by_phase[phase.id] = time.monotonic() + phase.retry_delay
                                     pending.append(phase)
                                 elif phase.id in retry_history:
                                     row.update(retry_count=len(retry_history[phase.id]), retry_attempts=retry_history[phase.id])
@@ -253,7 +258,7 @@ class Executor:
                                 self.event(dict(type='phase', **row))
                                 changed = True
                         if not changed and not running and pending:
-                            if any(p.id in retry_after for p in pending) and not self.cancelled.is_set():
+                            if any(p.id in retry_not_before_by_phase for p in pending) and not self.cancelled.is_set():
                                 if any(row['status'] == 'awaiting_review' for row in rows.values()):
                                     break  # Return ready approvals while offline recipients remain pending.
                                 self.cancelled.wait(.05)
@@ -263,7 +268,7 @@ class Executor:
                             report['phases']=[rows[p.id] for p in plan.phases if p.id in rows]
                             recorder.save()
                 report['status'] = final_status(plan, rows, cancelled=self.cancelled.is_set())
-                from .retention import durable_hold
+                from .retention import release_workflow_hold, set_workflow_hold
                 owner = str(output.resolve())
                 if report['status'] in {'awaiting_review','unknown'}:
                     paths = {str(Path(plan.workspace)), str(output)}
@@ -271,17 +276,20 @@ class Executor:
                     paths.update(str(Path(value).with_suffix('')) for value in plan.resource_locks if Path(value).with_suffix('').is_dir())
                     report['holds'] = sorted(set(report.get('holds', ())) | paths)
                     for path in report['holds']:
-                        durable_hold(path, owner)
+                        set_workflow_hold(path, owner)
                 else:
                     for path in report.get('holds', ()):
-                        durable_hold(path, owner, release=True)
+                        release_workflow_hold(path, owner)
                     report['holds'] = []
-                recorder.finish_timing(retry_failed=retry_failed)
+                recorder.record_attempt_completion(retry_failed=retry_failed)
                 recorder.save()
         except (OSError, ValueError, RuntimeError) as error:
+            from .run_retirement import RetiredRunError
+            if isinstance(error, RetiredRunError):
+                raise
             uncertain=any(row.get('status') in {'unknown','running'} and row.get('effect') in EXTERNAL for row in report['phases'])
             report.update(status='unknown' if uncertain else 'cancelled' if self.cancelled.is_set() else 'failed', error=Redactor()(str(error)))
-            recorder.finish_timing(retry_failed=retry_failed)
+            recorder.record_attempt_completion(retry_failed=retry_failed)
             recorder.save()
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
         return report

@@ -31,7 +31,7 @@ class DependencyFlowTests(unittest.TestCase):
     def test_large_plan_stages_retain_exact_steps_and_sync_with_map(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         with TemporaryDirectory() as directory:
             phases = [Phase('source', (sys.executable, '-V'), directory, section='source', effect='inspect')]
             for index in range(39):
@@ -43,7 +43,7 @@ class DependencyFlowTests(unittest.TestCase):
                     dependencies=('package',), effect='upload')))
             plan = Plan('Fixture', 'Review', {}, tuple(phases), directory)
             original = plan.data()
-            flow = WorkflowFlow(); flow.resize(850, 600); flow.reset(plan, preview=True); flow.show()
+            flow = WorkflowGraphView(); flow.resize(850, 600); flow.reset(plan, preview=True); flow.show()
             self.addCleanup(flow.close)
             self.app.processEvents()
             self.assertIs(flow.views.currentWidget(), flow.browser)
@@ -259,7 +259,7 @@ class DependencyFlowTests(unittest.TestCase):
             project.make_plan = lambda *a, **k: Plan('Fixture', 'Test', {}, phases, str(root / 'workspace'))
             panel = ManagerPanel(project)
             try:
-                panel.inspect_plan()
+                panel.request_plan_preparation()
                 deadline = time.monotonic() + 10
                 while panel.preparing:
                     self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
@@ -288,7 +288,7 @@ class DependencyFlowTests(unittest.TestCase):
                 panel.result = root / 'retained' / 'result.json'
                 panel.result.parent.mkdir()
                 (panel.result.parent / 'example.log').write_text('Captured step output')
-                panel.seed_run(plan, [dict(id='example', status='passed', log='example.log')])
+                panel.initialize_results_workspace(plan, [dict(id='example', status='passed', log='example.log')])
                 card = panel.run_view.flow.canvas.cards['example'][0]
                 QTest.keyClick(card, Qt.Key.Key_Space)
                 self.assertEqual(panel.run_view.selected, 'example')
@@ -317,8 +317,8 @@ class DependencyFlowTests(unittest.TestCase):
                 self.assertIn('needs your approval', view.next_action.text())
                 view.update_phase(dict(id='testflight', status='unknown'))
                 self.assertIn('unknown outcome', view.next_action.text())
-                view.run_choices.flow.all_tasks.click()
-                self.assertEqual(set(view.run_choices.rows), {phase.id for phase in plan.phases})
-                self.assertEqual(view.run_choices.selected, '')
+                view.results_workspace.flow.all_tasks.click()
+                self.assertEqual(set(view.results_workspace.rows), {phase.id for phase in plan.phases})
+                self.assertEqual(view.results_workspace.selected, '')
             finally:
                 view.close()

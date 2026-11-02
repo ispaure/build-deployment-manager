@@ -3,7 +3,7 @@ from dataclasses import replace
 import unittest
 
 from build_manager.models import Phase, Plan
-from build_manager.scheduling import phase_is_ready, skip_reason, final_status
+from build_manager.scheduling import can_consider_phase, skip_reason, final_status
 
 
 def phase(name, **options):
@@ -13,9 +13,9 @@ def phase(name, **options):
 class SchedulingDecisionTests(unittest.TestCase):
     def ready(self, step, **options):
         defaults = dict(running=(), pending=[step], rows={}, max_workers=2,
-                        retry_after={}, now=10, cancelled=False)
+                        retry_not_before_by_phase={}, now=10, cancelled=False)
         defaults.update(options)
-        return phase_is_ready(step, **defaults)
+        return can_consider_phase(step, **defaults)
 
     def test_completion_wait_can_follow_failure_but_success_dependency_is_skipped(self):
         failed = {'check': {'status': 'failed'}}
@@ -31,8 +31,8 @@ class SchedulingDecisionTests(unittest.TestCase):
     def test_cancellation_bypasses_retry_delay_but_keeps_cleanup_ownership(self):
         inspection = phase('inspect', effect='inspect', retry_exit_codes=(75,))
         cleanup = phase('cleanup', always=True)
-        self.assertFalse(self.ready(inspection, retry_after={'inspect': 20}))
-        self.assertTrue(self.ready(inspection, retry_after={'inspect': 20}, cancelled=True))
+        self.assertFalse(self.ready(inspection, retry_not_before_by_phase={'inspect': 20}))
+        self.assertTrue(self.ready(inspection, retry_not_before_by_phase={'inspect': 20}, cancelled=True))
         self.assertEqual(skip_reason(inspection, {}, cancelled=True), 'cancelled')
         self.assertFalse(self.ready(cleanup, running=(inspection,), cancelled=True))
         self.assertFalse(self.ready(cleanup, pending=[inspection, cleanup], cancelled=True))

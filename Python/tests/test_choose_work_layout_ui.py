@@ -105,13 +105,13 @@ class ChooseWorkLayoutTests(unittest.TestCase):
 
     def test_proposed_overview_reflows_without_changing_graph_or_selection(self):
         from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         plan = ProposedWorkflow((
             ProposedStep('source', 'Source', 'Current files', section='source'),
             ProposedStep('test', 'Android', 'Required checks', ('source',)),
             ProposedStep('build', 'Build', 'Development package', ('test',), section='delivery'),
             ProposedStep('deliver', 'Deliver', 'Review before delivery', ('build',), section='delivery')))
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan)
         view.resize(760, 680)
@@ -143,12 +143,12 @@ class ChooseWorkLayoutTests(unittest.TestCase):
 
     def test_proposed_overview_is_centred_in_tall_and_wide_viewports(self):
         from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         plan = ProposedWorkflow((
             ProposedStep('source', 'Source', 'Current files', section='source'),
             ProposedStep('test', 'Tests', 'Required checks', ('source',)),
             ProposedStep('deliver', 'Deliver', 'Review before delivery', ('test',), section='delivery')))
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan)
         view.orientation.setCurrentIndex(view.orientation.findData('best'))
@@ -169,11 +169,11 @@ class ChooseWorkLayoutTests(unittest.TestCase):
 
     def test_overview_reflow_bounds_card_sizes_and_preserves_manual_zoom(self):
         from build_manager.proposed_workflow import ProposedStep, ProposedWorkflow
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         plan = ProposedWorkflow(tuple(ProposedStep(str(i), 'A readable workflow heading',
             'Explanatory text that wraps across several lines',
             (str(i - 1),) if i else (), section='delivery') for i in range(4)))
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan)
         view.show()
@@ -215,12 +215,12 @@ class ChooseWorkLayoutTests(unittest.TestCase):
                     self.assertGreaterEqual(badge.height(), badge.minimumSizeHint().height())
 
     def test_exact_map_orientation_and_fit_contain_the_entire_plan(self):
-        from build_manager.workflow_ui import WorkflowFlow
+        from build_manager.workflow_ui import WorkflowGraphView
         phases = tuple(Phase(f'step-{i}', (sys.executable, '-V'), str(self.root),
             dependencies=(f'step-{i-1}',) if i else ()) for i in range(8))
         plan = Plan('Fixture', 'Test', {}, phases, str(self.root))
         before = plan.data()
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan, preview=True)
         view.resize(700, 600)

@@ -37,7 +37,7 @@ class ScopedRunTests(unittest.TestCase):
         self.view = RunView()
         self.addCleanup(self.view.close)
         self.view.reset(self.plan)
-        self.grouped = self.view.run_choices.flow
+        self.grouped = self.view.results_workspace.flow
 
     def tearDown(self):
         self.assertEqual(self.plan.data(), self.original)
@@ -48,9 +48,9 @@ class ScopedRunTests(unittest.TestCase):
         for key in ('deliver.testflight', 'platform.android', 'deliver.testflight'):
             self.grouped.open_group(key)
             self.app.processEvents()
-            self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
+            self.assertIs(self.view.results_workspace.splitter.widget(1), self.view.results_workspace.inspector)
             self.assertIs(self.grouped.content_splitter.widget(0), self.grouped.pages)
-            self.assertTrue(self.view.run_choices.inspector.isVisible())
+            self.assertTrue(self.view.results_workspace.inspector.isVisible())
             if key == 'deliver.testflight':
                 self.assertEqual(self.grouped.pages.currentIndex(), 0)
 
@@ -62,10 +62,10 @@ class ScopedRunTests(unittest.TestCase):
         main.setFocus()
         QTest.keyClick(main, Qt.Key.Key_Space)
         self.app.processEvents()
-        self.assertEqual(set(self.view.run_choices.rows), {'env', 'android'})
+        self.assertEqual(set(self.view.results_workspace.rows), {'env', 'android'})
         self.assertEqual(self.grouped.pages.currentIndex(), 0)
-        self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
-        self.assertTrue(self.view.run_choices.inspector.isVisible())
+        self.assertIs(self.view.results_workspace.splitter.widget(1), self.view.results_workspace.inspector)
+        self.assertTrue(self.view.results_workspace.inspector.isVisible())
         self.assertTrue(self.grouped.map.isVisible())
         self.assertTrue(self.view.flow.isHidden())
         self.assertTrue(self.view.steps.isHidden())
@@ -141,16 +141,16 @@ class ScopedRunTests(unittest.TestCase):
 
     def test_external_prerequisites_navigate_to_their_own_card(self):
         self.grouped.open_group('deliver.firebase')
-        self.assertEqual(set(self.view.run_choices.rows), {'firebase'})
-        self.assertEqual(self.view.run_choices.prerequisite_layout.itemAt(1).widget().full_text, 'Prepare')
-        self.view.run_choices.prerequisite_layout.itemAt(1).widget().click()
+        self.assertEqual(set(self.view.results_workspace.rows), {'firebase'})
+        self.assertEqual(self.view.results_workspace.prerequisite_layout.itemAt(1).widget().full_text, 'Prepare')
+        self.view.results_workspace.prerequisite_layout.itemAt(1).widget().click()
         self.assertEqual(self.view.selected, 'prepare')
         self.assertIn('prepare', self.view.flow.canvas.cards)
         self.view.update_phase(dict(id='ios', status='failed', error='Gate failed'))
         self.grouped.open_group('deliver.firebase')
         self.view.blocking_step.click()
         self.assertEqual(self.view.selected, 'ios')
-        self.assertEqual(set(self.view.run_choices.rows), {'ios'})
+        self.assertEqual(set(self.view.results_workspace.rows), {'ios'})
         self.assertIn('Gate failed', self.view.detail.toPlainText())
 
     def test_delivery_includes_prepared_inputs_and_keeps_file_navigation_local(self):
@@ -176,7 +176,7 @@ class ScopedRunTests(unittest.TestCase):
     def test_rehydrated_running_duration_does_not_restart_at_zero(self):
         with patch('build_manager.run_state.time.monotonic', return_value=100):
             self.view.reset(self.plan, [dict(id='env', status='running', seconds=25)])
-            self.view.run_choices.flow.open_group('platform.android')
+            self.view.results_workspace.flow.open_group('platform.android')
             self.view.tick()
             self.assertIn('25.00s', self.view.flow.canvas.cards['env'][1].text())
             self.assertIn('25.00s', self.view.selection_info.text())
@@ -186,12 +186,12 @@ class ScopedRunTests(unittest.TestCase):
         plan = replace(self.plan, phases=(self.plan.phases[0], self.plan.phases[2], admit,
             replace(self.plan.phases[1], dependencies=('admit',)), *self.plan.phases[3:]))
         self.view.reset(plan)
-        self.view.run_choices.flow.open_group('platform.android')
-        self.assertEqual(set(self.view.run_choices.rows), {'admit', 'android'})
+        self.view.results_workspace.flow.open_group('platform.android')
+        self.assertEqual(set(self.view.results_workspace.rows), {'admit', 'android'})
         self.view.flow.canvas.cards['admit'][0].click()
         self.assertIn(('ios', 'admit'), self.view.flow.canvas.edges)
         self.assertIn('ios', self.view.detail.toPlainText())
-        self.assertIn('wait for completion', self.view.run_choices.prerequisite_layout.itemAt(1).widget().full_text)
+        self.assertIn('wait for completion', self.view.results_workspace.prerequisite_layout.itemAt(1).widget().full_text)
 
     def test_rehydration_failure_navigation_and_reset_keep_one_inspector(self):
         report = [dict(id='env', status='passed', seconds=1),
@@ -203,11 +203,11 @@ class ScopedRunTests(unittest.TestCase):
             self.assertEqual(self.view.selected, 'android')
             self.assertEqual(self.view.tests.currentItem().text(0), 'broken')
             self.assertIn('Expected success', self.view.test_detail.toPlainText())
-            self.assertIn('android', self.view.run_choices.rows)
-            self.assertIs(self.view.run_choices.splitter.widget(1), self.view.run_choices.inspector)
+            self.assertIn('android', self.view.results_workspace.rows)
+            self.assertIs(self.view.results_workspace.splitter.widget(1), self.view.results_workspace.inspector)
             self.app.processEvents()
         self.view.reset(self.plan)
-        self.view.run_choices.flow.open_group('source')
+        self.view.results_workspace.flow.open_group('source')
         self.assertTrue(self.view.flow.isHidden())
         self.assertIn('No executable source subtasks', self.view.detail.toPlainText())
 

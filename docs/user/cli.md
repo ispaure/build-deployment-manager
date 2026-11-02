@@ -251,6 +251,18 @@ After reviewing the inventory, remove selected outputs with repeated
 `--delete 'GROUP=NAME' --confirm`. The project revalidates ownership, pins and
 active leases under the same locks used by its GUI cleanup. Manual cleanup may
 remove recent outputs; automatic retention age/count rules remain unchanged.
+
+Retire a superseded saved run with `build-manager storage --project PROJECT
+--retire-workflow RUN_NAME --confirm`. Use the direct run-directory name shown
+by `history`. Retirement releases only that run's holds, disables continuation,
+and preserves logs, receipts and unknown external outcomes. It does not delete
+outputs or authorize a replacement delivery. Retire workflows separately from
+`--delete` selections.
+
+CLI execution invokes a registered project's optional `storage_maintenance`
+action after execution leases are released. Its result is saved separately in
+`storage-maintenance.json`; maintenance failure does not change the workload's
+outcome. The low-level `run_plan` API accepts an explicit `maintenance` callback.
 Save needed evidence first. This removes generated artifacts, not installed apps,
 signing credentials, build counters or source checkouts.
 

@@ -11,7 +11,7 @@ import sys
 
 from commonUtils.runtime.streams import file_sha256
 from .identity import checkout_identity
-from .local import inspect_python
+from .interpreter_probe import inspect_python
 from .models import Phase, Plan
 from .profiles import save_json
 

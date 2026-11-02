@@ -5,7 +5,7 @@ from pathlib import Path
 from .locking import workspace_lock
 
 
-def next_number(path, *, existing=(), minimum=1):
+def preview_next_build_number(path, *, existing=(), minimum=1):
     path = Path(path)
     record = json.loads(path.read_text()) if path.exists() else {'schema': 1, 'last': 0}
     if not isinstance(record, dict) or record.get('schema', 1) != 1:
@@ -19,10 +19,10 @@ def next_number(path, *, existing=(), minimum=1):
     return max(minimum, previous + 1, max(existing, default=0) + 1)
 
 
-def reserve_number(path, *, existing=(), minimum=1, maximum, override=None):
+def reserve_build_number(path, *, existing=(), minimum=1, maximum, override=None):
     path = Path(path)
     with workspace_lock(path.with_suffix('.lock'), timeout=30):
-        number = next_number(path, existing=existing, minimum=minimum)
+        number = preview_next_build_number(path, existing=existing, minimum=minimum)
         if override is not None:
             selected = str(override)
             if not selected.isdigit() or int(selected) < number:
@@ -34,3 +34,8 @@ def reserve_number(path, *, existing=(), minimum=1, maximum, override=None):
         temporary.write_text(json.dumps({'schema': 1, 'last': number}) + '\n')
         temporary.replace(path)
         return number
+
+
+# Compatibility for project adapters.
+next_number = preview_next_build_number
+reserve_number = reserve_build_number

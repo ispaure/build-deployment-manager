@@ -9,7 +9,7 @@ import unittest
 import venv
 
 from build_manager import Executor, Plan
-from build_manager.registry import inspect
+from build_manager.registry import read_project_descriptor
 from build_manager.test_results import read_junit
 
 EXAMPLE = Path(__file__).resolve().parent / 'fixtures/testing_project'
@@ -36,7 +36,7 @@ class ExampleProjectTests(unittest.TestCase):
         return Plan.from_data(json.loads(result.stdout)['result'])
 
     def test_descriptor_plan_file_preview_and_frozen_source_produce_real_cases(self):
-        descriptor, _ = inspect(self.root)
+        descriptor, _ = read_project_descriptor(self.root)
         self.assertEqual(descriptor['test_suites'][0]['id'], 'labels')
         full = self.request(suite='')
         self.assertEqual(full.returncode, 0, full.stderr)

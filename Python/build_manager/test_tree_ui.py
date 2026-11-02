@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainterPath, QPalette
 from PySide6.QtWidgets import QTreeWidgetItem, QStyledItemDelegate, QStyleOptionViewItem, QStyle
-from .workflow_presentation import timing_duration
+from .workflow_presentation import format_compact_duration
 
 
 class TimeShareDelegate(QStyledItemDelegate):
@@ -43,14 +43,14 @@ def time_share(tree, row, seconds, total, *, reused=False):
     if not isinstance(tree.itemDelegateForColumn(2), TimeShareDelegate):
         tree.setItemDelegateForColumn(2, TimeShareDelegate(tree))
     share = seconds / total if not reused and seconds is not None and total and total > 0 else None
-    label = '—' if reused else timing_duration(seconds)
+    label = '—' if reused else format_compact_duration(seconds)
     row.setText(2, label)
     row.setData(2, Qt.ItemDataRole.UserRole, share)
     description = (f'{label}, {share:.1%} of measured sibling time' if share is not None else label)
     if reused:
         description = 'Reused result; no test execution in this run.'
         if seconds is not None:
-            description += f' Previous run: {timing_duration(seconds)}.'
+            description += f' Previous run: {format_compact_duration(seconds)}.'
         row.setData(2, Qt.ItemDataRole.AccessibleTextRole, description)
         row.setToolTip(2, description)
         return

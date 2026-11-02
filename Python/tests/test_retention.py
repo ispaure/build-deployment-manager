@@ -9,6 +9,27 @@ from build_manager.retention import lease, prune, remove_tree
 
 
 class RetentionTests(unittest.TestCase):
+    def test_inventory_explains_workflow_holds_and_delete_preserves_them(self):
+        from unittest.mock import patch
+        from build_manager.retention import set_workflow_hold, owned_entries, delete_owned, protection_reason
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            held = root / 'held'; held.mkdir()
+            pinned = root / 'pinned'; pinned.mkdir(); (pinned / '.keep').touch()
+            with patch('build_manager.retention.time.time', return_value=0):
+                set_workflow_hold(held, 'synthetic-workflow', days=1)
+                rows = {row['name']: row['protected'] for row in owned_entries(root, eligible=lambda p: True)}
+                self.assertEqual(rows['held'], 'Retained for workflow review/reconciliation until 1970-01-02 00:00 UTC')
+                self.assertEqual(rows['pinned'], 'Pinned by .keep')
+                outcome = delete_owned(root, ['held'], eligible=lambda p: True)
+                self.assertEqual(outcome['removed'], [])
+                self.assertIn(rows['held'], outcome['skipped'][0])
+                self.assertTrue(held.is_dir())
+            with patch('build_manager.retention.time.time', return_value=86401):
+                self.assertEqual(protection_reason(held), '')
+            (root / '.held.manager-holds.json').write_text('invalid')
+            self.assertEqual(protection_reason(held), 'Unreadable workflow hold; protected')
+
     def test_owned_scratch_with_readonly_git_objects_can_be_removed(self):
         import stat
         with TemporaryDirectory() as directory:
@@ -123,6 +144,27 @@ class WindowsReleaseWaitTests(unittest.TestCase):
 
 
 class BudgetRetentionTests(unittest.TestCase):
+    def test_cache_budget_is_shared_across_roots_and_keeps_active_and_recent_work(self):
+        from unittest.mock import patch
+        from build_manager.locking import workspace_lock
+        from build_manager.retention import prune_cache_groups
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            groups = []
+            for i in range(5):
+                parent = root / str(i); path = parent / 'cache'; path.mkdir(parents=True)
+                os.utime(path, (i * 1000, i * 1000))
+                groups.append(dict(root=parent, eligible=lambda p: p.name == 'cache'))
+            # One global budget, with no per-root minimum retained count.
+            with patch('build_manager.retention.allocated_bytes', return_value=100), \
+                    workspace_lock(root / '0/.cache.retention.lock'):
+                args = dict(age_days=7, max_bytes=100, grace_days=1/24, now=7000)
+                preview = prune_cache_groups(groups, **args)
+                self.assertEqual(preview, [str(root / str(i) / 'cache') for i in (1, 2, 3)])
+                self.assertEqual(prune_cache_groups(groups, apply=True, **args), preview)
+            self.assertTrue((root / '0/cache').exists())
+            self.assertTrue((root / '4/cache').exists())
+
     def test_pressure_evicts_oldest_recent_entries_but_keeps_pins_locks_and_newest(self):
         from unittest.mock import patch
         from build_manager.locking import workspace_lock

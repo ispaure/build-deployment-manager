@@ -6,9 +6,9 @@ def phase_title(phase):
     return getattr(phase, 'label', '') or phase.id.replace('.', ' · ').replace('_', ' ').replace('-', ' ').capitalize()
 
 
-def destination_identity(destination, step):
+def destination_label_for_phase(destination, phase_id):
     for key, row in destination.get('recipients', {}).items():
-        if step in row['steps']:
+        if phase_id in row['steps']:
             return row.get('label', key) + ' [' + key + ']'
     return destination['identity']
 
@@ -69,8 +69,8 @@ def summary_rows(plan, fields=()):
                     continue
                 recipient = next(((key, row) for key, row in destination.get('recipients', {}).items()
                                   if phase.id in row['steps']), None)
-                identity = destination_identity(destination, phase.id)
-                lines += ['Destination: ' + identity,
+                destination_label = destination_label_for_phase(destination, phase.id)
+                lines += ['Destination: ' + destination_label,
                           'Requires platforms: ' + ', '.join(destination.get('platforms', list(getattr(plan, 'journey', {}).get('platforms', {}))))]
                 for field in fields:
                     scope = set(field.get('destinations', ())) & set(destinations)
@@ -83,7 +83,7 @@ def summary_rows(plan, fields=()):
                             except ValueError:
                                 selected = None
                             if isinstance(selected, list) and recipient[0] in selected:
-                                value = identity
+                                value = destination_label
                         lines.append(field['label'] + ': ' + str(value))
             if phase.dependencies:
                 lines.append('Waits for: ' + ', '.join(phase_title(phases[key]) for key in phase.dependencies))
@@ -106,7 +106,7 @@ def summary_rows(plan, fields=()):
     return now, later, shared
 
 
-def start_scope(plan):
+def describe_start_behavior(plan):
     if plan.effect in EXTERNAL and any(getattr(phase, 'approval_required', True) for phase in plan.phases
             if (phase.effect if phase.effect != 'inherit' else plan.effect) in EXTERNAL):
         return 'Start asks for confirmation of this external operation before running it.'

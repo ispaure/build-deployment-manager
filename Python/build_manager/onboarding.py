@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from .registry import inspect
+from .registry import read_project_descriptor
 
 
 def scaffold(root, name, project_id, argv):
@@ -27,7 +27,7 @@ def readiness(root, descriptor=None):
     """Static facts only. An existing interpreter is not an adapter import check."""
     root = Path(root).resolve()
     if descriptor is None:
-        descriptor, _ = inspect(root)
+        descriptor, _ = read_project_descriptor(root)
     if 'commands' in descriptor:
         from .command_project import inventory
         try:
@@ -54,7 +54,7 @@ def readiness(root, descriptor=None):
                 else 'Missing project interpreter or bridge: ' + ', '.join(missing))
 
 
-def check_adapter(registry, project=None, *, prepare=False):
+def probe_adapter(registry, project=None, *, prepare_plan_matrix=False):
     """Explicit trusted settings probe; optional planning matrix without execution.
 
     Preparation may capture sources or invoke project retention. It is opt-in.
@@ -69,7 +69,7 @@ def check_adapter(registry, project=None, *, prepare=False):
     if not isinstance(rows, dict) or any(not isinstance(v, dict) or 'value' not in v for v in rows.values()):
         raise ValueError('Adapter settings must map field names to rows with values.')
     checks = []
-    if prepare:
+    if prepare_plan_matrix:
         for target in bridge.platforms:
             for operation in bridge.operations_for(target):
                 for backend in bridge.backend_options(target, operation):
@@ -89,3 +89,8 @@ def check_adapter(registry, project=None, *, prepare=False):
     return dict(stage='adapter_loaded', status='failed' if any(c['status'] == 'failed' for c in checks) else 'passed',
                 settings_fields=len(rows), plans=checks, workloads_executed=False,
                 message='Settings protocol loaded. Only explicitly prepared combinations have been checked; native readiness is not certified.')
+
+
+def check_adapter(registry, project=None, *, prepare=False):
+    """Compatibility entry point for the original adapter probe."""
+    return probe_adapter(registry, project, prepare_plan_matrix=prepare)

@@ -12,7 +12,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from build_manager import Phase, Plan
-from build_manager.workflow_ui import WorkflowFlow
+from build_manager.workflow_ui import WorkflowGraphView
 
 
 class PointerFollowTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class PointerFollowTests(unittest.TestCase):
         patcher = patch('build_manager.workflow_map_ui.config_directory', return_value=Path(directory.name))
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.flow = WorkflowFlow(graph_only=True)
+        self.flow = WorkflowGraphView(graph_only=True)
         self.addCleanup(self.flow.close)
         phases = tuple(Phase(f'step-{i}', ('fixture',), '.',
                              dependencies=(f'step-{i - 1}',) if i else ())
@@ -53,7 +53,7 @@ class PointerFollowTests(unittest.TestCase):
             self.flow.reset(self.plan)
             self.assertEqual(self.view.pointer_follow, enabled)
             self.assertEqual(load_profile(self.preferences)['follow_mouse'], enabled)
-            reopened = WorkflowFlow(graph_only=True)
+            reopened = WorkflowGraphView(graph_only=True)
             try:
                 self.assertEqual(reopened.follow_mouse.isChecked(), enabled)
                 self.assertEqual(reopened.scroll.pointer_follow, enabled)

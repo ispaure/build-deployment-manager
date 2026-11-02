@@ -1,11 +1,14 @@
 """Private registrations; reading a descriptor never imports project code."""
+import copy
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import sys
 from uuid import uuid4
 
+from .configuration_files import check_registry, ensure_named_projects, folder_name
 from .locking import workspace_lock
 from .profiles import load_profile, save_profile
 
@@ -20,7 +23,7 @@ def config_directory():
     return base / 'BuildDeploymentManager'
 
 
-def inspect(root):
+def read_project_descriptor(root):
     root = Path(root).expanduser().resolve()
     path = root / 'build-project.json'
     if not path.is_file():
@@ -70,45 +73,103 @@ def inspect(root):
 class Registry:
     def __init__(self, directory=None):
         self.directory = Path(directory) if directory else config_directory()
-        self.path = self.directory / 'registry.json'
+        self.path = self.directory / 'configuration' / 'projects' / 'index.json'
 
-    def read(self):
-        data = load_profile(self.path)
-        data.setdefault('projects', {})
-        if not isinstance(data['projects'],dict):raise ValueError('Invalid registry project map; preserve and repair the private registry.')
-        for row in data['projects'].values():
-            if not isinstance(row,dict) or any(not isinstance(row.get(key),str) for key in ('root','project_id','name','descriptor')):
-                raise ValueError('Invalid project registration; locate or repair the private registry.')
+    def _index(self):
+        ensure_named_projects(self.directory)
+        if not self.path.is_file():
+            raise ValueError('Missing configuration/projects/index.json; restore the configuration backup.')
+        index = load_profile(self.path)
+        names = index.get('projects')
+        if (set(index) - {'projects', 'selected'} or not isinstance(names, dict)
+                or any(not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', key) for key in names)
+                or any(not self._valid_path(path) for path in names.values())
+                or len({path.split('/')[0].casefold() for path in names.values()}) != len(names)):
+            raise ValueError('Invalid registration index.')
+        return index
+
+    @staticmethod
+    def _valid_path(path):
+        if not isinstance(path, str) or len(path.split('/')) != 2:
+            return False
+        name, filename = path.split('/')
+        return (name == folder_name(name) and name.casefold() != 'index.json' and
+                re.fullmatch(r'registration(?:-[a-f0-9]{32})?\.json', filename) is not None)
+
+    def _registrations(self, index):
+        rows = {}
+        for key, name in index['projects'].items():
+            path = self.path.parent / name
+            if not path.is_file():
+                raise ValueError(f'Missing checkout registration: {path}')
+            rows[key] = load_profile(path)
+            if rows[key].get('name') != path.parent.name:
+                raise ValueError(f'Registration name must match its project folder: {path}')
+        data = dict(index, projects=rows)
+        check_registry(data)
         return data
 
+    def read(self):
+        return self._registrations(self._index())
+
     def mutate(self, action):
-        self.directory.mkdir(parents=True,exist_ok=True,mode=0o700)
-        if os.name!='nt':self.directory.chmod(0o700)
+        ensure_named_projects(self.directory)
         with workspace_lock(self.directory / 'registry.lock'):
-            data = self.read()
+            index = self._index()
+            before = self._registrations(index)
+            data = copy.deepcopy(before)
             result = action(data)
-            save_profile(self.path, data, allowed={'projects', 'selected'})
+            check_registry(data)
+            names = {}
+            used = {'index.json'}
+            for key, row in data['projects'].items():
+                name = row['name']
+                if name != folder_name(name) or name.casefold() in used:
+                    raise ValueError('Choose a unique project name suitable for a folder.')
+                used.add(name.casefold())
+                if key in before['projects'] and before['projects'][key]['name'] != name:
+                    raise ValueError('An existing registration must keep its project folder name.')
+                if key not in before['projects'] and (self.path.parent / name).exists():
+                    raise ValueError('That project folder already exists. Choose a different registration name.')
+                names[key] = index['projects'].get(key, f'{name}/registration.json')
+            changed = {key: row for key, row in data['projects'].items()
+                       if row != before['projects'].get(key)}
+            updated = dict(data, projects=names)
+            # One ordinary edit replaces its file in place. Compound mutations
+            # stage existing rows under fresh names, then publish one index.
+            compound = len(changed) > 1 or updated != index
+            for key, row in changed.items():
+                if compound and key in index['projects']:
+                    names[key] = f"{row['name']}/registration-{uuid4().hex}.json"
+                save_profile(self.path.parent / names[key], row, allowed=row.keys())
+            if updated != index:
+                save_profile(self.path, updated, allowed={'projects', 'selected'})
             return result
 
-    def add(self, root):
+    def add(self, root, *, name=None):
         root = str(Path(root).expanduser().resolve())
-        descriptor, digest = inspect(root)
+        descriptor, descriptor_digest = read_project_descriptor(root)
         def update(data):
             for key, row in data['projects'].items():
                 if row['root'] == root:
                     if descriptor['project_id'] != row['project_id']:
                         raise ValueError('Project identity changed; remove and register this checkout again.')
-                    row.update(name=descriptor['name'], descriptor=digest, trusted=True)
+                    if name and name != row['name']:
+                        raise ValueError('This checkout already has a registered name: ' + row['name'])
+                    row.update(descriptor=descriptor_digest, trusted=True)
                     return key
+            label = name if name is not None else folder_name(descriptor['name'])
+            if label.casefold() in {r['name'].casefold() for r in data['projects'].values()}:
+                raise ValueError('Project name already registered. Choose a distinct registration name for this checkout.')
             key = str(uuid4())
             data['projects'][key] = dict(root=root, project_id=descriptor['project_id'],
-                name=descriptor['name'], descriptor=digest, trusted=True, selections={})
+                name=label, descriptor=descriptor_digest, trusted=True, selections={})
             data.setdefault('selected', key)
             return key
         return self.mutate(update)
 
     def locate(self, key, root):
-        descriptor, digest = inspect(root)
+        descriptor, descriptor_digest = read_project_descriptor(root)
         def update(data):
             row = data['projects'][key]
             if descriptor['project_id'] != row['project_id']:
@@ -116,22 +177,23 @@ class Registry:
             resolved = str(Path(root).expanduser().resolve())
             if any(k != key and r['root'] == resolved for k,r in data['projects'].items()):
                 raise ValueError('That checkout is already registered.')
-            row.update(root=resolved, descriptor=digest, trusted=True)
+            row.update(root=resolved, descriptor=descriptor_digest, trusted=True)
         self.mutate(update)
 
     def trust(self, key, *, expected_digest=None):
         def update(data):
             row = data['projects'][key]
-            descriptor, digest = inspect(row['root'])
+            descriptor, descriptor_digest = read_project_descriptor(row['root'])
             if descriptor['project_id'] != row['project_id']:
                 raise ValueError('Project identity changed; remove and register this checkout again.')
-            if expected_digest is not None and digest != expected_digest:
+            if expected_digest is not None and descriptor_digest != expected_digest:
                 raise ValueError('The descriptor changed during review. Review it again.')
-            row.update(trusted=True, descriptor=digest)
+            row.update(trusted=True, descriptor=descriptor_digest)
         self.mutate(update)
 
-    def select(self, key, *, active=False):
-        if active:
+    def select(self, key, *, run_active=False, active=False):
+        # Older automation calls use active for the same active-run guard.
+        if run_active or active:
             raise ValueError('Wait for the active run to finish before switching projects.')
         def update(data):
             if key not in data['projects']:
@@ -159,11 +221,13 @@ class Registry:
             raise ValueError('Invalid project selections.')
         reject_secrets(choices)
 
-    def selections(self, key, choices):
+    def save_selections(self, key, choices):
         self.validate_selections(choices)
         def update(data):
             data['projects'][key]['selections'] = dict(choices)
         self.mutate(update)
+
+    selections = save_selections  # Compatibility for ManagerAPI.registry callers.
 
     def save_preset(self, key, name, choices):
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
@@ -199,11 +263,11 @@ class Registry:
     def resolve(self, key=None, *, trusted=False):
         data = self.read()
         row = dict(data['projects'][key or data.get('selected')])
-        descriptor, digest = inspect(row['root'])
+        descriptor, descriptor_digest = read_project_descriptor(row['root'])
         if descriptor['project_id'] != row['project_id']:
             raise ValueError('Project identity changed; register the intended checkout.')
         # Registration authorizes this checkout, including older registrations
         # and descriptor updates. Inspection and identity checks still apply.
         row['trusted'] = True
-        row['descriptor'] = digest
+        row['descriptor'] = descriptor_digest
         return row, descriptor

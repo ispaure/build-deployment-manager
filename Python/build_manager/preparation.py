@@ -75,8 +75,8 @@ def preparation_request(selection: WorkflowSelection, *, integrated=False,
 def validate_gui_selection(project, selection, *, integrated):
     """Validate declared combinations before the adapter worker starts."""
     if integrated:
-        from .journeys import request
-        request(project.journey_capability, selection.goal, selection.selected_platforms,
+        from .journeys import build_journey_intent
+        build_journey_intent(project.journey_capability, selection.goal, selection.selected_platforms,
                 selection.selected_destinations if selection.goal == 'deliver' else ())
         return
     operation = 'Build' if selection.goal == 'build' else selection.operation

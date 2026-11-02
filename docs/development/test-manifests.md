@@ -5,7 +5,7 @@ For registration through actual case results, use
 execution discovery; descriptor suite choices and JUnit results are separate.
 
 Projects declare their test inventory in `build-tests.json` at the checkout root.
-The headless `build_manager.test_manifest.discover(root, group)` API returns the
+The headless `build_manager.test_manifest.resolve_test_group_suites(root, group)` API returns the
 selected suites and their transitive prerequisites in dependency order. It reads
 data and Git metadata; it does not import tests, search neighboring repositories,
 install dependencies or execute suites. The project adapter calls it against the
@@ -57,21 +57,21 @@ name, default `project`; discovery never guesses a virtual environment.
 
 ## Connecting an adapter
 
-Use `phases(root, group, interpreters, runner, environment=...)` to create generic
+Use `build_test_phases(root, group, interpreters, runner, environment=...)` to create generic
 test phases with explicit success dependencies. `interpreters` maps manifest
 names to the project's configured isolated executables. `runner` is an argument
 tuple; a whole argument `{directory}` is replaced with the resolved test root.
 No shell command is evaluated. For example an existing isolated project runner:
 
 ```python
-from build_manager.test_manifest import phases
-checks = phases(snapshot, 'validation', {'project': project_python,
+from build_manager.test_manifest import build_test_phases
+checks = build_test_phases(snapshot, 'validation', {'project': project_python,
     'desktop': desktop_python},
     ('Python/tests/run_regressions.py', '{directory}', '--isolate-modules'),
     environment=environment)
 ```
 
-Adapters with another framework can consume `discover` directly and preserve each
+Adapters with another framework can consume `resolve_test_group_suites` directly and preserve each
 row's `after` dependencies while constructing their commands. Attach JUnit evidence
 using the project's runner and [reporting helpers](test-organization.md), so the
 manager can show actual counts, timings and failures. Merely declaring a suite

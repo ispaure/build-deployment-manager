@@ -14,47 +14,58 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True, timeout=60).strip()
 
 
-def verify(checkout, pin, *, pinned_source=False, working_tree=False):
+def verify(checkout, pin, *, pinned_source=False, allow_manager_worktree_changes=None, working_tree=None):
+    if working_tree is not None:  # Compatibility with API-1 adapter callers.
+        if allow_manager_worktree_changes is not None and allow_manager_worktree_changes != working_tree:
+            raise ValueError("Conflicting manager worktree options.")
+        allow_manager_worktree_changes = working_tree
     checkout = Path(checkout).resolve()
-    if not isinstance(pin, str) or not re.fullmatch(r'[0-9a-f]{40}', pin):
+    manager_commit = pin
+    if not isinstance(manager_commit, str) or not re.fullmatch(r'[0-9a-f]{40}', manager_commit):
         raise ValueError('Dependency pin must be a full Git commit.')
-    if (not pinned_source or working_tree) and git(checkout, 'rev-parse', 'HEAD') != pin:
+    if (not pinned_source or allow_manager_worktree_changes) and git(checkout, 'rev-parse', 'HEAD') != manager_commit:
         raise ValueError('Explicit manager checkout does not match the project dependency pin.')
     try:
-        if git(checkout, 'cat-file', '-t', pin) != 'commit':
+        if git(checkout, 'cat-file', '-t', manager_commit) != 'commit':
             raise ValueError('Declared manager pin is not a commit.')
-        shared = git(checkout, 'ls-tree', pin, 'Python/commonUtils').split()[2]
-        git(checkout/'Python/commonUtils', 'cat-file', '-e', shared+'^{commit}')
+        common_utils_commit = git(checkout, 'ls-tree', manager_commit, 'Python/commonUtils').split()[2]
+        git(checkout/'Python/commonUtils', 'cat-file', '-e', common_utils_commit+'^{commit}')
     except (subprocess.CalledProcessError, IndexError) as error:
         raise ValueError('Explicit manager sources lack the declared project/dependency commits.') from error
-    if not pinned_source and git(checkout/'Python/commonUtils', 'rev-parse', 'HEAD') != shared:
+    if not pinned_source and git(checkout/'Python/commonUtils', 'rev-parse', 'HEAD') != common_utils_commit:
         raise ValueError('Manager commonUtils does not match its real pinned submodule.')
     for folder in (checkout, checkout/'Python/commonUtils'):
-        if working_tree and folder == checkout:
+        if allow_manager_worktree_changes and folder == checkout:
             continue
         if git(folder, 'status', '--porcelain', '--untracked-files=no'):
             raise ValueError('Commit manager/dependency edits before guest transfer.')
-    return pin, shared
+    return manager_commit, common_utils_commit
 
 
-def archive(checkout, pin, kind, workspace, *, working_tree=None):
+def archive(checkout, pin, kind, workspace, *, expected_worktree_fingerprint=None, working_tree=None):
+    if working_tree is not None:  # Compatibility with API-1 adapter callers.
+        if expected_worktree_fingerprint is not None and expected_worktree_fingerprint != working_tree:
+            raise ValueError("Conflicting worktree fingerprints.")
+        expected_worktree_fingerprint = working_tree
     if kind not in {'zip', 'tar'}:
         raise ValueError('Choose zip or tar manager transfer.')
     checkout = Path(checkout).resolve()
-    pin, shared = verify(checkout, pin, pinned_source=True, working_tree=bool(working_tree))
+    manager_commit, common_utils_commit = verify(
+        checkout, pin, pinned_source=True,
+        allow_manager_worktree_changes=bool(expected_worktree_fingerprint))
     stream = io.BytesIO()
     source = Path(workspace)/'manager'
     if source.exists():
         raise ValueError('Dependency transfer requires an unused scratch directory.')
-    for target, origin, revision in ((source, checkout, pin),
-            (source/'Python/commonUtils', checkout/'Python/commonUtils', shared)):
+    for target, origin, revision in ((source, checkout, manager_commit),
+            (source/'Python/commonUtils', checkout/'Python/commonUtils', common_utils_commit)):
         target.mkdir(parents=True, exist_ok=True)
         subprocess.run(['git', 'init', '--quiet', str(target)], check=True, timeout=30)
         subprocess.run(['git', '-C', str(target), 'fetch', '--quiet', '--depth', '1', '--no-tags', origin.as_uri(), revision], check=True, timeout=120)
         subprocess.run(['git', '-C', str(target), 'checkout', '--quiet', '--detach', 'FETCH_HEAD'], check=True, timeout=60)
-    if working_tree:
-        manifest = local_test_identity(checkout, pin)
-        if manifest['fingerprint'] != working_tree:
+    if expected_worktree_fingerprint:
+        manifest = local_test_identity(checkout, manager_commit)
+        if manifest['fingerprint'] != expected_worktree_fingerprint:
             raise ValueError('Local manager test source changed after planning.')
         for name, expected in manifest['files'].items():
             origin, target = checkout / name, source / name
@@ -63,10 +74,10 @@ def archive(checkout, pin, kind, workspace, *, working_tree=None):
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(origin, target)
-        if local_test_identity(checkout, pin) != manifest:
+        if local_test_identity(checkout, manager_commit) != manifest:
             raise ValueError('Local manager test source changed during capture.')
         (source / LOCAL_TEST_MANIFEST).write_text(json.dumps(manifest, sort_keys=True) + '\n')
-        verify_local_test_source(source, pin, working_tree)
+        verify_local_test_source(source, manager_commit, expected_worktree_fingerprint)
     if kind == 'zip':
         with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as output:
             for path in sorted(source.rglob('*')):
@@ -105,8 +116,8 @@ def _public_test_files(checkout):
 
 def local_test_identity(checkout, pin):
     """An opt-in local validation overlay; never substitutes for a release pin."""
-    _, shared = verify(checkout, pin, working_tree=True)
-    data = dict(schema=1, purpose='local-tests-only', commit=pin, commonUtils_commit=shared,
+    _, common_utils_commit = verify(checkout, pin, allow_manager_worktree_changes=True)
+    data = dict(schema=1, purpose='local-tests-only', commit=pin, commonUtils_commit=common_utils_commit,
                 files=_public_test_files(checkout))
     data['fingerprint'] = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
     return data

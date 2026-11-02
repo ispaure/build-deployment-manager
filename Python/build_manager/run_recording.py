@@ -42,7 +42,7 @@ class RunRecorder:
         self.output, self.report = output, report
         self.secret_environment = secret_environment
         self.clock = clock
-        self.started = clock()
+        self.attempt_started_monotonic = clock()
         self.previous_seconds = report.get('seconds', 0) if resume else 0
         if not valid_seconds(self.previous_seconds) or not isinstance(report.get('attempts', []), list):
             raise ValueError('Retained run timing is invalid; preserve and inspect a new run.')
@@ -52,8 +52,8 @@ class RunRecorder:
         redact = Redactor(os.environ.get(name) for name in self.secret_environment)
         save_json(self.output / 'result.json', sanitized_report(self.report, redact))
 
-    def finish_timing(self, *, retry_failed=True):
-        elapsed = self.clock() - self.started
+    def record_attempt_completion(self, *, retry_failed=True):
+        elapsed = self.clock() - self.attempt_started_monotonic
         self.report.update(finished_at=timestamp(), attempt_seconds=elapsed,
                            seconds=self.previous_seconds + elapsed)
         attempt = dict(started_at=self.attempt_started_at, finished_at=self.report['finished_at'],

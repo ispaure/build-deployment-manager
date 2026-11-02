@@ -9,7 +9,7 @@ Windows, Fedora, emulator or publication run.
 
 The recommendations below have since been implemented. File digests use the
 pinned commonUtils bounded stream helper. A retained, cancellable
-`VerifyContinuation` worker performs recovery/artifact checks outside Qt,
+`VerifyContinuationTask` worker performs recovery/artifact checks outside Qt,
 carrying the selection revision and exact approval identities. Closing drains
 it; changed selections discard its result. The CLI rechecks identities after
 the dialog and before effect admission.

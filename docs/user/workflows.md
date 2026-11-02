@@ -133,6 +133,17 @@ and declared snapshot resources receive durable seven-day holds while awaiting
 review/reconciliation. Active runs additionally hold OS leases. Terminal completion
 releases only that run's holds. Expired/missing artifacts stop continuation clearly.
 Existing .keep pins remain untouched. Project retention policy remains authoritative.
+The cleanup inventory shows workflow hold expiry separately from `.keep` pins.
+Protected trees can exceed a project's soft storage budget; awaiting review and
+unknown outcomes retain their outputs even when no build process is running.
+
+Open **More → Manage build storage… → Retained workflows** to retire superseded runs.
+Review the listed workflows and confirm retirement. This releases only those
+runs' holds and permanently disables their continuation. Logs, receipts and the
+original outcomes stay in history; an unknown outcome is still unknown. Check
+the provider before preparing a replacement delivery. Other runs' holds and
+explicit `.keep` pins remain protected. Delete newly unprotected outputs from
+the build outputs tab after reviewing their paths.
 
 
 ## Remote-controller cleanup grace

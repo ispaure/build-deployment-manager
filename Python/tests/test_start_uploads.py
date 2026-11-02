@@ -7,8 +7,8 @@ import unittest
 from unittest.mock import patch
 
 from build_manager import Executor, Phase, Plan
-from build_manager.plan_summary import start_scope, summary_rows
-from build_manager.workflows import start_authorized_effects
+from build_manager.plan_summary import describe_start_behavior, summary_rows
+from build_manager.workflows import apply_start_review_policy
 from build_manager.ui import ManagerPanel
 from test_journeys import integrated
 import test_ui as fixtures
@@ -52,14 +52,14 @@ class StartUploadTests(unittest.TestCase):
                          [row['started_at'] for row in report['phases']])
 
     def test_failed_checks_block_start_authorized_effects(self):
-        plan = start_authorized_effects(integrated(self.root, fail_gate=True))
+        plan = apply_start_review_policy(integrated(self.root, fail_gate=True))
         report = Executor().run(plan, self.root / 'failed')
         self.assertEqual(report['status'], 'failed')
         for provider in ('firebase', 'testflight'):
             self.assertFalse((self.root / (provider + '.json')).exists())
 
     def test_changed_package_blocks_start_authorized_uploads(self):
-        plan = start_authorized_effects(integrated(self.root))
+        plan = apply_start_review_policy(integrated(self.root))
         executor = Executor()
         run_phase = executor.run_phase
         def tamper(phase, *args):
@@ -82,7 +82,7 @@ class StartUploadTests(unittest.TestCase):
                            effect='publish', dependencies=('prepare',))
             journey = dict(plan.journey, destinations={**plan.journey['destinations'],
                 'github': dict(identity='owner/repo/v1', steps=['github'])})
-            plan = start_authorized_effects(replace(plan, journey=journey, phases=(*plan.phases, github)))
+            plan = apply_start_review_policy(replace(plan, journey=journey, phases=(*plan.phases, github)))
             self.assertFalse(plan.phases[-1].approval_required)
             self.assertEqual(plan.phases[-1].provider, 'github')
             report = Executor().run(plan, root / 'result')
@@ -106,7 +106,7 @@ class StartUploadTests(unittest.TestCase):
             self.assertEqual(json.loads(panel.result.read_text())['status'], 'passed')
 
     def test_unknown_upload_cannot_be_repeated_on_resume(self):
-        plan = start_authorized_effects(integrated(self.root, fail_delivery=True))
+        plan = apply_start_review_policy(integrated(self.root, fail_delivery=True))
         output = self.root / 'unknown'
         report = Executor().run(plan, output)
         self.assertEqual(next(row for row in report['phases'] if row['id'] == 'firebase')['status'], 'unknown')
@@ -124,20 +124,20 @@ class StartUploadTests(unittest.TestCase):
                           ('publish', 'publish', 'firebase'), ('dispatch', 'dispatch', 'testflight'),
                           ('unmapped', 'upload', '')])
         declared_phases = tuple(replace(phase, provider=phase.id) if phase.effect == 'upload' else phase for phase in plan.phases)
-        updated = start_authorized_effects(replace(plan, journey={}, phases=(*declared_phases, *extra)))
+        updated = apply_start_review_policy(replace(plan, journey={}, phases=(*declared_phases, *extra)))
         self.assertTrue(all(phase.approval_required for phase in updated.phases[-4:]))
-        self.assertIn('Other external actions pause', start_scope(updated))
+        self.assertIn('Other external actions pause', describe_start_behavior(updated))
         for effect, provider in [('publish', 'firebase'), ('dispatch', 'testflight'), ('upload', '')]:
             with self.assertRaises(ValueError):
                 replace(extra[0], effect=effect, provider=provider, approval_required=False)
         declared = replace(plan, journey={}, phases=(replace(plan.phases[-1], dependencies=(), provider='testflight'),))
-        self.assertFalse(start_authorized_effects(declared).phases[0].approval_required)
+        self.assertFalse(apply_start_review_policy(declared).phases[0].approval_required)
 
     def test_declared_hosted_dispatch_uses_start_and_old_plans_keep_review(self):
         from test_run_choices import RunChoicesTests
         from build_manager.grouped_workflow import retained_proposal, group_workflow
         original = RunChoicesTests().hosted(self.root)
-        plan = start_authorized_effects(original)
+        plan = apply_start_review_policy(original)
         self.assertEqual(plan.phases[0].provider, 'github')
         self.assertFalse(plan.phases[0].approval_required)
         self.assertEqual(Executor().run(plan, self.root / 'hosted')['status'], 'passed')

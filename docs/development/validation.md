@@ -403,7 +403,7 @@ The owning manager phase retains its aggregate deadline and process cleanup.
 This is test-process isolation, not evidence of a native platform pass.
 
 Explicit local consumer validation can capture uncommitted manager edits through
-`dependency_sources.local_test_identity` and an `archive(..., working_tree=...)`
+`dependency_sources.local_test_identity` and an `archive(..., expected_worktree_fingerprint=...)`
 request bound to that exact identity. A bounded manifest is checked again after
 copy and extraction; the manager base commit and commonUtils pin remain fixed.
 Ordinary `verify` and `archive` calls still reject modified tracked source.

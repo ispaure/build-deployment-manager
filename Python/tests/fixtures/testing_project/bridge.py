@@ -7,7 +7,7 @@ import sys
 from uuid import uuid4
 
 from build_manager import Plan
-from build_manager.test_manifest import phases
+from build_manager.test_manifest import build_test_phases
 
 ROOT = Path(__file__).resolve().parent
 
@@ -37,7 +37,7 @@ def make_plan(values):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         inputs[relative.as_posix()] = hashlib.sha256(data).hexdigest()
-    checks = phases(snapshot, 'validation', {'project': sys.executable},
+    checks = build_test_phases(snapshot, 'validation', {'project': sys.executable},
                     ('-m', 'build_manager.reporting', '--start', '{directory}'))
     reported = []
     for check in checks:

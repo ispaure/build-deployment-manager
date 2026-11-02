@@ -72,20 +72,7 @@ existing name replaces that preset.
 Presets belong to each registered checkout. Loading one invalidates the old plan;
 review a new plan before starting. It never restores execution approvals.
 
-The manager stores registrations, remembered choices and named presets in
-`registry.json` under its private application configuration directory:
-
-- macOS: `~/Library/Application Support/BuildDeploymentManager/`
-- Windows: `%APPDATA%/BuildDeploymentManager/`
-- Linux: `$XDG_CONFIG_HOME/BuildDeploymentManager/`, defaulting to `~/.config/BuildDeploymentManager/`
-
-Shared account references and manager settings use `settings.json`; appearance
-uses `appearance.json` in that directory. These files live outside your Git
-checkout and are not committed with it. The CLI/GUI `--registry` option can select
-a different directory; keep that directory outside source control as well.
-Project settings storage is defined by the project's adapter. Credentials remain
-protected references, and secret values are rejected from manager profiles.
-On POSIX systems, manager registry files are written with owner-only permissions.
+Open **More → App settings → Open configuration folder** to find the shared iOS and Android device catalogs, per-checkout registrations and account references. The [configuration files guide](configuration-files.md) covers the folder layout, hand edits, backup and migration.
 
 ## Read outcomes, not just the progress bar
 

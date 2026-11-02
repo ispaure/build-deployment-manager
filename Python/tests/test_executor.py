@@ -335,30 +335,30 @@ class ProfileTests(unittest.TestCase):
                 save_profile(path, {'private_key': 'secret'}, allowed={'private_key'})
 
     def test_build_reservation_handles_existing_explicit_and_duplicate_values(self):
-        from build_manager.versions import next_number, reserve_number
+        from build_manager.versions import preview_next_build_number, reserve_build_number
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'numbers.json'
-            self.assertEqual(next_number(path, existing=[4], minimum=3), 5)
+            self.assertEqual(preview_next_build_number(path, existing=[4], minimum=3), 5)
             self.assertFalse(path.exists())
-            self.assertEqual(reserve_number(path, existing=[4], minimum=3, maximum=20), 5)
-            self.assertEqual(reserve_number(path, maximum=20, override='8'), 8)
+            self.assertEqual(reserve_build_number(path, existing=[4], minimum=3, maximum=20), 5)
+            self.assertEqual(reserve_build_number(path, maximum=20, override='8'), 8)
             with self.assertRaises(ValueError):
-                reserve_number(path, maximum=20, override='8')
+                reserve_build_number(path, maximum=20, override='8')
             with self.assertRaises(ValueError):
-                reserve_number(path, maximum=8)
+                reserve_build_number(path, maximum=8)
 
     def test_invalid_boolean_profile_and_build_history_are_actionable(self):
-        from build_manager.versions import next_number
+        from build_manager.versions import preview_next_build_number
         with self.assertRaisesRegex(ValueError, 'bool'):
             effective({'shutdown': False}, {'shutdown': 'false'})
         with TemporaryDirectory() as directory:
             path = Path(directory)/'counter.json'
             path.write_text('{"last": "4"}')
             with self.assertRaisesRegex(ValueError, 'integer'):
-                next_number(path)
+                preview_next_build_number(path)
             path.write_text('[]')
             with self.assertRaisesRegex(ValueError, 'schema'):
-                next_number(path)
+                preview_next_build_number(path)
             with self.assertRaisesRegex(ValueError, 'schema'):
                 load_profile(path)
 

@@ -11,7 +11,7 @@ from commonUtils.runtime.streams import file_sha256
 
 from .history import load_run
 from .retention import linked
-from .workflows import EXTERNAL, ancestors, verify_artifacts
+from .workflows import EXTERNAL, transitive_dependency_ids, verify_artifacts
 
 
 def verify_checks(output, plan_identity, steps, *, expect_review=None):
@@ -28,7 +28,7 @@ def verify_checks(output, plan_identity, steps, *, expect_review=None):
         raise ValueError('Select unique declared retained check IDs.')
     selected = set(steps)
     for step in steps:
-        selected.update(ancestors(plan, step))
+        selected.update(transitive_dependency_ids(plan, step))
     rows = {row['id']: row for row in report['phases']}
     checks = []
     for phase in plan.phases:

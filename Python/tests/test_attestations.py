@@ -10,7 +10,7 @@ import unittest
 
 from build_manager import Phase
 from build_manager.attestations import export_receipts, verify_export
-from build_manager.evidence import EvidenceCache
+from build_manager.evidence_cache import EvidenceCache
 
 
 @unittest.skipUnless(shutil.which('ssh-keygen'), 'SSH signing tool unavailable')
@@ -34,7 +34,7 @@ class AttestationTests(unittest.TestCase):
         self.row = dict(id='suite', status='passed', finished_at=self.now.isoformat(),
                         artifacts=[dict(path=str(artifact), original_path=str(artifact), kind='junit',
                                         sha256=hashlib.sha256(artifact.read_bytes()).hexdigest())])
-        self.cache.execute(self.phase, self.root, lambda: self.row)
+        self.cache.reuse_or_run_phase(self.phase, self.root, lambda: self.row)
         self.bindings = dict(repository='owner/project', source='b' * 40,
                              dependencies={'commonUtils': 'c' * 40},
                              platform='macOS-arm64', toolchain='d' * 64)
@@ -53,6 +53,13 @@ class AttestationTests(unittest.TestCase):
         self.assertEqual(self.verify(envelope)['tests'][0]['inputs'], 'a' * 64)
         self.assertNotIn(str(self.root), json.dumps(envelope))
         self.assertEqual(envelope['payload']['bindings'], self.bindings)
+
+    def test_export_accepts_original_cache_protocol(self):
+        from types import SimpleNamespace
+        cache = SimpleNamespace(key=self.cache.load_or_create_authentication_key,
+                                read=self.cache.read_verified_receipt)
+        envelope = export_receipts(cache, [self.phase], self.bindings, self.private, now=self.now)
+        self.assertEqual(self.verify(envelope)['tests'][0]['inputs'], self.phase.reuse_key)
 
     def test_tampered_signature_wrong_signer_or_changed_source_cannot_pass(self):
         envelope = self.export()
@@ -75,7 +82,7 @@ class AttestationTests(unittest.TestCase):
     def test_additional_signed_tests_require_opt_in_and_matching_required_inputs(self):
         from dataclasses import replace
         extra = replace(self.phase, id='extra', reuse_key='e' * 64)
-        self.cache.execute(extra, self.root, lambda: dict(self.row, id='extra'))
+        self.cache.reuse_or_run_phase(extra, self.root, lambda: dict(self.row, id='extra'))
         envelope = export_receipts(self.cache, [self.phase, extra], self.bindings,
                                    self.private, now=self.now)
         with self.assertRaises(ValueError):

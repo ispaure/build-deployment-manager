@@ -78,7 +78,7 @@ class SchedulerTests(unittest.TestCase):
 
     def test_simultaneous_build_allocations_use_one_project_counter(self):
         path=self.root/'numbers.json'
-        code='from build_manager.versions import reserve_number;import sys;print(reserve_number(sys.argv[1],maximum=100))'
+        code='from build_manager.versions import reserve_build_number;import sys;print(reserve_build_number(sys.argv[1],maximum=100))'
         processes=[subprocess.Popen([sys.executable,'-c',code,str(path)],stdout=subprocess.PIPE,stderr=subprocess.PIPE) for _ in range(4)]
         values=[]
         for process in processes:

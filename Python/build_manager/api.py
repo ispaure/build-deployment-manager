@@ -6,9 +6,10 @@ from threading import Event
 from .executor import Executor
 from .history import load_run, read_report, recent_runs
 from .models import Plan
+from .locking import workspace_lock
 from .preparation import WorkflowSelection, preparation_request
 from .registry import Registry
-from .workflows import EXTERNAL, ancestors, approve, recover
+from .workflows import EXTERNAL, transitive_dependency_ids, approve, recover_phase_records
 
 API_VERSION = 1
 
@@ -101,7 +102,30 @@ class ManagerAPI:
 
     def storage_inventory(self, project=None):
         """List only adapter-declared generated outputs, including active/pinned holds."""
-        return self._project(project).call('storage_inventory')
+        return self._project(project).call('storage_inventory', timeout=600)
+
+    def retire_workflow(self, name, *, project=None, confirmed=False):
+        return self.retire_run(name, project=project, confirmed=confirmed)
+
+    def retire_run(self, run_name, *, project=None, confirmed=False):
+        from .run_retirement import retire_run
+        return retire_run(self._project(project).results_directory, run_name, confirmed=confirmed)
+
+    def storage_maintenance(self, plan):
+        """Invoke only a still-trusted originating adapter's declared policy."""
+        from .bridge import ProjectBridge
+        if not plan.adapter:
+            return dict(status='unavailable')
+        for key, row in self.registry.read()['projects'].items():
+            if row['root'] != plan.adapter.get('checkout'):
+                continue
+            bridge = ProjectBridge(self.registry, key)
+            if (row['descriptor'] != plan.adapter.get('descriptor_sha256')
+                    or row['project_id'] != plan.adapter.get('project_id')):
+                raise ValueError('Storage maintenance requires the original trusted adapter identity.')
+            if bridge.supports_action('storage_maintenance'):
+                return bridge.call('storage_maintenance', timeout=600)
+        return dict(status='unavailable')
 
     def delete_storage(self, selections, *, project=None, confirmed=False):
         if not confirmed:
@@ -124,8 +148,9 @@ def plan_info(plan):
     return dict(identity=plan.identity, plan=plan.data())
 
 
-def summarize(report, output):
+def summarize_run_report(report, run_directory):
     """Compact outcome; complete evidence stays in result.json and per-step logs."""
+    run_directory = Path(run_directory).resolve()
     phases = []
     for row in report['phases']:
         phase = {key: row[key] for key in ('id', 'status', 'required', 'seconds', 'exit_code', 'log') if key in row}
@@ -141,20 +166,26 @@ def summarize(report, output):
     return dict(status=report['status'], project=report.get('project'), operation=report.get('operation'),
                 plan_identity=report.get('plan_identity'), seconds=report.get('seconds'),
                 error=str(report.get('error', ''))[-3000:], counts=dict(Counter(row['status'] for row in phases)),
-                phases=phases, output=str(Path(output).resolve()),
-                report=str(Path(output).resolve() / 'result.json'))
+                phases=phases, output=str(run_directory),
+                report=str(run_directory / 'result.json'), retired=bool(report.get('retirement')),
+                storage_maintenance=report.get('storage_maintenance'))
+
+
+def summarize(report, output):
+    """Compatibility entry point for automation clients."""
+    return summarize_run_report(report, output)
 
 
 def read_status(output, *, full=False):
     report = read_report(Path(output) / 'result.json')
-    return report if full else summarize(report, output)
+    return report if full else summarize_run_report(report, output)
 
 
 def review_run(output, *, cancelled=None):
     """Verify retained gates/artifacts and return identities, without executing."""
     cancelled = cancelled or Event()
     plan, report = load_run(Path(output) / 'result.json')
-    recover(plan, report, cancelled=cancelled.is_set, preserve_unknown=True)
+    recover_phase_records(plan, report, cancelled=cancelled.is_set, preserve_unknown=True)
     pending = {row['id'] for row in report['phases'] if row['status'] == 'awaiting_review'}
     steps = []
     needed = set()
@@ -162,11 +193,11 @@ def review_run(output, *, cancelled=None):
         if phase.id in pending and phase.effect in EXTERNAL:
             approval = approve(plan, phase.id, report, cancelled=cancelled.is_set)
             steps.append(dict(step=approval.step, identity=approval.identity))
-            needed.update(ancestors(plan, phase.id))
+            needed.update(transitive_dependency_ids(plan, phase.id))
     artifacts = [dict(step=row['id'], artifacts=row.get('artifacts', []))
                  for row in report['phases'] if row['id'] in needed]
-    from .identity import runtime_identity, engine_review_identity
-    engine = runtime_identity()
+    from .identity import capture_engine_source_identity, engine_review_identity
+    engine = capture_engine_source_identity()
     change = None
     if report.get('engine') is not None and report['engine'] != engine:
         change = dict(previous=report['engine'], current=engine,
@@ -177,7 +208,8 @@ def review_run(output, *, cancelled=None):
 
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
-             expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True):
+             expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True,
+             maintenance=None):
     """Run a trusted Plan/path; reviewed identities authorize only matching pending steps.
 
     This call blocks until completion or review. Cancellation is a threading.Event.
@@ -201,7 +233,7 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
         retained, previous = load_run(Path(output) / 'result.json')
         if retained.identity != plan.identity:
             raise ValueError('Retained plan identity changed; preserve the original run.')
-        recover(plan, previous, cancelled=cancelled.is_set, preserve_unknown=True)
+        recover_phase_records(plan, previous, cancelled=cancelled.is_set, preserve_unknown=True)
         pending = {row['id'] for row in previous['phases'] if row['status'] == 'awaiting_review'}
         external = {phase.id for phase in plan.phases if phase.effect in EXTERNAL}
         for step, digest in identities.items():
@@ -211,9 +243,25 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
             if digest != permission.identity:
                 raise ValueError('Reviewed artifact identity changed; inspect the current preparation.')
             approvals.append(permission)
-    return Executor(cancelled=cancelled, event=event).run(
+    report = Executor(cancelled=cancelled, event=event).run(
         plan, output, confirmed=confirmed, resume=resume, approvals=approvals, engine_review=engine_review,
         retry_failed=retry_failed)
+    if maintenance is not None:
+        # Execution has released its leases. Project policy may now prune idle
+        # caches; a maintenance error must not rewrite the workload's outcome.
+        try:
+            result = maintenance(plan)
+        except (OSError, ValueError, RuntimeError) as error:
+            from .redaction import Redactor
+            result = dict(status='failed', error=Redactor()(str(error)))
+        from .profiles import save_json
+        try:
+            with workspace_lock(output / 'supervisor.lock'):
+                save_json(output / 'storage-maintenance.json', result)
+        except (OSError, RuntimeError):
+            pass  # A resumed supervisor owns the report; never overwrite it.
+        report = dict(report, storage_maintenance=result)
+    return report
 
 
 def read_logs(output, step, *, tail_lines=40, max_bytes=16384):

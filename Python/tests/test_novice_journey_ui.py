@@ -105,7 +105,7 @@ class NoviceJourneyTests(unittest.TestCase):
         panel.history.setCurrentItem(panel.history.topLevelItem(0))
         panel.view_history_button.click()
         self.assertEqual(panel.run_view.outcome, 'passed')
-        self.assertEqual(panel.run_view.run_choices.flow.pages.currentIndex(), 0)
+        self.assertEqual(panel.run_view.results_workspace.flow.pages.currentIndex(), 0)
         self.assertFalse(panel.continue_run.isEnabled())
         self.capture('07-reopened')
 
