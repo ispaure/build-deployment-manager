@@ -207,3 +207,46 @@ class ParallelsTransportTests(unittest.TestCase):
             self.assertEqual(Parallels('/fixture/prlctl').run_owned(VM, '/var/tmp/owned',
                 'owned', 1000, ['failed-test'], {}, Event(), timeout=10), 2)
         self.assertEqual(spawn.call_count, 1)
+
+
+@unittest.skipUnless(os.name == 'posix', 'POSIX process group cancellation')
+class LinuxTransportCancellationTests(unittest.TestCase):
+    def test_adapter_signal_cancels_guest_before_transport_exits(self):
+        import signal
+        import time
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            ready, proof = root / 'ready', root / 'cancelled'
+            transport = "import os,pathlib,sys,time; sys.stdin.buffer.read(); pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(15)"
+            script = f"""import os,signal,sys
+from pathlib import Path
+from threading import Event
+from build_manager.parallels import Parallels
+cancelled=Event()
+signal.signal(signal.SIGTERM, lambda *_: cancelled.set())
+class LocalTransport(Parallels):
+ def command(self, *args):
+  return [sys.executable, '-c', {transport!r}, {str(ready)!r}]
+ def cancel(self, *args):
+  pid=int(Path({str(ready)!r}).read_text())
+  os.kill(pid, 0)
+  Path({str(proof)!r}).write_text('guest-cancelled-before-transport-exit')
+  os.kill(pid, signal.SIGTERM)
+code=LocalTransport('/fixture/prlctl').run_owned('vm','workspace','token',1000,['test'],{{}},cancelled,timeout=10)
+assert code==130, code
+"""
+            adapter = subprocess.Popen([sys.executable, '-c', script], start_new_session=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                deadline = time.monotonic() + 5
+                while not ready.exists() and adapter.poll() is None and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(ready.exists(), 'Owned transport did not start')
+                os.killpg(adapter.pid, signal.SIGTERM)
+                _, error = adapter.communicate(timeout=5)
+                self.assertEqual(adapter.returncode, 0, error)
+                self.assertEqual(proof.read_text(), 'guest-cancelled-before-transport-exit')
+            finally:
+                if adapter.poll() is None:
+                    os.killpg(adapter.pid, signal.SIGKILL)
+                adapter.communicate(timeout=20)

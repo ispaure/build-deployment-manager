@@ -261,7 +261,11 @@ if ($exists) {
             if cancelled.is_set() or time.monotonic() - started > timeout:
                 self.cancel(vm, workspace, token)
                 return 130 if cancelled.is_set() else 124
-            process = subprocess.Popen(self.command(vm, command), stdin=subprocess.PIPE)
+            # Keep the transport alive until this adapter handles cancellation.
+            # A signal to the adapter's process group must not tear down the
+            # guest supervisor before its token-bound child is cancelled.
+            process = subprocess.Popen(self.command(vm, command), stdin=subprocess.PIPE,
+                                       start_new_session=True)
             try:
                 try:
                     try:

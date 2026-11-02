@@ -1,5 +1,8 @@
 # Provider extension boundaries
 
+Linux guest transports use a separate local process session so adapter cancellation
+can stop the token-owned guest workload before retiring its transport and collecting evidence.
+
 GitHub release policy, TestFlight and Firebase App Distribution remain distinct
 project integrations. App Store publication and Google Play publication are
 explicitly **Not implemented**. Relevant project settings display that status;
