@@ -163,6 +163,20 @@ class ExecutionTests(unittest.TestCase):
             self.run_plan(self.plan(self.phase('upload', 'raise AssertionError("never")'), effect='upload'))
         self.assertFalse((self.root / 'result').exists())
 
+    def test_cancellation_stops_once_while_draining_buffered_output(self):
+        from unittest.mock import patch
+        from build_manager.executor import stop_process
+        cancelled = Event()
+        def event(value):
+            if value.get('type') == 'output':
+                cancelled.set()
+        code = "import time; print('ready', flush=True); [print('queued', flush=True) for _ in range(128)]; time.sleep(5)"
+        with patch('build_manager.executor.stop_process', wraps=stop_process) as stop:
+            result = self.run_plan(self.plan(self.phase('chatty', code)),
+                                   cancelled=cancelled, event=event)
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual(stop.call_count, 1)
+
     def test_workspace_lock_prevents_concurrent_writer(self):
         with workspace_lock(self.root / 'lock'):
             with self.assertRaisesRegex(RuntimeError, 'Another operation'):

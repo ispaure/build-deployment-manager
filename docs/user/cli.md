@@ -119,6 +119,8 @@ errors, failure summaries, failed test samples and paths to the retained report
 and logs. With `--events`, stdout is JSONL: event envelopes followed by the final
 result. Events wrap existing executor events in `event`; child output is an
 `event.type="output"` string, never raw text between JSON records.
+Credential filtering scans the environment once per record, including large test
+inventories; private-key block state remains local to each independent string.
 
 `--run-value NAME=VALUE` can be repeated for declared non-secret input fields.
 Values remain strings; choice fields use their declared keys and multiselect
@@ -146,7 +148,9 @@ History reads up to 100 recent runs from the project's declared result directory
 A custom output outside that directory is accessible by path but absent from history.
 
 SIGINT or SIGTERM requests cooperative cancellation and owned process cleanup.
-Wait for the final result before resuming. Status can also read an active run's
+Buffered output is drained after one owned process-stop sequence; it does not
+repeat the cleanup grace for each queued line. Wait for the final result before
+resuming. Status can also read an active run's
 persisted snapshot from another process; it does not wait for completion.
 `logs` can read an active phase after its worker creates the log, including older
 active intent records that do not yet contain completed log metadata.

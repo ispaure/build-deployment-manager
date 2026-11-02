@@ -34,14 +34,22 @@ def assignments(values):
 
 
 def redact(value):
-    if isinstance(value, str):
-        filter_text = Redactor()
-        return ''.join(filter_text(line) for line in value.splitlines(keepends=True))
-    if isinstance(value, dict):
-        return {key: redact(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [redact(item) for item in value]
-    return value
+    # One environment scan per record. Test-progress records contain thousands
+    # of independent strings; constructing a filter for each one stalls output.
+    filter_text = Redactor()
+    def visit(item):
+        if isinstance(item, str):
+            filter_text.private_key = False
+            try:
+                return ''.join(filter_text(line) for line in item.splitlines(keepends=True))
+            finally:
+                filter_text.private_key = False
+        if isinstance(item, dict):
+            return {key: visit(value) for key, value in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [visit(value) for value in item]
+        return item
+    return visit(value)
 
 
 def emit(value):

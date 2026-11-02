@@ -373,6 +373,19 @@ print(json.dumps(dict(schema=1, result=result)))
             with self.assertRaisesRegex(ValueError, 'run directory'):
                 read_logs(output, 'check')
 
+    def test_large_records_scan_environment_once_and_keep_pem_state_per_string(self):
+        from build_manager.cli import redact
+        from build_manager.redaction import Redactor
+        payload = {'cases': [{'name': 'case ' + str(i)} for i in range(2000)],
+                   'pem': '-----BEGIN PRIVATE KEY-----\nprivate bytes\n-----END PRIVATE KEY-----\n',
+                   'after': 'independent field'}
+        with patch('build_manager.cli.Redactor', wraps=Redactor) as factory:
+            result = redact(payload)
+        self.assertEqual(factory.call_count, 1)
+        self.assertNotIn('private bytes', result['pem'])
+        self.assertEqual(result['after'], payload['after'])
+        self.assertEqual(result['cases'], payload['cases'])
+
     def test_errors_and_logs_redact_inherited_credentials(self):
         token = 'synthetic-private-token-12345'
         with patch.dict(os.environ, {'TEST_API_KEY': token}):

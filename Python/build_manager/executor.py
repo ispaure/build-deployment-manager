@@ -301,6 +301,7 @@ class Executor:
         messages = Queue(maxsize=128)
         process = None
         reader = None
+        stopped = False
         tail = []
         # Only changed, explicitly declared reports belong to this attempt.
         from .test_results import read_junit
@@ -403,12 +404,14 @@ class Executor:
             with (output / row['log']).open('w', encoding='utf-8', newline='') as stream:
                 while not finished or process.poll() is None:
                     report_progress()
-                    if self.cancelled.is_set() and not phase.always:
+                    if not stopped and self.cancelled.is_set() and not phase.always:
                         row['status'] = 'cancelled'
                         stop_process(process, grace=phase.stop_grace)
-                    elif time.monotonic() - started >= phase.timeout:
+                        stopped = True
+                    elif not stopped and time.monotonic() - started >= phase.timeout:
                         row['status'] = 'timeout'
                         stop_process(process, grace=phase.stop_grace)
+                        stopped = True
                     if finished:
                         time.sleep(.05)
                         continue
@@ -479,7 +482,8 @@ class Executor:
         finally:
             if process is not None:
                 try:
-                    stop_process(process, grace=phase.stop_grace)
+                    if not stopped:
+                        stop_process(process, grace=phase.stop_grace)
                 except (OSError, subprocess.SubprocessError) as error:
                     row.update(status='failed', cleanup_error=redact(str(error)))
                 # Never block closing a pipe while its reader still holds it.
