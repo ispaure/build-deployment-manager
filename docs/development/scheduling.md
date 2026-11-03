@@ -102,15 +102,32 @@ includes allocated byte estimates and persistent protection reasons. The UI
 counts overlapping parent/cache groups once and separates deletable cache space
 from held package storage.
 
+Optional group `protection` callbacks add project-specific protection reasons to
+the standard pins and workflow holds. Adopted enclosing checkouts use this to
+preserve nested workflow holds. Shared cache budgets count protected allocations
+as well as deletable entries. Manual deletion revalidates ownership and path
+ancestors after acquiring the entry lock. Unreadable pin/hold state stays protected.
+
+Groups whose ownership depends on metadata declare direct `ownership_files`, such
+as a source marker, recipe or Xcode `info.plist`. Removal keeps those files until
+bulk content has gone, so interrupted deletion remains identifiable and retryable.
+Soft failures also preserve the original retention age. Root markers must remain
+ordinary files; linked/missing proof stops removal.
+
 `run_retirement.retire_run` serializes with the run supervisor, records retirement
 before releasing holds, validates hold paths against the saved plan, and removes
 only that run's owner keys. An interrupted retirement is retryable. Recovery and
 the executor reject retired runs, including retirement racing with admission.
+Executor admission acquires the supervisor lock before reading retained results
+and holds it through all report writes. A competing controller cannot overwrite an
+active report or replay phases from a stale result read before admission.
 
 The optional `storage_maintenance` adapter action runs through the existing
 isolated bridge after CLI execution, only for the original still-trusted
 registration and descriptor identity. Project adapters own the roots and policy;
 the manager does not sweep shared SDKs, personal simulators or arbitrary folders.
+Incomplete maintenance warnings remain separate from the workload outcome and are
+visible in status queries and the GUI's results/output.
 
 Linux commands bind a unique invocation to the owned workspace and command digest.
 A transport exit 255 retries admission with the same invocation, at most three
