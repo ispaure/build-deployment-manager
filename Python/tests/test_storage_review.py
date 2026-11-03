@@ -1,5 +1,5 @@
 """Regression coverage for storage ownership changes and diagnostic visibility."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -38,7 +38,10 @@ class StorageReviewTests(unittest.TestCase):
             real_lock = retention.workspace_lock
             @contextmanager
             def lock(path):
-                with real_lock(path):
+                # Windows' live lock handles prevent renaming the root at all.
+                # Simulate admission without those handles to exercise the
+                # subsequent ownership recheck on both native link types.
+                with (nullcontext() if os.name == 'nt' else real_lock(path)):
                     if Path(path).name == '.candidate.retention.lock':
                         root.rename(parent / 'original')
                         directory_link(root, foreign)
