@@ -178,7 +178,31 @@ def summarize(report, output):
 
 def read_status(output, *, full=False):
     report = read_report(Path(output) / 'result.json')
+    maintenance = read_storage_maintenance(output)
+    if maintenance is not None:
+        report = dict(report, storage_maintenance=maintenance)
     return report if full else summarize_run_report(report, output)
+
+
+def read_storage_maintenance(output):
+    """Bounded diagnostics; cleanup failure never rewrites the workload outcome."""
+    import json
+    path = Path(output) / 'storage-maintenance.json'
+    try:
+        if path.is_symlink():
+            raise ValueError('Linked cleanup report; inspect the run directory.')
+        if not path.exists():
+            return None
+        with path.open('rb') as stream:
+            raw = stream.read(262145)
+        if len(raw) > 262144:
+            raise ValueError('Cleanup report is too large; inspect the run directory.')
+        value = json.loads(raw)
+        if not isinstance(value, dict) or value.get('status') not in {'passed', 'failed', 'incomplete', 'unavailable'}:
+            raise ValueError('Invalid cleanup report.')
+        return value
+    except (OSError, ValueError, RecursionError) as error:
+        return dict(status='failed', error=str(error))
 
 
 def review_run(output, *, cancelled=None):

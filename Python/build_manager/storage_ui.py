@@ -1,5 +1,6 @@
 """Review and remove project-owned outputs without blocking the GUI on disk I/O."""
 from functools import partial
+from pathlib import PurePosixPath, PureWindowsPath
 from queue import Empty, Queue
 
 from PySide6.QtCore import QRunnable, QThreadPool, QTimer, Qt
@@ -19,6 +20,11 @@ def size_text(value):
         if value < 1024 or unit == 'TiB':
             return f'{value:.1f} {unit}'
         value /= 1024
+
+
+def saved_run_name(path):
+    kind = PureWindowsPath if PureWindowsPath(path).is_absolute() else PurePosixPath
+    return kind(path).parent.name
 
 
 class StorageTask(QRunnable):
@@ -149,7 +155,7 @@ class StorageDialog(QDialog):
             self.rows = value['entries']
             self.workflows.clear()
             for row in value['workflows']:
-                item = QTreeWidgetItem([row['path'].rsplit('/', 2)[-2], row.get('operation', ''), row['status'],
+                item = QTreeWidgetItem([saved_run_name(row['path']), row.get('operation', ''), row['status'],
                     str(row['holds']), 'Retired' if row.get('retired') else 'Retained'])
                 item.setData(0, Qt.ItemDataRole.UserRole, row)
                 item.setToolTip(0, row['path'])

@@ -78,11 +78,9 @@ class Executor:
         self.evidence_directory = evidence_directory
 
     def run(self, plan, output, *, confirmed=False, resume=False, approvals=(), reconcile=None, engine_review=None, retry_failed=True):
-        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
-        from .identity import capture_engine_source_identity, engine_review_identity
+        from .identity import capture_engine_source_identity
         from .models import Plan
-        from .resources import HostResourceSlots
-        from .workflows import EXTERNAL, recover_phase_records, review_identity, verify_artifacts
+        from .workflows import EXTERNAL
         plan = Plan.from_data(plan.data())
         if not resume and not retry_failed:
             raise ValueError('Retaining failed phases requires resuming an existing run.')
@@ -92,13 +90,30 @@ class Executor:
         if not engine['manager'].get('commit') or not engine['commonUtils'].get('commit'):
             raise ValueError('Execution requires an identifiable manager Git checkout and initialized commonUtils; install it explicitly with pip install --no-deps -e PATH.')
         output = Path(output)
+        if not resume:
+            output.mkdir(parents=True, exist_ok=False, mode=0o700)
+        elif not output.is_dir():
+            raise ValueError('Retained run directory is missing.')
+        # Admission, report reads, recovery and all report writes share one
+        # supervisor lock. A rejected second controller must not save a stale
+        # failure over the active controller's report.
+        with workspace_lock(output / 'supervisor.lock'):
+            return self._run_locked(plan, output, engine=engine, resume=resume,
+                approvals=approvals, reconcile=reconcile, engine_review=engine_review, retry_failed=retry_failed)
+
+    def _run_locked(self, plan, output, *, engine, resume, approvals, reconcile, engine_review, retry_failed):
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+        from .identity import engine_review_identity
+        from .resources import HostResourceSlots
+        from .workflows import EXTERNAL, recover_phase_records, review_identity, verify_artifacts
         if resume:
             from .history import read_report
             from .run_retirement import require_resumable
             report = read_report(output/'result.json')
             require_resumable(report)
+            if report.get('plan_identity') != plan.identity:
+                raise ValueError('Retained plan identity changed; preserve the original run.')
         else:
-            output.mkdir(parents=True, exist_ok=False, mode=0o700)
             report = dict(schema=1, engine=engine, project=plan.project, operation=plan.operation,
                           plan_identity=plan.identity, source=plan.source, backend=plan.backend,
                           started_at=timestamp(), status='queued', phases=[])
@@ -157,10 +172,6 @@ class Executor:
         try:
             with ExitStack() as locks:
                 from .retention import lease
-                locks.enter_context(workspace_lock(output/'supervisor.lock'))
-                if resume:
-                    # Retirement may have won the lock after our initial read.
-                    require_resumable(read_report(output / 'result.json'))
                 locks.enter_context(lease(output))
                 locks.enter_context(lease(plan.workspace))
                 locks.enter_context(workspace_lock(Path(plan.workspace) / 'operation.lock'))

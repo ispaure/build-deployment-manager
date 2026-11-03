@@ -39,6 +39,9 @@ def retire_run(runs_directory, run_name, *, confirmed=False):
     if any(linked(run_directory / filename) for filename in ('plan.json', 'result.json')):
         raise ValueError('Retirement refuses linked run records.')
     with workspace_lock(run_directory / 'supervisor.lock'), lease(run_directory):
+        if (any(linked(p) for p in (run_directory, *run_directory.parents))
+                or any(linked(run_directory / filename) for filename in ('plan.json', 'result.json'))):
+            raise ValueError('Run ownership changed; refresh history before retiring it.')
         plan, report = load_run(run_directory / 'result.json')
         if report['status'] in {'queued', 'running'}:
             raise ValueError('Stop or recover the recorded active workflow before retiring it.')

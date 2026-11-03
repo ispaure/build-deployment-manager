@@ -1304,4 +1304,11 @@ class ManagerPanel(QWidget):
         self.update_run_actions()
         self.refresh_history()
         next_action = ' Review and continue this run to approve prepared delivery.' if status == 'awaiting_review' else ''
+        if self.result:
+            from .api import read_storage_maintenance
+            maintenance = read_storage_maintenance(self.result.parent)
+            if maintenance is not None:
+                self.run_view.append_output(None, 'Storage cleanup: ' + self.redact(json.dumps(maintenance, indent=2)))
+                if maintenance['status'] in {'failed', 'incomplete'}:
+                    next_action += ' Storage cleanup needs attention; inspect the results for details.'
         self.status.setText(f'{status}; exit {code}. Results: {self.result}' + next_action)
