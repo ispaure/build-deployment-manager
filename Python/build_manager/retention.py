@@ -120,6 +120,7 @@ def has_retention_protection(path):
 
 
 def _hold_expirations(record):
+    record = native_path(record)
     from .profiles import load_profile
     if linked(record):
         raise ValueError('Linked workflow hold record.')
@@ -153,7 +154,7 @@ def has_keep_marker(path):
     # A pin anywhere inside an owned tree also protects its enclosing snapshot.
     def unreadable(error):
         raise error
-    for folder, directories, files in os.walk(path, followlinks=False, onerror=unreadable):
+    for folder, directories, files in os.walk(native_path(path), followlinks=False, onerror=unreadable):
         directories[:] = [name for name in directories if not linked(Path(folder) / name)]
         if '.keep' in files:
             return True
@@ -165,7 +166,7 @@ def nested_workflow_hold_reason(path):
     def unreadable(error):
         raise error
     try:
-        for folder, directories, files in os.walk(path, followlinks=False, onerror=unreadable):
+        for folder, directories, files in os.walk(native_path(path), followlinks=False, onerror=unreadable):
             directories[:] = [name for name in directories if not linked(Path(folder) / name)]
             for name in files:
                 if not name.startswith('.') or not name.endswith('.manager-holds.json'):

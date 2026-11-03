@@ -17,9 +17,26 @@ class RetentionTests(unittest.TestCase):
             leaf = root / ('nested-' * 15) / ('nested-' * 15) / ('record-' * 10 + '.json')
             native_path(leaf.parent).mkdir(parents=True)
             native_path(leaf).write_bytes(b'synthetic retained record')
-            self.assertGreater(len(str(leaf)), 260)
-            remove_tree(root)
-            self.assertFalse(native_path(root).exists())
+            from build_manager.retention import protection_reason, nested_workflow_hold_reason
+            try:
+                self.assertGreater(len(str(leaf)), 260)
+                self.assertEqual(protection_reason(root), '')
+                self.assertEqual(nested_workflow_hold_reason(root), '')
+                pin = native_path(leaf.parent / '.keep')
+                pin.touch()
+                self.assertEqual(protection_reason(root), 'Pinned by .keep')
+                pin.unlink()
+                hold = native_path(leaf.parent / '.fixture.manager-holds.json')
+                hold.write_text('{"leases": {"synthetic-test": 9999999999}}')
+                self.assertEqual(nested_workflow_hold_reason(root), 'Contains retained workflow outputs; protected')
+                hold.unlink()
+                self.assertEqual(nested_workflow_hold_reason(root), '')
+                (native_path(root) / '.manager-scratch').touch()
+                remove_tree(root, ownership_files=('.manager-scratch',))
+                self.assertFalse(native_path(root).exists())
+            finally:
+                if native_path(root).exists():
+                    remove_tree(root)
 
     def test_inventory_explains_workflow_holds_and_delete_preserves_them(self):
         from unittest.mock import patch
