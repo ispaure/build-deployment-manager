@@ -9,6 +9,18 @@ from build_manager.retention import lease, prune, remove_tree
 
 
 class RetentionTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Native Windows extended-length paths')
+    def test_removes_owned_tree_with_long_descendant_names(self):
+        from commonUtils.filesystem.native_paths import native_path
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / 'owned'
+            leaf = root / ('nested-' * 15) / ('nested-' * 15) / ('record-' * 10 + '.json')
+            native_path(leaf.parent).mkdir(parents=True)
+            native_path(leaf).write_bytes(b'synthetic retained record')
+            self.assertGreater(len(str(leaf)), 260)
+            remove_tree(root)
+            self.assertFalse(native_path(root).exists())
+
     def test_inventory_explains_workflow_holds_and_delete_preserves_them(self):
         from unittest.mock import patch
         from build_manager.retention import set_workflow_hold, owned_entries, delete_owned, protection_reason
