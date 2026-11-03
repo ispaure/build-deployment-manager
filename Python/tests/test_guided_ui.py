@@ -28,7 +28,7 @@ class GuidedUITests(unittest.TestCase):
             def read(self):
                 return dict(projects={key:dict(name=key,root='/fixture/'+key) for key in ('one','two')},selected='one')
             def select(self,key):pass
-            def selections(self,*args):pass
+            def save_selections(self,*args):pass
             def resolve(self, key):
                 return dict(root='/fixture/'+key), dict(name=key, interpreter=project.interpreter)
         project=fixtures.OtherProject(self.root)
@@ -101,7 +101,7 @@ class GuidedUITests(unittest.TestCase):
         project.workflow_presets = {'Native release': dict(platform='example', operation='Test', backend='Unavailable host')}
         panel = self.panel(project)
         panel.preset.setCurrentText('Native release')
-        panel.inspect_plan()
+        panel.request_plan_preparation()
         self.assertFalse(panel.preparing)
         self.assertIsNone(panel.plan)
         self.assertIn('backend is unavailable', panel.status.text())
@@ -149,7 +149,7 @@ class GuidedUITests(unittest.TestCase):
     def test_running_steps_have_independent_clocks(self):
         panel = self.panel()
         self.inspect(panel)
-        panel.seed_run(panel.plan)
+        panel.initialize_results_workspace(panel.plan)
         view = panel.run_view
         view.update_phase(dict(id='example', status='running'))
         view.update_phase(dict(id='other', status='running'))

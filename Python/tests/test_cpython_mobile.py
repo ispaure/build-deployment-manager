@@ -34,16 +34,16 @@ class CacheTests(unittest.TestCase):
             archive, pin = self.archive(root)
             cache = root / 'source'
             with patch.object(downloads, 'urlopen', side_effect=AssertionError('offline')):
-                runtime.source(cache, pin)
+                runtime.prepare_source_tree(cache, pin)
                 (cache / 'cross-build').mkdir()
                 (cache / 'cross-build/generated').write_bytes(b'generated')
-                runtime.source(cache, pin)
+                runtime.prepare_source_tree(cache, pin)
                 (cache / 'README').write_bytes(b'modified')
                 with self.assertRaisesRegex(ValueError, 'source cache changed'):
-                    runtime.source(cache, pin)
+                    runtime.prepare_source_tree(cache, pin)
                 archive.write_bytes(b'corrupt')
                 with self.assertRaisesRegex(ValueError, 'archive digest differs'):
-                    runtime.source(cache, pin)
+                    runtime.prepare_source_tree(cache, pin)
 
     def test_downloaded_archive_is_checked_before_extraction(self):
         with TemporaryDirectory() as directory:
@@ -53,12 +53,12 @@ class CacheTests(unittest.TestCase):
             archive.unlink()
             with patch.object(downloads, 'urlopen', return_value=Response(b'wrong')):
                 with self.assertRaisesRegex(ValueError, 'SHA-256 verification'):
-                    runtime.source(root / 'source', pin)
+                    runtime.prepare_source_tree(root / 'source', pin)
             self.assertFalse(archive.exists())
             self.assertFalse((root / 'source').exists())
             self.assertFalse(archive.with_suffix('.download').exists())
             with patch.object(downloads, 'urlopen', return_value=Response(content)):
-                runtime.source(root / 'source', pin)
+                runtime.prepare_source_tree(root / 'source', pin)
             self.assertEqual((root / 'source/README').read_bytes(), b'upstream')
 
     def test_wheels_require_preparation_and_never_redownload_changed_cache(self):

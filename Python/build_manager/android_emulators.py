@@ -96,9 +96,9 @@ class AndroidEmulator:
                         '-no-window','-no-audio','-no-snapshot','-no-boot-anim','-gpu','auto','-accel','on'],
                         env=self.environment,stdout=log,stderr=subprocess.STDOUT,start_new_session=os.name!='nt')
                     self.child = child
-                    from .process_identity import identity
+                    from .process_identity import read_process_fingerprint
                     from .hosts import host_identity
-                    record.update(pid=child.pid,process_started=identity(child.pid),host=host_identity())
+                    record.update(pid=child.pid,process_started=read_process_fingerprint(child.pid),host=host_identity())
                     self.marker.write_text(json.dumps(record))
                 finally:
                     for sig, handler in previous.items():
@@ -115,16 +115,16 @@ class AndroidEmulator:
                         # The emulator launcher may exec its QEMU backend. Capture
                         # the ready command only after checking the same creation
                         # time and the unique AVD identity, never just its PID.
-                        ready_identity = identity(child.pid)
-                        initial_identity = record['process_started']
+                        ready_fingerprint = read_process_fingerprint(child.pid)
+                        initial_fingerprint = record['process_started']
                         if os.name != 'nt':
-                            if (not ready_identity or not initial_identity
-                                    or ready_identity.split()[:5] != initial_identity.split()[:5]
-                                    or name not in ready_identity):
+                            if (not ready_fingerprint or not initial_fingerprint
+                                    or ready_fingerprint.split()[:5] != initial_fingerprint.split()[:5]
+                                    or name not in ready_fingerprint):
                                 raise RuntimeError('Owned emulator creation identity changed during startup.')
-                        elif ready_identity != initial_identity:
+                        elif ready_fingerprint != initial_fingerprint:
                             raise RuntimeError('Owned emulator creation identity changed during startup.')
-                        record['process_started'] = ready_identity
+                        record['process_started'] = ready_fingerprint
                         self.marker.write_text(json.dumps(record))
                         return record
                 except (OSError,subprocess.SubprocessError,RuntimeError):
@@ -173,14 +173,14 @@ class AndroidEmulator:
             # whose command no longer contains its AVD token. Wait for it to
             # disappear before considering a creation-checked signal fallback.
             if record.get('pid') and self.child is None:
-                from .process_identity import identity
+                from .process_identity import read_process_fingerprint
                 deadline = time.monotonic()+5
-                while identity(record['pid']) is not None and time.monotonic()<deadline:
+                while read_process_fingerprint(record['pid']) is not None and time.monotonic()<deadline:
                     time.sleep(.1)
         except (subprocess.SubprocessError, RuntimeError):
             pass  # Already stopped/startup failed; verify the owned PID below.
         if record.get('pid'):
-            from .process_identity import identity,stop_owned
+            from .process_identity import read_process_fingerprint, stop_owned_process
             if self.child is not None:
                 try:self.child.wait(timeout=5)
                 except subprocess.TimeoutExpired:
@@ -188,17 +188,17 @@ class AndroidEmulator:
                     try:self.child.wait(timeout=5)
                     except subprocess.TimeoutExpired:self.child.kill();self.child.wait(timeout=5)
             else:
-                current=identity(record['pid'])
+                current=read_process_fingerprint(record['pid'])
                 if current is not None:
-                    expected=record['process_started']
+                    expected_fingerprint=record['process_started']
                     # Historical Mac records had only lstart; preserve them but
                     # also require the unique AVD token in the current command.
-                    if os.name!='nt' and isinstance(expected,str) and current.startswith(expected) and record['name'] in current:
-                        expected=current
-                    stop_owned(record['pid'],expected,token=record['name'])
+                    if os.name!='nt' and isinstance(expected_fingerprint,str) and current.startswith(expected_fingerprint) and record['name'] in current:
+                        expected_fingerprint=current
+                    stop_owned_process(record['pid'],expected_fingerprint,token=record['name'])
                     deadline=time.monotonic()+5
-                    while identity(record['pid']) is not None and time.monotonic()<deadline:time.sleep(.1)
-                    if identity(record['pid']) is not None:raise RuntimeError('Owned emulator is still active; AVD files were preserved.')
+                    while read_process_fingerprint(record['pid']) is not None and time.monotonic()<deadline:time.sleep(.1)
+                    if read_process_fingerprint(record['pid']) is not None:raise RuntimeError('Owned emulator is still active; AVD files were preserved.')
         # Preserve emulator.log and the completed lease as evidence; remove only
         # this operation's disposable AVD and its synthetic user state.
         for name in ('avds','user'):

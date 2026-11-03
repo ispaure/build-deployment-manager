@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from build_manager import Phase
-from build_manager.evidence import EvidenceCache
+from build_manager.evidence_cache import EvidenceCache
 
 
 class EvidenceTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class EvidenceTests(unittest.TestCase):
             return dict(id=name, status=status, required=True, seconds=12,
                         artifacts=[dict(path=str(artifact), original_path=str(artifact),
                             sha256=hashlib.sha256(artifact.read_bytes()).hexdigest(), kind='junit')])
-        return self.cache.execute(phase, output, action)
+        return self.cache.reuse_or_run_phase(phase, output, action)
 
     def test_pass_reuses_bytes_and_records_original_duration_and_provenance(self):
         self.execute('first')
@@ -74,7 +74,7 @@ class EvidenceTests(unittest.TestCase):
         phase = Phase('probe', ('python', 'tests.py'), str(self.root), effect='test',
             reuse_key='a' * 64, reuse_probe=(sys.executable, '-c', 'print("changed")'))
         calls = []
-        row = self.cache.execute(phase, output, lambda: calls.append('fresh') or dict(status='passed'))
+        row = self.cache.reuse_or_run_phase(phase, output, lambda: calls.append('fresh') or dict(status='passed'))
         self.assertEqual(calls, ['fresh'])
         self.assertNotIn('reused', row)
 

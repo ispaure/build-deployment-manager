@@ -27,7 +27,7 @@ class WorkflowUITests(unittest.TestCase):
                         Phase('prepare',(sys.executable,'-c',f'from pathlib import Path;Path({str(artifact)!r}).write_text("prepared")'),str(root),artifacts=(str(artifact),)),
                         Phase('reviewed-effect',(sys.executable,'-c',f'from pathlib import Path;Path({str(effect)!r}).write_text("accepted")'),str(root),dependencies=('prepare',),effect='upload')),
                         str(root/'workspace'))
-            panel=ManagerPanel(Project());panel.inspect_plan()
+            panel=ManagerPanel(Project());panel.request_plan_preparation()
             deadline=time.monotonic()+15
             while panel.preparing:app.processEvents();time.sleep(.01);self.assertLess(time.monotonic(),deadline)
             panel.run_plan()

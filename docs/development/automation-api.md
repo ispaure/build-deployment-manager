@@ -17,7 +17,7 @@ JSON stdin/stdout. `API_VERSION` is 1; Plan/result schema versions are separate.
 from pathlib import Path
 from threading import Event
 from build_manager.api import (
-    ManagerAPI, plan_info, run_plan, summarize, read_status, read_logs, review_run,
+    ManagerAPI, plan_info, run_plan, summarize_run_report, read_status, read_logs, review_run,
 )
 
 api = ManagerAPI(registry=Path('/private/manager-config'))
@@ -29,7 +29,7 @@ reviewed = plan_info(plan)  # inspect the returned plan before execution
 cancelled = Event()
 report = run_plan(plan, '/tmp/check-run', expected_identity=reviewed['identity'],
                   cancelled=cancelled)
-result = summarize(report, '/tmp/check-run')
+result = summarize_run_report(report, '/tmp/check-run')
 tail = read_logs('/tmp/check-run', 'check', tail_lines=40, max_bytes=16384)
 ```
 
@@ -42,6 +42,7 @@ the existing Registry for registration/selection changes. Facade methods:
 | `inputs(project=None)` | Declared fields, adapter defaults and dynamic input choices; invokes trusted project code |
 | `prepare_plan(operation, target, backend, *, project=None, **values)` | Plan from the isolated adapter; validates declared choices |
 | `prepare_journey(goal, platforms, destinations, *, project=None, **values)` | Validated combined Plan; optional `backends` maps platform to execution host |
+| `retire_run(run_name, *, project=None, confirmed=False)` | Retire one retained run and release its holds after confirmation. `retire_workflow` remains available for existing callers. |
 | `history(project=None, limit=20)` | Project-owned recent report paths and statuses; limit 1–100 |
 
 Planning values include `revision`, `pattern`, `suite`, `release_tag` and
@@ -73,7 +74,7 @@ No review command executes a phase. Authorization must come from the caller's
 operator, not from the mere availability of a digest.
 
 `read_status(output, full=False)` reads an atomic persisted snapshot. Compact
-results use `summarize(report, output)`: status, counts, per-phase diagnostics,
+results use `summarize_run_report(report, run_directory)` (also available as `summarize(report, output)`): status, counts, per-phase diagnostics,
 failed test samples and report location. `full=True` returns `result.json` data.
 `read_logs(output, step, tail_lines=40, max_bytes=16384)` validates the retained
 plan/report pair and a declared step log; it rejects traversal and symlink logs,

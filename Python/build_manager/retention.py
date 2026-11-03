@@ -1,5 +1,6 @@
 """Bounded retention for explicitly owned directories, respecting active leases."""
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 import os
 import shutil
@@ -45,7 +46,15 @@ def _remove_tree_once(path):
         shutil.rmtree(path, onexc=readonly)
 
 
-def durable_hold(path, owner, *, days=7, release=False):
+def set_workflow_hold(path, owner, *, days=7):
+    _update_workflow_hold(path, owner, release=False, days=days)
+
+
+def release_workflow_hold(path, owner):
+    _update_workflow_hold(path, owner, release=True)
+
+
+def _update_workflow_hold(path, owner, *, release, days=7):
     """Retain paused outputs without changing source/snapshot contents."""
     from .profiles import load_profile, save_profile
     path = Path(path)
@@ -60,16 +69,35 @@ def durable_hold(path, owner, *, days=7, release=False):
         save_profile(record, values, allowed={'leases'})
 
 
-def pinned(path):
+def durable_hold(path, owner, *, days=7, release=False):
+    """Compatibility entry point for project retention policies."""
+    if release:
+        return release_workflow_hold(path, owner)
+    return set_workflow_hold(path, owner, days=days)
+
+
+def has_retention_protection(path):
+    return bool(protection_reason(path))
+
+
+def protection_reason(path):
+    """Explain persistent protection separately from an active operation lease."""
     from .profiles import load_profile
     path = Path(path)
     record = path.parent / ('.' + path.name + '.manager-holds.json')
     try:
         leases = load_profile(record).get('leases', {})
-        if any(expires > time.time() for expires in leases.values()):
-            return True
-    except (OSError, ValueError, TypeError):
-        return True # Unreadable ownership state is protected, never swept.
+        expires = max(leases.values(), default=0)
+        if expires > time.time():
+            until = datetime.fromtimestamp(expires, timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+            return 'Retained for workflow review/reconciliation until ' + until
+    except (OSError, ValueError, TypeError, OverflowError):
+        return 'Unreadable workflow hold; protected' # Never sweep uncertain ownership.
+    return 'Pinned by .keep' if has_keep_marker(path) else ''
+
+
+def has_keep_marker(path):
+    """User pins also cover rebuildable caches; workflow holds cover evidence."""
     # A pin anywhere inside an owned tree also protects its enclosing snapshot.
     for folder, directories, files in os.walk(path, followlinks=False):
         directories[:] = [name for name in directories if not linked(Path(folder) / name)]
@@ -103,8 +131,8 @@ def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, no
     always win. Preview and apply use the same oldest-first pressure selection.
     """
     root = Path(root)
-    if keep < 1 or age_days < 0 or grace_days < 0 or (max_bytes is not None and max_bytes < 0):
-        raise ValueError('Retention requires at least one retained entry and a nonnegative age.')
+    if keep < 0 or age_days < 0 or grace_days < 0 or (max_bytes is not None and max_bytes < 0):
+        raise ValueError('Retention requires nonnegative count, age and budget.')
     if not root.exists():
         return []
     if any(linked(part) for part in (root, *root.parents)):
@@ -125,7 +153,7 @@ def prune(root, *, eligible, keep=3, age_days=1, apply=False, lock_path=None, no
                 with workspace_lock(lock_path(path)):
                     age = now - last_used(path)
                     pressure = max_bytes is not None and remaining > max_bytes
-                    if age < grace_days * 86400 or (age < age_days * 86400 and not pressure) or pinned(path):
+                    if age < grace_days * 86400 or (age < age_days * 86400 and not pressure) or has_retention_protection(path):
                         continue
                     # Recheck caller ownership after acquiring the entry lock.
                     if linked(path) or not eligible(path):
@@ -155,6 +183,41 @@ def lease(path):
                 os.utime(path, None)
 
 
+def prune_cache_groups(groups, *, age_days, max_bytes, grace_days=0, apply=False, now=None):
+    """Share a cache budget across declared roots without relaxing their locks.
+
+    Each group uses prune's ownership/pin checks. Revalidate the exact selected
+    child under those same locks on application; an intervening writer wins.
+    """
+    now = time.time() if now is None else now
+    if min(age_days, max_bytes, grace_days) < 0:
+        raise ValueError('Cache retention requires nonnegative age and budget.')
+    candidates = []
+    for spec in groups:
+        options = {key: value for key, value in spec.items() if key != 'last_used'}
+        for name in prune(**options, keep=0, age_days=0, now=now):
+            path = Path(name)
+            try:
+                stamp = spec.get('last_used', lambda p: p.stat().st_mtime)(path)
+                candidates.append((stamp, name, allocated_bytes(path), spec))
+            except OSError:
+                continue
+    remaining = sum(size for _, _, size, _ in candidates)
+    selected_paths = []
+    for stamp, name, size, spec in sorted(candidates, key=lambda row: (row[0], row[1])):
+        age = now - stamp
+        if age < grace_days * 86400 or age < age_days * 86400 and remaining <= max_bytes:
+            continue
+        options = dict(spec)
+        eligible = options.pop('eligible')
+        rows = prune(**options, eligible=lambda p, name=name, eligible=eligible: str(p) == name and eligible(p),
+                     keep=0, age_days=0, grace_days=grace_days, now=now, apply=apply)
+        if rows:
+            remaining -= size
+            selected_paths.extend(rows)
+    return selected_paths
+
+
 def owned_entries(root, *, eligible, lock_path=None):
     """List explicitly owned outputs; manual cleanup ignores automatic age limits."""
     root = Path(root)
@@ -169,11 +232,14 @@ def owned_entries(root, *, eligible, lock_path=None):
             reason = ''
             try:
                 with workspace_lock(lock_path(path)):
-                    if pinned(path):
-                        reason = 'Pinned by .keep'
+                    reason = protection_reason(path)
             except RuntimeError:
                 reason = 'In use by an active operation'
-            rows.append(dict(name=path.name, path=str(path), protected=reason))
+            try:
+                size = allocated_bytes(path)
+            except OSError:
+                size = None
+            rows.append(dict(name=path.name, path=str(path), protected=reason, allocated_bytes=size))
     return rows
 
 
@@ -194,11 +260,17 @@ def delete_owned(root, names, *, eligible, lock_path=None):
                 continue
             try:
                 with workspace_lock(lock_path(path)):
-                    if pinned(path):
-                        skipped.append(name + ': pinned by .keep')
+                    reason = protection_reason(path)
+                    if reason:
+                        skipped.append(name + ': ' + reason)
                         continue
                     remove_tree(path)
                     removed.append(str(path))
             except (RuntimeError, OSError) as error:
                 skipped.append(name + ': ' + str(error))
     return dict(removed=removed, skipped=skipped)
+
+
+# Compatibility names for project storage policies.
+pinned = has_retention_protection
+explicitly_pinned = has_keep_marker

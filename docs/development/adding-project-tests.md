@@ -145,9 +145,9 @@ phase a distinct report path and preserve all prerequisite edges. Add handling
 for settings only when your project has settings. Keep protected credentials as
 references, not source, descriptors, test fixtures or reports.
 
-`test_manifest.phases()` supports one runner argument template and a named
+`test_manifest.build_test_phases()` supports one runner argument template and a named
 interpreter map. If different suites use different frameworks, consume
-`discover()` and construct their phases with each framework's command. Each
+`resolve_test_group_suites()` and construct their phases with each framework's command. Each
 framework can produce JUnit; unittest and the optional reporting helper are not
 requirements for registration. Dependency `owner` currently represents a pinned
 Git submodule, not an arbitrary installed package or sibling checkout.

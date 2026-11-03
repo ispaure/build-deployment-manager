@@ -2,7 +2,7 @@
 import sys
 import unittest
 
-from build_manager.local import inspect_python
+from build_manager.interpreter_probe import inspect_python
 
 
 class LocalInterpreterTests(unittest.TestCase):

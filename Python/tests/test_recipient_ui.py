@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from build_manager.configuration_ui import ConfigurationView
 from build_manager.recipient_ui import RecipientPicker
-from build_manager.run_fields import selection_ids, validate_fields, validate_overrides
+from build_manager.run_fields import parse_multiselect_ids, validate_fields, validate_overrides
 from build_manager.ui import ManagerPanel
 from test_ui import OtherProject
 from test_journeys import CAPABILITY
@@ -36,11 +36,11 @@ class RecipientUITests(unittest.TestCase):
             self.assertEqual(picker.text(), '[]')
             picker.items.item(0).setCheckState(Qt.CheckState.Checked)
             picker.manual.setText('192.0.2.1:5555'); picker.add.click()
-            self.assertEqual(selection_ids(picker.text()), ['phone-1','192.0.2.1:5555'])
+            self.assertEqual(parse_multiselect_ids(picker.text()), ['phone-1','192.0.2.1:5555'])
             picker.set_choices([])
-            self.assertEqual(selection_ids(picker.text()), ['phone-1','192.0.2.1:5555'])
+            self.assertEqual(parse_multiselect_ids(picker.text()), ['phone-1','192.0.2.1:5555'])
             for value in ('["x", "x"]','["--all"]','["a; echo secret"]','"all"'):
-                with self.assertRaises(ValueError):selection_ids(value)
+                with self.assertRaises(ValueError):parse_multiselect_ids(value)
         finally:picker.close()
 
     def test_short_delivery_labels_keep_counts_and_platform_navigation(self):
@@ -165,7 +165,7 @@ class RecipientUITests(unittest.TestCase):
             try:
                 panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
                 panel.platform_checks['android'].setChecked(True);panel.destination_checks['phones'].setChecked(True)
-                panel.inspect_plan(); project.make_journey.assert_not_called()
+                panel.request_plan_preparation(); project.make_journey.assert_not_called()
                 self.assertIn('Choose at least one', panel.plan_feedback.text())
                 self.assertIs(panel.configuration.config_tabs.currentWidget(), panel.configuration.config_pages['delivery'])
             finally:panel.close()

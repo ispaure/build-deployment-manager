@@ -24,7 +24,7 @@ class SummaryReadingTests(unittest.TestCase):
         self.view.reset(plan)
         self.view.resize(1000, 700)
         self.view.show()
-        self.summary = self.view.run_choices.flow
+        self.summary = self.view.results_workspace.flow
         self.summary.open_group('operation')
         self.view.flow.canvas.cards['check'][0].click()
         self.view.update_phase(dict(id='check', status='failed', error='Failure headline\n' + '\n'.join(
@@ -57,7 +57,7 @@ class SummaryReadingTests(unittest.TestCase):
         self.assertLess(text.index('Failure headline'), text.index('Dependencies:'))
         self.view.attention_problems.click()
         self.assertEqual(self.view.selected, 'check')
-        self.assertIs(self.view.run_choices.inspector_tabs.currentWidget(), self.view.run_choices.details_scroll)
+        self.assertIs(self.view.results_workspace.inspector_tabs.currentWidget(), self.view.results_workspace.details_scroll)
         self.assertIn('Failure headline', self.view.detail.toPlainText())
 
     def test_problem_action_scopes_tests_and_selects_failure_message(self):

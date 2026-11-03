@@ -147,7 +147,7 @@ class RunWorkspaceTests(unittest.TestCase):
             first.project_settings.click()
             first_settings.assert_called_once()
             other_settings.assert_not_called()
-        with patch.object(first, 'verify_settings') as first_verify, patch.object(changed, 'verify_settings') as other_verify:
+        with patch.object(first, 'request_connection_check_plan') as first_verify, patch.object(changed, 'request_connection_check_plan') as other_verify:
             first.menu_actions['Check connections and settings…'].trigger()
             first_verify.assert_called_once()
             other_verify.assert_not_called()

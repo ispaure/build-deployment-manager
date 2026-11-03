@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout,
     QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
 
-from .registry import inspect
+from .registry import read_project_descriptor
 from .ui_components import style_dialog_buttons
 
 
@@ -40,6 +40,11 @@ class AddProjectDialog(QDialog):
         row.addWidget(self.path, 1)
         row.addWidget(browse)
         layout.addLayout(row)
+        layout.addWidget(QLabel('Registration name'))
+        self.registration_name = QLineEdit()
+        self.registration_name.setAccessibleName('Registration name')
+        self.registration_name.setPlaceholderText('Defaults to the project name. Use a unique name for a worktree.')
+        layout.addWidget(self.registration_name)
         self.summary = QLabel('Select a folder to see the project and its available work.')
         self.summary.setWordWrap(True)
         self.summary.setTextFormat(Qt.TextFormat.PlainText)
@@ -87,7 +92,7 @@ class AddProjectDialog(QDialog):
                 self.summary.setText('Choose a folder to begin.')
                 return
             root = Path(self.path.text().strip()).expanduser().resolve()
-            descriptor, _ = inspect(root)
+            descriptor, _ = read_project_descriptor(root)
             python = interpreter_path(root, descriptor)
             from .onboarding import readiness
             ready = readiness(root)

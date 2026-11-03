@@ -52,11 +52,11 @@ class ReviewTests(unittest.TestCase):
 
     def test_gui_continuation_reviews_and_forwards_changed_engine_identity(self):
         from PySide6.QtWidgets import QMessageBox
-        from build_manager.identity import runtime_identity, engine_review_identity
+        from build_manager.identity import capture_engine_source_identity, engine_review_identity
         result, report, _, effect = self.retained()
         report['engine'] = dict(api=0, manager={'commit': 'old'}, commonUtils={'commit': 'old'})
         result.write_text(json.dumps(report))
-        expected = engine_review_identity(report['engine'], runtime_identity())
+        expected = engine_review_identity(report['engine'], capture_engine_source_identity())
         panel = ManagerPanel(fixtures.OtherProject(self.root))
         self.addCleanup(panel.close)
         with patch('build_manager.ui.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes) as review, \
@@ -88,7 +88,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(panel.result, result)
         self.assertIn('Viewing retained run:', panel.status.text())
         self.assertEqual(panel.run_view.plan.project, plan.project)
-        self.assertTrue(panel.safe_plan(plan).phases[-1].approval_required)
+        self.assertTrue(panel.redacted_plan_view(plan).phases[-1].approval_required)
         self.assertFalse(effect.exists())
 
     def test_unknown_device_history_can_review_only_independent_upload(self):

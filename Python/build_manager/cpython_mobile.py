@@ -27,20 +27,20 @@ def _download(url, sha256, destination, *, name, version):
     provision(DownloadSpec(name, version, url, sha256, sha256), destination)
 
 
-def source(cache, pin):
-    archive = cache.parent/('cpython-'+pin['revision']+'.tar.gz')
+def prepare_source_tree(source_directory, pin):
+    archive = source_directory.parent/('cpython-'+pin['revision']+'.tar.gz')
     if not archive.exists():
         _download(pin['archive'], pin['sha256'], archive, name='Pinned CPython archive',
                   version=pin['revision'])
     if checksum(archive)!=pin['sha256']:
         raise ValueError('Pinned CPython cache archive digest differs.')
-    if not cache.exists():
-        cache.mkdir()
+    if not source_directory.exists():
+        source_directory.mkdir()
         with tarfile.open(archive) as stream:
             for item in stream:
                 item.name = '/'.join(Path(item.name).parts[1:])
                 if item.name:
-                    stream.extract(item,cache,filter='data')
+                    stream.extract(item,source_directory,filter='data')
     # Reject a modified upstream source cache; generated cross-build/testbed
     # output is separate from the archive's immutable source members.
     with tarfile.open(archive) as stream:
@@ -49,9 +49,13 @@ def source(cache, pin):
             if item.isfile():
                 with stream.extractfile(item) as incoming:
                     expected = stream_signature(incoming)[1]
-                if not (cache/relative).is_file() or checksum(cache/relative)!=expected:
+                if not (source_directory/relative).is_file() or checksum(source_directory/relative)!=expected:
                     raise ValueError('Pinned CPython source cache changed: '+str(relative))
 
+
+def source(cache, pin):
+    """Compatibility entry point for project runtime adapters."""
+    return prepare_source_tree(cache, pin)
 
 
 def runtime_wheels(cache, pins, *, download=False):

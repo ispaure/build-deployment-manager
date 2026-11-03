@@ -31,11 +31,11 @@ class RunInspectorView(QWidget):
         from .workflow_presentation import title, effect_label
         self.selection_heading.setText(title(phase))
         dependencies = ', '.join(title(phases[key]) for key in phase.dependencies) or 'None'
-        from .workflow_presentation import state_label, step_time
+        from .workflow_presentation import state_label, format_step_time
         text = f'{effect_label(phase, plan)} · {state_label(state)}\nPrerequisites: {dependencies}'
         if reason:
             text += '\n' + reason
-        elapsed = step_time(fact, state)
+        elapsed = format_step_time(fact, state)
         if elapsed:
             text += '\n' + ('Running for: ' if state == 'running' else 'Step duration: ') + elapsed
         if getattr(phase, 'waits_for', ()):

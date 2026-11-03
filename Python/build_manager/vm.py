@@ -23,9 +23,9 @@ def dedicated_guest(kind, checkout=None):
         raise ValueError('Choose linux or windows for a dedicated test machine.')
     checkout = checkout or Path(__file__).resolve().parents[2]
     vm = classes[kind](checkout)
-    if not vm.receipt():
+    if not vm.read_ownership_receipt():
         return ''
-    record, row = vm.selected()
+    record, row = vm.resolve_owned_guest()
     return record['uuid'] if record and row else ''
 
 
@@ -34,7 +34,7 @@ def resume_dedicated_guest(selected, *, client, checkout=None):
     checkout = checkout or Path(__file__).resolve().parents[2]
     for cls in (LinuxVM, WindowsVM):
         vm = cls(checkout, client)
-        record = vm.receipt()
+        record = vm.read_ownership_receipt()
         if record and record['uuid'] == selected['uuid'].strip('{}'):
             # power rechecks the UUID, bundle path and current state under its lock.
             vm.power('start')
@@ -59,7 +59,7 @@ class VM:
         self.client = client or Parallels()
         self.event = event
         self.name = f'Build Deployment Manager ({self.kind})'
-        self.record = self.root / (self.kind.lower() + '.json')
+        self.ownership_receipt_path = self.root / (self.kind.lower() + '.json')
 
     def run(self, *args, timeout=120):
         self.event(' '.join(args[:2]))
@@ -69,12 +69,12 @@ class VM:
             raise RuntimeError(Redactor()((result.stderr or result.stdout)[-4000:]))
         return result.stdout
 
-    def receipt(self):
-        if linked(self.record):
+    def read_ownership_receipt(self):
+        if linked(self.ownership_receipt_path):
             raise ValueError('VM ownership receipt cannot be a symlink.')
-        if not self.record.exists():
+        if not self.ownership_receipt_path.exists():
             return None
-        data = json.loads(self.record.read_text())
+        data = json.loads(self.ownership_receipt_path.read_text())
         if data.get('schema') != 1 or data.get('name') != self.name:
             raise ValueError('Invalid VM ownership receipt.')
         UUID(data['uuid'])
@@ -83,8 +83,8 @@ class VM:
             raise ValueError('VM bundle ownership/path mismatch.')
         return data
 
-    def selected(self):
-        record = self.receipt()
+    def resolve_owned_guest(self):
+        record = self.read_ownership_receipt()
         rows = self.client.inventory()
         matches = [r for r in rows if r['name'] == self.name or
                    (record and r['uuid'].strip('{}') == record['uuid'])]
@@ -101,9 +101,17 @@ class VM:
             raise ValueError('Recorded guest moved outside this checkout’s VM folder.')
         return record, matches[0]
 
+    # Compatibility for project adapters using the earlier VM accessors.
+    receipt = read_ownership_receipt
+    selected = resolve_owned_guest
+
+    @property
+    def record(self):
+        return self.ownership_receipt_path
+
     def ensure(self, *, restore=True):
         result = self._ensure_hardware()
-        record = self.receipt()
+        record = self.read_ownership_receipt()
         recipe = record.get('restore_recipe') if record else None
         if restore and recipe:
             methods = {'fedora-cloud': getattr(self, 'initialize_cloud', None),
@@ -114,9 +122,9 @@ class VM:
             self.event('Recreating OS from verified retained installation media')
             result = method(recipe['media'], recipe['sha256'])
             with workspace_lock(self.root / '.provision.lock'):
-                record = self.receipt()
+                record = self.read_ownership_receipt()
                 record.pop('restore_recipe', None)
-                save_json(self.record, record)
+                save_json(self.ownership_receipt_path, record)
         return result
 
     def _ensure_hardware(self):
@@ -125,14 +133,14 @@ class VM:
         self.root.mkdir(mode=0o700, exist_ok=True)
         self.root.chmod(0o700)
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if row:
                 if record.get('state') == 'creating':
                     if row['status'] != 'stopped':
                         raise ValueError('Stop the partially configured guest before recovering setup.')
                     self.configure(record['uuid'])
                     record['state'] = 'installation-required'
-                    save_json(self.record, record)
+                    save_json(self.ownership_receipt_path, record)
                 return self.status()
             if record and Path(record['bundle']).exists():
                 self.run('register', record['bundle'])
@@ -141,17 +149,17 @@ class VM:
                 raise ValueError('At least 24 GiB of host free space is required before creating a guest.')
             if record:
                 # Keep prior identities for audit, never overwrite a surviving bundle.
-                save_json(self.record.with_suffix('.previous.json'), record)
+                save_json(self.ownership_receipt_path.with_suffix('.previous.json'), record)
             recipe = record.get('recipe') if record else None
             record = dict(schema=1, uuid=str(uuid4()), name=self.name,
                           bundle=str(self.root / (self.name + '.pvm')), state='creating')
             if recipe: record['restore_recipe'] = recipe
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
             self.run('create', self.name, '--distribution', self.distribution,
                      '--dst', self.root, '--uuid', record['uuid'])
             self.configure(record['uuid'])
             record['state'] = 'installation-required'
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
             return self.status()
 
     def configure(self, uid):
@@ -173,19 +181,19 @@ class VM:
             raise ValueError('Installer checksum mismatch.')
         self.ensure(restore=False)
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if row['status'] != 'stopped':
                 raise ValueError('Stop this dedicated VM before attaching installation media.')
             self.run('set', record['uuid'], '--device-set', 'cdrom0', '--image', path, '--connect')
             record.update(media=str(path), media_sha256=digest, state='installation-required')
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
         return self.status()
 
     def power(self, action):
         if action not in ('start', 'stop'):
             raise ValueError('Unsupported VM power action.')
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if not row:
                 raise ValueError('Create or recover this dedicated VM first.')
             if (action == 'start' and row['status'] == 'running') or (action == 'stop' and row['status'] == 'stopped'):
@@ -195,14 +203,14 @@ class VM:
                 raise ValueError('VM is busy; inspect it in Parallels before continuing.')
             if action == 'start':
                 record['ever_started'] = True
-                save_json(self.record, record)
+                save_json(self.ownership_receipt_path, record)
             # ACPI shutdown remains usable before guest tools are installed.
             if action == 'stop': self.run(action, record['uuid'], '--acpi')
             else: self.run('resume' if row['status'] == 'suspended' else action, record['uuid'])
         return self.status()
 
     def status(self):
-        record, row = self.selected()
+        record, row = self.resolve_owned_guest()
         return dict(name=self.name, kind=self.kind, uuid=record['uuid'] if record else None,
                     storage=str(self.root), state=row['status'] if row else 'missing',
                     setup=record.get('state', 'installation-required') if record else 'not-created',
@@ -213,25 +221,25 @@ class VM:
         if approved is not True:
             raise ValueError('Explicit approval is required to release blanket VM isolation for guest commands.')
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if not row:
                 raise ValueError('Create or recover this owned guest first.')
             self.run('set', record['uuid'], '--shf-host', 'off', '--shf-guest', 'off')
             self.run('set', record['uuid'], '--shared-profile', 'off', '--shared-clipboard', 'off', '--shared-cloud', 'off')
             self.run('set', record['uuid'], '--isolate-vm', 'off')
             record['guest_command_control'] = 'explicitly-approved'
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
         return self.status()
 
     def open_console(self):
-        record, row = self.selected()
+        record, row = self.resolve_owned_guest()
         if not row:
             raise ValueError('Create or recover this dedicated guest before opening its console.')
         subprocess.run(['open', '-a', 'Parallels Desktop', record['bundle']], check=True, timeout=30)
         return self.status()
 
     def readiness(self):
-        record, row = self.selected()
+        record, row = self.resolve_owned_guest()
         if not row or row['status'] != 'running':
             raise ValueError('Start the installed dedicated guest before checking readiness.')
         proof = self.probe(record['uuid'])
@@ -243,7 +251,7 @@ class VM:
                                              architecture=proof.get('architecture', 'unknown'))
         save_json(self.root / (self.kind.lower() + '-readiness.json'), proof)
         record['state'] = 'test-tools-ready'
-        save_json(self.record, record)
+        save_json(self.ownership_receipt_path, record)
         return dict(self.status(), readiness=proof)
 
     def requirements(self):
@@ -273,7 +281,7 @@ class LinuxVM(VM):
             raise ValueError('Fedora cloud image checksum mismatch.')
         self.ensure(restore=False)
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if record.get('cloud_initialized'):
                 return self.status()
             if row['status'] != 'stopped' or record.get('ever_started') or record.get('state') != 'installation-required':
@@ -291,7 +299,7 @@ class LinuxVM(VM):
             self.run('set', record['uuid'], '--device-set', 'cdrom1', '--connect')
             record.update(cloud_initialized=True, media=str(path), media_sha256=digest, state='first-boot-required',
                           recipe=dict(kind='fedora-cloud', media=str(path), sha256=digest))
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
         return self.status()
 
     def requirements(self):
@@ -321,7 +329,7 @@ class WindowsVM(VM):
         if not approved:
             raise ValueError('Explicit approval is required for Windows Developer Mode.')
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if not record or not row or row['status'] != 'running':
                 raise ValueError('Start the recorded Windows guest before enabling symlink testing.')
             self.symlink_policy()  # Reject linked or malformed policy before any mutation.
@@ -338,14 +346,14 @@ class WindowsVM(VM):
         from .vm_bootstrap import windows_seed
         self.ensure(restore=False)
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if record.get('windows_initialized'):
                 return self.status()
             if row['status'] != 'stopped' or record.get('ever_started'):
                 raise ValueError('Unattended disk installation is only allowed on a new, never-started guest.')
         self.initialize(media, sha256)
         with workspace_lock(self.root / '.provision.lock'):
-            record, row = self.selected()
+            record, row = self.resolve_owned_guest()
             if row['status'] != 'stopped' or record.get('ever_started'):
                 raise ValueError('Guest changed while preparing setup; installation stopped.')
             seed = windows_seed(self.root, developer_mode=self.symlink_policy())
@@ -354,7 +362,7 @@ class WindowsVM(VM):
             self.run('set', record['uuid'], '--device-bootorder', 'cdrom0 hdd0')
             record.update(windows_initialized=True, state='first-boot-required',
                           recipe=dict(kind='windows', media=record['media'], sha256=record['media_sha256']))
-            save_json(self.record, record)
+            save_json(self.ownership_receipt_path, record)
         return self.status()
 
     def requirements(self):

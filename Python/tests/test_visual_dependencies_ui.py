@@ -8,7 +8,7 @@ from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 from build_manager import Phase, Plan
-from build_manager.workflow_ui import (FlowCanvas, WorkflowFlow, connection_groups,
+from build_manager.workflow_ui import (FlowCanvas, WorkflowGraphView, connection_groups,
     connection_color, connection_path, display_states, visible_dependencies)
 
 
@@ -49,7 +49,7 @@ class VisualDependencyTests(unittest.TestCase):
                   step('join', ('A', 'B', 'C')), step('cleanup', waits_for=('join',)))
         plan = Plan('Fixture', 'Test', {}, phases, '.')
         before = plan.data()
-        view = WorkflowFlow(graph_only=True)
+        view = WorkflowGraphView(graph_only=True)
         self.addCleanup(view.close)
         view.reset(plan, preview=True)
         view.show()

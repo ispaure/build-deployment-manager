@@ -16,7 +16,7 @@ class RunRecordingTests(unittest.TestCase):
             recorder = RunRecorder(Path(directory), report, (), resume=True, clock=lambda: now[0])
             now[0] = 13
             report['status'] = 'passed'
-            recorder.finish_timing(retry_failed=False)
+            recorder.record_attempt_completion(retry_failed=False)
             recorder.save()
             saved = json.loads((Path(directory) / 'result.json').read_text())
         self.assertEqual(saved['seconds'], 7)

@@ -68,18 +68,18 @@ class LiveResponsivenessTests(unittest.TestCase):
         view = panel.run_view
         view.reset(self.plan)
         panel.stages.setCurrentIndex(2)
-        view.run_choices.flow.open_group('platform.android')
+        view.results_workspace.flow.open_group('platform.android')
         view.flow.select('android')
         self.app.processEvents()
-        group = view.run_choices.flow.selected
+        group = view.results_workspace.flow.selected
         keys = set(view.scoped_facts())
         self.assertEqual(keys, {'android'})
         QTest.mouseClick(view.flow.canvas, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
         self.assertEqual(view.selected, '')
         self.assertEqual(view.flow.selected, '')
-        self.assertEqual(view.run_choices.flow.selected, group)
-        self.assertEqual(view.run_choices.flow.pages.currentIndex(), 0)
-        expected = set(view.run_choices.flow.group_keys(group))
+        self.assertEqual(view.results_workspace.flow.selected, group)
+        self.assertEqual(view.results_workspace.flow.pages.currentIndex(), 0)
+        expected = set(view.results_workspace.flow.group_keys(group))
         self.assertEqual(set(view.scoped_facts()), expected)
         self.assertEqual(view.substeps.topLevelItemCount(), len(expected))
         for key, row in view.rows.items():

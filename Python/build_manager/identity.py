@@ -27,10 +27,14 @@ def checkout_identity(root):
         return dict(commit=None, dirty=None, fingerprint=None, installed=True)
 
 
-def runtime_identity():
+def capture_engine_source_identity():
     root = Path(__file__).resolve().parents[2]
     return dict(api=API_VERSION, manager=checkout_identity(root),
                 commonUtils=checkout_identity(root / 'Python/commonUtils'))
+
+
+# Compatibility for adapters recording the manager source identity.
+runtime_identity = capture_engine_source_identity
 
 
 def engine_review_identity(previous, current):

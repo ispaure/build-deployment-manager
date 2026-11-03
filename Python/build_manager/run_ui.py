@@ -1,6 +1,6 @@
 """Qt-only workflow board shared by live execution and retained results."""
 from .run_state import RunState
-from .workflow_presentation import duration, plan_overview
+from .workflow_presentation import format_elapsed_time, plan_overview
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -96,8 +96,8 @@ class RunView(QWidget):
             self.activity_buttons[state] = button
         self.overall_tests = QLabel('No individual case reports available yet.')
         self.overall_tests.setWordWrap(True)
-        from .workflow_ui import WorkflowFlow
-        self.flow = WorkflowFlow(self, graph_only=True)
+        from .workflow_ui import WorkflowGraphView
+        self.flow = WorkflowGraphView(self, graph_only=True)
         self.flow.hide()
         self.flow.phase_selected.connect(self.select_phase)
         inspector = QWidget(self)
@@ -141,12 +141,12 @@ class RunView(QWidget):
         self.tabs = QTabWidget()
         inspector_layout.addWidget(self.tabs, 1)
         from .review_ui import ReviewPlanView
-        self.run_choices = ReviewPlanView()
-        self.run_choices.phase_selected.connect(self.select_phase)
+        self.results_workspace = ReviewPlanView()
+        self.results_workspace.phase_selected.connect(self.select_phase)
         self.pages = QStackedWidget()
         self.pages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.pages.setAccessibleName('Workflow cards and step inspection')
-        self.pages.addWidget(self.run_choices)
+        self.pages.addWidget(self.results_workspace)
         self.delivered = QTreeWidget()
         self.delivered.setHeaderLabels(['Destination / prepared file', 'Outcome', 'Identity / location'])
         self.delivered.setAccessibleName('Delivery outcomes and retained files')
@@ -291,17 +291,17 @@ class RunView(QWidget):
         self.tabs.addTab(self.delivery_page, 'Files and deliveries')
         # The same persistent overview/task/detail workspace owns review and run.
         # Run-only evidence supplements its inspector instead of replacing it.
-        self.run_choices.inspector_tabs.addTab(self.tabs, 'Results')
+        self.results_workspace.inspector_tabs.addTab(self.tabs, 'Results')
 
     def show_results_tab(self):
-        self.run_choices.inspector_tabs.setCurrentWidget(self.tabs)
+        self.results_workspace.inspector_tabs.setCurrentWidget(self.tabs)
 
     def select_group(self, key):
         self.flow.selected = ''
         self.select_phase('')
         self.tabs.setCurrentIndex(0)
         if key:
-            keys = self.run_choices.flow.group_keys(key)
+            keys = self.results_workspace.flow.group_keys(key)
             priority = ('unknown', 'failed', 'error', 'timeout', 'running', 'awaiting_review', 'blocked')
             chosen = next((name for state in priority for name in keys
                 if self.flow.canvas.states[name][0] == state), next(iter(keys), ''))
@@ -311,13 +311,13 @@ class RunView(QWidget):
             self.flow.setVisible(bool(keys))
 
     def open_step_group(self, key):
-        if key and self.run_choices.selected != key:
+        if key and self.results_workspace.selected != key:
             # Selection is mirrored without sending it back through select_phase.
-            self.run_choices.blockSignals(True)
+            self.results_workspace.blockSignals(True)
             try:
-                self.run_choices.inspect_phase(key)
+                self.results_workspace.inspect_phase(key)
             finally:
-                self.run_choices.blockSignals(False)
+                self.results_workspace.blockSignals(False)
 
     @property
     def facts(self):
@@ -325,7 +325,7 @@ class RunView(QWidget):
 
     @property
     def started(self):
-        return self.state.started
+        return self.state.started_at_by_phase
 
     @property
     def outcome(self):
@@ -373,7 +373,7 @@ class RunView(QWidget):
         self.open_step_group(key)
         self.flow.select(key)
         self.restore_inspector_tab(tab)
-        self.run_choices.tasks.setFocus()
+        self.results_workspace.tasks.setFocus()
 
     def restore_inspector_tab(self, tab):
         if self.tabs.isTabVisible(self.tabs.indexOf(tab)):
@@ -383,13 +383,13 @@ class RunView(QWidget):
 
     def inspect_blocking_phase(self, key):
         self.inspect_summary_phase(key)
-        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
-        self.run_choices.tasks.setFocus()
+        self.results_workspace.inspector_tabs.setCurrentWidget(self.results_workspace.details_scroll)
+        self.results_workspace.tasks.setFocus()
 
     def scoped_facts(self):
         if self.plan is None:
             return {}
-        grouped = self.run_choices.flow
+        grouped = self.results_workspace.flow
         keys = (self.selected,) if self.selected else grouped.group_keys(grouped.selected) if grouped.has_group_scope() else self.facts
         return {key: fact for key, fact in self.facts.items() if key in keys}
 
@@ -402,7 +402,7 @@ class RunView(QWidget):
             self.select_first_problem_test()
             self.show_results_tab()
         else:
-            self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
+            self.results_workspace.inspector_tabs.setCurrentWidget(self.results_workspace.details_scroll)
 
     def select_first_problem_test(self):
         for index in range(self.tests.topLevelItemCount()):
@@ -481,7 +481,7 @@ class RunView(QWidget):
                 if fact.get('recovery', {}).get('status') == 'recovered':
                     row.setText(1, 'Passed after recovery')
                 row.setToolTip(1, f'{len(cases)} reported tests')
-                row.setText(2, duration(fact.get('seconds')))
+                row.setText(2, format_elapsed_time(fact.get('seconds')))
                 update_test_children(row, key, fact, self.phases[key], force=force)
                 time_share(self.substeps, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
                            sum(live.get(name, {}).get('seconds') or 0 for name in keys if not live.get(name, {}).get('reused')),
@@ -512,7 +512,7 @@ class RunView(QWidget):
                 self.external_prerequisites.addItem(title(self.phases[key]), key)
         self.external_prerequisites.setVisible(self.external_prerequisites.count() > 1)
         if not self.selected:
-            grouped = self.run_choices.flow
+            grouped = self.results_workspace.flow
             in_group = grouped.has_group_scope()
             information = ('Select a step to inspect its status, tests, timing and output.' if in_group else
                 'Open a workflow card to inspect its steps, tests, timing and output.')
@@ -564,13 +564,13 @@ class RunView(QWidget):
         if failed_test and not unknown:
             self.inspect_phase_problems(failed_test)
             return
-        self.run_choices.log_reader = self.phase_log_reader
-        self.run_choices.show_problems()
-        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
-        if not any(self.run_choices.is_problem(key) for key in self.phases):
-            self.run_choices.flow.close_group()
-            self.run_choices.context_info.setText(self.summary.text())
-            self.run_choices.context_info.show()
+        self.results_workspace.log_reader = self.phase_log_reader
+        self.results_workspace.show_problems()
+        self.results_workspace.inspector_tabs.setCurrentWidget(self.results_workspace.details_scroll)
+        if not any(self.results_workspace.is_problem(key) for key in self.phases):
+            self.results_workspace.flow.close_group()
+            self.results_workspace.context_info.setText(self.summary.text())
+            self.results_workspace.context_info.show()
             self.set_detail_text(self.summary.text(), None)
 
     def set_review_available(self, available):
@@ -622,12 +622,12 @@ class RunView(QWidget):
         self.final_tests_signature = None
         self.plan = plan
         self.selected = ''
-        self.run_choices.blockSignals(True)
+        self.results_workspace.blockSignals(True)
         try:
-            self.run_choices.reset(plan, fields, preview=False, capability=capability, proposal=proposal,
+            self.results_workspace.reset(plan, fields, preview=False, capability=capability, proposal=proposal,
                                    summary=plan_overview(plan))
         finally:
-            self.run_choices.blockSignals(False)
+            self.results_workspace.blockSignals(False)
         self.pages.setCurrentIndex(0)
         self.delivered.clear()
         self.delivery_signature = None
@@ -666,7 +666,7 @@ class RunView(QWidget):
         self.tabs.setCurrentIndex(0)
         self.refresh_inspector()
         self.refresh_output()
-        self.run_choices.inspector_tabs.setCurrentWidget(self.run_choices.details_scroll)
+        self.results_workspace.inspector_tabs.setCurrentWidget(self.results_workspace.details_scroll)
 
     def update_phase(self, event, *, refresh=True):
         key = event['id']
@@ -679,7 +679,7 @@ class RunView(QWidget):
             self.rows[key].setText(1, 'passed after recovery')
         self.rows[key].setToolTip(1, fact.get('reason') or fact.get('error', ''))
         if event['status'] != 'running' and 'seconds' in event:
-            self.rows[key].setText(2, duration(event['seconds']))
+            self.rows[key].setText(2, format_elapsed_time(event['seconds']))
         self.pending_refresh = True
         self.pending_tests |= 'tests' in event or 'live_tests' in event
         if refresh:
@@ -701,17 +701,17 @@ class RunView(QWidget):
             self.flush_updates()
             return
         for key, started in self.started.items():
-            elapsed = duration(self.state.clock() - started)
+            elapsed = format_elapsed_time(self.state.clock() - started)
             self.rows[key].setText(2, elapsed)
             if key in self.flow.canvas.cards:
                 self.flow.canvas.cards[key][1].setText('Running · ' + elapsed)
         facts = self.live_facts()
         self.flow.set_facts(facts)
-        self.run_choices.set_facts(facts)
+        self.results_workspace.set_facts(facts)
         self.refresh_inspector()
 
     def refresh_summary(self):
-        self.run_choices.log_reader = self.phase_log_reader
+        self.results_workspace.log_reader = self.phase_log_reader
         terminal = {'passed', 'failed', 'error', 'skipped', 'cancelled', 'timeout', 'interrupted', 'unknown'}
         counts = {}
         for fact in self.facts.values():
@@ -746,7 +746,7 @@ class RunView(QWidget):
         if self.cancelling:
             self.summary.setText('Stopping… · ' + text + self.run_timing)
         self.progress.setAccessibleDescription(self.summary.text())
-        self.run_choices.set_facts(self.live_facts())
+        self.results_workspace.set_facts(self.live_facts())
         cases = [case for fact in self.facts.values() for case in fact.get('tests', ())]
         problems = sum(case['status'] in {'failed', 'error'} for case in cases)
         self.overall_tests.setText(f'{len(cases)} reported test cases · {problems} problems' if cases
@@ -870,7 +870,7 @@ class RunView(QWidget):
 
     def complete(self, report):
         self.state.complete(report['status'])
-        self.run_timing = ' · Active time: ' + duration(report.get('seconds'))
+        self.run_timing = ' · Active time: ' + format_elapsed_time(report.get('seconds'))
         if report.get('attempts'):
             self.run_timing += f' across {len(report["attempts"])} attempt(s)'
         self.flow.set_facts(self.facts)
@@ -891,12 +891,12 @@ class RunView(QWidget):
             return
         key = item.text(0)
         fact, phase = self.facts.get(key, {}), self.phases.get(key)
-        from .workflow_presentation import display_states, state_label, step_time
+        from .workflow_presentation import display_states, state_label, format_step_time
         state, reason = display_states(self.plan, self.facts)[key]
         lines = [key, 'State: ' + state_label(state)]
         if reason:
             lines.append(reason)
-        elapsed = step_time(self.live_facts().get(key, fact), state)
+        elapsed = format_step_time(self.live_facts().get(key, fact), state)
         if elapsed:
             lines.append('Step duration: ' + elapsed)
         for field in ('reason', 'error', 'summary', 'cleanup_error'):
@@ -909,14 +909,14 @@ class RunView(QWidget):
             from .workflow_presentation import title
             lines += ['', f'Gate: {"required" if phase.required else "optional"}',
                       'Dependencies: ' + (', '.join(title(self.phases[name]) for name in phase.dependencies) or 'none'),
-                      'Timeout: ' + duration(phase.timeout)]
+                      'Timeout: ' + format_elapsed_time(phase.timeout)]
             if getattr(phase, 'waits_for', ()):
                 lines.append('Scheduling only: wait for completion of ' + ', '.join(phase.waits_for))
         if fact.get('log'):
             lines.append('Log in results folder: ' + fact['log'])
         for artifact in fact.get('artifacts', []):
             lines += ['Artifact: ' + artifact['path'], 'SHA-256: ' + artifact['sha256']]
-        grouped = self.run_choices.flow
+        grouped = self.results_workspace.flow
         if grouped.has_group_scope():
             lines += ['', grouped.group_context()]
         # Caller supplies redacted plan data; report facts are redacted by executor.
@@ -954,7 +954,7 @@ class RunView(QWidget):
                     measured.append((case['seconds'], case, key))
                 status = case['status']
                 counts[status] = counts.get(status, 0) + 1
-                item = QTreeWidgetItem([case['name'], status, duration(case['seconds']),
+                item = QTreeWidgetItem([case['name'], status, format_elapsed_time(case['seconds']),
                                        ' / '.join(filter(None, [case['suite'], case['classname']])), key, stage_label(case)])
                 item.setData(0, Qt.ItemDataRole.UserRole, case)
                 self.tests.addTopLevelItem(item)
@@ -976,17 +976,17 @@ class RunView(QWidget):
         self.timings.clear()
         longest = max((row[0] for row in measured), default=0)
         for seconds, case, key in sorted(measured, key=lambda row: row[0], reverse=True):
-            item = QTreeWidgetItem([case['name'], duration(seconds),
+            item = QTreeWidgetItem([case['name'], format_elapsed_time(seconds),
                 ' / '.join(filter(None, [case['suite'], case['classname']])), key, '', stage_label(case)])
             self.timings.addTopLevelItem(item)
             item.setData(4, Qt.ItemDataRole.UserRole, round(1000 * seconds / longest) if longest else 0)
-            item.setData(4, Qt.ItemDataRole.AccessibleTextRole, case['name'] + ': ' + duration(seconds))
-            item.setToolTip(4, 'Relative to the slowest reported test: ' + duration(longest))
+            item.setData(4, Qt.ItemDataRole.AccessibleTextRole, case['name'] + ': ' + format_elapsed_time(seconds))
+            item.setToolTip(4, 'Relative to the slowest reported test: ' + format_elapsed_time(longest))
         if measured:
             from statistics import median
             values = [row[0] for row in measured]
             self.timing_summary.setText(f'{len(values)} timed tests · {missing} without duration\n'
-                f'Total reported test time: {duration(sum(values))} · Average: {duration(sum(values)/len(values))} · Median: {duration(median(values))}')
+                f'Total reported test time: {format_elapsed_time(sum(values))} · Average: {format_elapsed_time(sum(values)/len(values))} · Median: {format_elapsed_time(median(values))}')
         else:
             self.timing_summary.setText(f'No individual test durations reported. {missing} tests without duration. Step durations are available in Details.')
         classified = any(case.get('stage') for fact in scope.values() for case in fact.get('tests', ()))
@@ -1028,4 +1028,4 @@ class RunView(QWidget):
         if item:
             case = item.data(0, Qt.ItemDataRole.UserRole)
             self.test_detail.setPlainText(f'{case["classname"]}.{case["name"]}\n'
-                                          f'{case["status"]} · {duration(case["seconds"])} · Stage: {stage_label(case)}\n\n{case["message"]}')
+                                          f'{case["status"]} · {format_elapsed_time(case["seconds"])} · Stage: {stage_label(case)}\n\n{case["message"]}')

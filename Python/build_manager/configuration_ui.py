@@ -53,8 +53,8 @@ class ConfigurationView(QWidget):
         self.editor_scroll.setWidget(self.editor)
         self.editor_scroll.setAccessibleName('Workflow configuration sections')
         self.editor_scroll.setMinimumWidth(350)
-        from .workflow_ui import WorkflowFlow
-        self.proposed_flow = WorkflowFlow()
+        from .workflow_ui import WorkflowGraphView
+        self.proposed_flow = WorkflowGraphView()
         self.proposed_flow.setMinimumWidth(330)
         self.proposed_flow.phase_selected.connect(self.open_proposed_card)
         preview = QWidget()
@@ -456,12 +456,12 @@ class ConfigurationView(QWidget):
         from dataclasses import replace
         from .proposed_workflow import propose, ChoiceBlocker
         from .recipient_ui import RecipientPicker
-        from .run_fields import selection_ids
+        from .run_fields import parse_multiselect_ids
         recipients = {}
         for name, field in self.run_fields.controls.items():
             if isinstance(field, RecipientPicker):
                 labels = {row['id']: row['label'].removesuffix(' · saved') for row in field.choices()}
-                recipients[name] = [labels.get(key, key) for key in selection_ids(field.text())]
+                recipients[name] = [labels.get(key, key) for key in parse_multiselect_ids(field.text())]
         proposal = propose(capability=getattr(self.project, 'journey_capability', None), goal=self.goal.currentData(),
             revision=self.revision.text(), platforms=[name for name, item in self.platform_checks.items() if item.isChecked()],
             destinations=[name for name, item in self.destination_checks.items() if item.isChecked()],
@@ -469,7 +469,7 @@ class ConfigurationView(QWidget):
             operation=self.operation.currentText(), platform=self.platform.currentText(), backend=self.backend.currentText(), recipients=recipients, values=self.run_fields.values())
         blockers = list(proposal.blockers)
         for row in self.run_fields.fields:
-            if row['id'] in self.run_fields.active_fields and row.get('kind') == 'multiselect' and not selection_ids(self.run_fields.controls[row['id']].text()):
+            if row['id'] in self.run_fields.active_fields and row.get('kind') == 'multiselect' and not parse_multiselect_ids(self.run_fields.controls[row['id']].text()):
                 if not any(blocker.field == row['id'] for blocker in blockers):
                     blockers.append(ChoiceBlocker('field.' + row['id'], row['label'] + '…',
                         'delivery' if self.goal.currentData() == 'deliver' else 'advanced',
@@ -519,7 +519,7 @@ class ConfigurationView(QWidget):
             count = sum(control.isChecked() for name, control in self.destination_checks.items()
                 if self.destination_categories[name] == category) if self.goal.currentData() == 'deliver' else 0
             if category == 'Mobile dev devices':
-                from .run_fields import selection_ids
+                from .run_fields import parse_multiselect_ids
                 devices = {platform: set() for platform in ('android', 'ios', '')}
                 destinations = getattr(self.project, 'journey_capability', {}).get('destinations', {})
                 if self.goal.currentData() == 'deliver':
@@ -529,7 +529,7 @@ class ConfigurationView(QWidget):
                         field = self.run_fields.controls.get(destinations[name].get('recipient_field'))
                         if field is not None:
                             platform = self.destination_platforms.get(name, '')
-                            devices.setdefault(platform, set()).update(selection_ids(field.text()))
+                            devices.setdefault(platform, set()).update(parse_multiselect_ids(field.text()))
                 count = sum(len(ids) for ids in devices.values())
                 tabs = self.delivery_platform_tabs[category]
                 for platform, (platform_page, _) in self.delivery_platform_pages[category].items():

@@ -73,10 +73,10 @@ class SettingsAsyncTests(unittest.TestCase):
             panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
             panel.platform_checks['ios'].setChecked(True)
             panel.destination_checks['firebase'].setChecked(True)
-            panel.inspect_plan(); self.assertFalse(panel.preparing); self.assertIn('requires: android', panel.status.text())
+            panel.request_plan_preparation(); self.assertFalse(panel.preparing); self.assertIn('requires: android', panel.status.text())
             panel.platform_checks['android'].setChecked(True)
             panel.destination_checks['testflight'].setChecked(True)
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             deadline = time.monotonic() + 5
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
@@ -103,7 +103,7 @@ class SettingsAsyncTests(unittest.TestCase):
             panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
             for control in (*panel.platform_checks.values(), *panel.destination_checks.values()):
                 control.setChecked(True)
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             deadline = time.monotonic() + 10
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
@@ -138,10 +138,10 @@ class SettingsAsyncTests(unittest.TestCase):
             self.assertEqual(panel.backend.currentText(), 'Android host')
             panel.platform.setCurrentText('ios')
             self.assertEqual(panel.backend.currentText(), 'Android host')
-            panel.inspect_plan(); self.assertFalse(panel.preparing)
+            panel.request_plan_preparation(); self.assertFalse(panel.preparing)
             self.assertIn('choices are retained', panel.status.text())
             panel.backend.setCurrentText('iOS host')
-            panel.inspect_plan()
+            panel.request_plan_preparation()
             deadline = time.monotonic() + 5
             while panel.preparing:
                 self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)

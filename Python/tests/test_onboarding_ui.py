@@ -58,11 +58,12 @@ class OnboardingUITests(unittest.TestCase):
                     project=root/name;self.descriptor(project,name)
                     with patch('build_manager.project_setup_ui.AddProjectDialog') as chooser:
                         chooser.return_value.exec.return_value=1;chooser.return_value.root=project
+                        chooser.return_value.registration_name.text.return_value = ''
                         window.add()
                     self.assertEqual(window.panel.project.root,project.resolve())
                     self.assertEqual(registry.resolve()[0]['project_id'],name)
                 self.assertEqual(window.projects.count(),2)
-                self.assertFalse(window.menu_actions['Clean up builds…'].isEnabled())
+                self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
             finally:window.close();self.app.processEvents()
 
     def test_settings_search_preserves_edits_and_filters_categories_and_sources(self):
@@ -128,7 +129,12 @@ class OnboardingUITests(unittest.TestCase):
             try:
                 self.assertEqual(window.projects.currentText(), 'Commands')
                 self.assertFalse(window.menu_actions['Check connections and settings…'].isEnabled())
-                self.assertFalse(window.menu_actions['Clean up builds…'].isEnabled())
+                self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
+                # Manager-owned retained runs are available without adapter storage actions.
+                with patch('build_manager.storage_ui.StorageDialog') as storage_dialog:
+                    window.menu_actions['Manage build storage…'].trigger()
+                    storage_dialog.assert_called_once_with(window.panel.project, window.panel)
+                    storage_dialog.return_value.exec.assert_called_once()
                 plan = preparation_request(window.panel.configuration.selection()).prepare(window.panel.project)
                 self.assertEqual(plan.operation, 'Check')
             finally:

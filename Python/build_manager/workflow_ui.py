@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QLabel, QPushButton, QHBoxLayout, QSizePolicy,
     QVBoxLayout, QWidget, QHeaderView, QStackedWidget, QTreeWidget, QTreeWidgetItem)
 from .workflow_graph import layout_positions, visible_dependencies, connection_groups
 from .workflow_presentation import (FAILED, PENDING, title, effect_label, stage_label,
-    display_states, blocking_prerequisite, state_label, step_time, timing_duration)
+    display_states, blocking_prerequisite, state_label, format_step_time, format_compact_duration)
 from .test_tree_ui import (TimeShareDelegate, time_share, current_test_seconds,
     visible_tree_rows, update_test_children)
 from .workflow_cards_ui import (SECTION_COLORS, section_tint, connection_color, FlowCard,
@@ -88,7 +88,7 @@ class StageBrowser(QTreeWidget):
         self.blockSignals(False)
 
 
-class WorkflowFlow(QWidget):
+class WorkflowGraphView(QWidget):
     phase_selected = Signal(str)
 
     def __init__(self, parent=None, *, graph_only=False):
@@ -240,3 +240,9 @@ class WorkflowFlow(QWidget):
         self.set_facts(self.facts)
         self.scroll.reveal(key)
         self.phase_selected.emit(key)
+
+
+# Earlier UI integrations import these presentation names from this module.
+WorkflowFlow = WorkflowGraphView
+step_time = format_step_time
+timing_duration = format_compact_duration

@@ -110,7 +110,7 @@ The current `ManagerPanel` review page has a short context label, optional run
 inputs, a stage browser or dependency map, a persistent plain-text inspector,
 technical tabs behind a checkbox, helper text and Back/Start controls.
 `present_plan` builds a detailed summary, while `review_step` also places it in
-the inspector when no step is selected. `WorkflowFlow` already supports grouped
+the inspector when no step is selected. `WorkflowGraphView` already supports grouped
 steps, exact dependencies and selection shared with execution.
 
 | Current structure | Design implication | Proposed change |

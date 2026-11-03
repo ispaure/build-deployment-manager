@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QSplitter, QVBoxLayout, QWidget, QSizePolicy)
 from .grouped_workflow import group_workflow
 from .plan_summary import captured_choices, phase_title, summary_rows
-from .workflow_ui import FlowCanvas, FitMapView, WorkflowFlow, display_states, effect_label, blocking_prerequisite, orientation_picker, pointer_follow_picker
+from .workflow_ui import FlowCanvas, FitMapView, WorkflowGraphView, display_states, effect_label, blocking_prerequisite, orientation_picker, pointer_follow_picker
 from .ui_components import style_button, ViewportStack
 
 
@@ -82,7 +82,7 @@ class GroupedFlowView(QWidget):
         self.splitter = QSplitter()
         inner.addWidget(self.splitter, 1)
         if not graph_mode:
-            self.step_flow = WorkflowFlow(graph_only=True)
+            self.step_flow = WorkflowGraphView(graph_only=True)
             self.step_flow.phase_selected.connect(self.show_task)
             self.details = QPlainTextEdit()
             self.details.setReadOnly(True)
@@ -366,8 +366,8 @@ class GroupedFlowView(QWidget):
             quantity = str(len(members)) + ' subtask' + ('s' if len(members) != 1 else '')
             counts[key] = quantity if self.preview and members else (' · '.join(f'{number} {state.replace("_", " ")}' for state, number in tally.items()) if members else '')
             if not self.preview and measured:
-                from .run_ui import duration
-                counts[key] += '\nTotal step time: ' + duration(sum(measured)) + ' (may overlap)'
+                from .workflow_presentation import format_elapsed_time
+                counts[key] += '\nTotal step time: ' + format_elapsed_time(sum(measured)) + ' (may overlap)'
         if not self.preview:
             from .resources import resource_label
             for key in counts:

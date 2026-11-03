@@ -98,7 +98,7 @@ class RunPresetTests(unittest.TestCase):
                             {'run_overrides': {'notes': 'Bearer synthetic-secret'}}, {'unknown': 'x'}):
                 with self.assertRaises(ValueError):
                     store.save_preset('example', 'Invalid', choices)
-            store.selections('example', {'revision': 'HEAD'})
+            store.save_selections('example', {'revision': 'HEAD'})
             store.save_preset('example', 'Legacy-compatible', {'revision': 'HEAD'})
             self.assertEqual(store.read()['projects']['example']['selections'], {'revision': 'HEAD'})
 

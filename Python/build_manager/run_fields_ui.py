@@ -92,16 +92,20 @@ class RunFieldsView(QWidget):
         self.choice_timer.stop()
         if self.cancelled.is_set():return
         from .recipient_ui import RecipientPicker
-        from .run_fields import selection_ids
+        from .run_fields import parse_multiselect_ids
         for name, field in self.controls.items():
             if not isinstance(field, RecipientPicker):continue
             choices = rows.get(name, []) if isinstance(rows, dict) else []
-            valid = isinstance(choices, list) and len(choices) <= 50
+            valid = isinstance(choices, list)
             try:
                 if not valid or any(not isinstance(row, dict) or not isinstance(row.get('label'), str) for row in choices):
                     raise ValueError('Invalid recipient list.')
                 import json
-                selection_ids(json.dumps([row.get('id') for row in choices]))
+                ids = [row.get('id') for row in choices]
+                for key in ids:
+                    parse_multiselect_ids(json.dumps([key]))
+                if len(set(ids)) != len(ids):
+                    raise ValueError('Duplicate recipient ID.')
                 field.set_choices(choices)
             except ValueError:
                 error = 'The project returned an invalid saved device list.'
@@ -193,10 +197,10 @@ class RunFieldsView(QWidget):
         return 'Choose at least one recipient for ' + row['label'] + '.' if row else ''
 
     def missing_selection_field(self):
-        from .run_fields import selection_ids
+        from .run_fields import parse_multiselect_ids
         for row in self.fields:
             if row['id'] in self.active_fields and row.get('kind') == 'multiselect':
-                if not selection_ids(self.controls[row['id']].text()):
+                if not parse_multiselect_ids(self.controls[row['id']].text()):
                     return row
         return None
 

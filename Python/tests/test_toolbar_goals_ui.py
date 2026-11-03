@@ -35,7 +35,7 @@ class ToolbarGoalTests(unittest.TestCase):
             def select(self, key): owner.data['selected'] = key
             def resolve(self, key):
                 return owner.data['projects'][key], dict(name=key, interpreter=OtherProject.interpreter)
-            def selections(self, key, choices): owner.data['projects'][key]['selections'] = choices
+            def save_selections(self, key, choices): owner.data['projects'][key]['selections'] = choices
             def save_preset(self, key, name, choices):
                 Registry.validate_selections(choices)
                 owner.data['projects'][key]['presets'][name.strip()] = deepcopy(choices)
@@ -64,8 +64,8 @@ class ToolbarGoalTests(unittest.TestCase):
         self.assertEqual(window.projects.toolTip(), str(self.root / 'one'))
         self.assertEqual(set(window.menu_actions), {'Add project…', 'Locate moved checkout…',
             'Remove registration', 'Accounts…', 'Test machines…', 'Check connections and settings…',
-            'Clean up builds…', 'App settings…'})
-        self.assertFalse(window.menu_actions['Clean up builds…'].isEnabled())
+            'Manage build storage…', 'App settings…'})
+        self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
         self.assertIs(window.controls.itemAt(3).widget(), window.help_button)
         self.data['projects']['two']['name'] = 'one'
         window.refresh()

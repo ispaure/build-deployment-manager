@@ -318,7 +318,7 @@ print(json.dumps(dict(schema=1, result=result)))
         self.assertEqual(make.call_args.kwargs['run_overrides'], {'notes':'exact saved value'})
 
     def test_engine_change_needs_bound_review_and_preserves_passed_gate_provenance(self):
-        from build_manager.identity import runtime_identity, engine_review_identity
+        from build_manager.identity import capture_engine_source_identity, engine_review_identity
         from build_manager.api import review_run
         marker = self.root / 'once'
         plan, path = self.plan(self.phase('gate', 'print("validated")'),
@@ -326,9 +326,9 @@ print(json.dumps(dict(schema=1, result=result)))
                        dependencies=('gate',)))
         output = self.root / 'engine-change'
         first = run_plan(path, output)
-        current = runtime_identity()
+        current = capture_engine_source_identity()
         current['manager'] = dict(current['manager'], fingerprint='changed-engine')
-        with patch('build_manager.identity.runtime_identity', return_value=current):
+        with patch('build_manager.identity.capture_engine_source_identity', return_value=current):
             with self.assertRaisesRegex(ValueError, 'identity changed'):
                 run_plan(path, output, resume=True)
             with self.assertRaisesRegex(ValueError, 'identity changed'):

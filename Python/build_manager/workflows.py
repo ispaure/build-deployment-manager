@@ -16,7 +16,7 @@ def require_build_only(plan):
         raise ValueError('Build only requires build steps and permits inspection only; tests and delivery actions are excluded.')
 
 
-def start_authorized_effects(plan):
+def apply_start_review_policy(plan):
     """Bind fresh GUI review to selected deliveries/hosted checks, never history."""
     from dataclasses import replace
     destinations = plan.journey.get('destinations', {})
@@ -47,16 +47,23 @@ def verify_artifacts(row, *, cancelled=lambda: False):
             raise ValueError('Retained artifact is missing or changed; inspect a new preparation: '+str(path))
 
 
-def ancestors(plan,step):
-    phases={phase.id:phase for phase in plan.phases};needed=set()
-    def walk(name):
-        for parent in phases[name].dependencies:
-            if parent not in needed:needed.add(parent);walk(parent)
-    walk(step);return needed
+def transitive_dependency_ids(plan, phase_id):
+    """Follow success dependencies, excluding completion-only waits_for edges."""
+    phases = {phase.id: phase for phase in plan.phases}
+    needed = set()
+
+    def walk(current_id):
+        for parent_id in phases[current_id].dependencies:
+            if parent_id not in needed:
+                needed.add(parent_id)
+                walk(parent_id)
+
+    walk(phase_id)
+    return needed
 
 
 def review_identity(plan,step,rows,*,cancelled=lambda: False):
-    needed=ancestors(plan,step)
+    needed=transitive_dependency_ids(plan,step)
     selected={row['id']:row for row in rows if row['id'] in needed}
     if any(name not in selected or selected[name]['status']!='passed' for name in needed):
         raise ValueError('Required workflow gates have not passed; no effect can be approved.')
@@ -76,7 +83,9 @@ def approve(plan,step,report,*,cancelled=lambda: False):
     return Approval(step,review_identity(plan,step,report['phases'],cancelled=cancelled))
 
 
-def recover(plan,report,*,reconcile=None,cancelled=lambda: False,preserve_unknown=False):
+def recover_phase_records(plan,report,*,reconcile=None,cancelled=lambda: False,preserve_unknown=False):
+    from .run_retirement import require_resumable
+    require_resumable(report)
     if report.get('schema')!=1 or report.get('plan_identity')!=plan.identity:
         raise ValueError('Result schema or plan identity changed; preserve the original run.')
     effects={phase.id:phase.effect if phase.effect!='inherit' else plan.effect for phase in plan.phases}

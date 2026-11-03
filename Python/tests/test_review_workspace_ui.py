@@ -409,7 +409,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.panel.project.make_plan = crash
         from build_manager.redaction import Redactor
         self.panel.redact = Redactor(['secret-fixture-value'])
-        self.panel.inspect_plan()
+        self.panel.request_plan_preparation()
         deadline = time.monotonic() + 5
         while self.panel.preparing:
             self.app.processEvents()

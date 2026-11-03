@@ -43,13 +43,13 @@ class DeviceCardStatusTests(unittest.TestCase):
             for key in ('build', 'boox-id.connect', 'boox-id.install'):
                 view.update_phase(dict(id=key, status='passed', seconds=1))
             view.update_phase(dict(id='samsung-id.connect', status='retrying', seconds=2))
-            grouped = view.run_choices.flow
+            grouped = view.results_workspace.flow
             self.assertEqual(grouped.canvas.states['deliver.devices.0'][0], 'passed')
             self.assertEqual(grouped.canvas.states['deliver.devices.1'][0], 'retrying')
             self.assertFalse(grouped.canvas.cards['deliver.devices.0'][0].findChild(QLabel, 'approvalBadge'))
             self.assertFalse(grouped.canvas.cards['deliver.devices.1'][0].findChild(QLabel, 'approvalBadge'))
             grouped.open_group('deliver.devices.0')
-            self.assertEqual(set(view.run_choices.rows), {'boox-id.connect', 'boox-id.install'})
+            self.assertEqual(set(view.results_workspace.rows), {'boox-id.connect', 'boox-id.install'})
             self.assertEqual(grouped.group_keys('deliver.devices.0'), ('boox-id.connect', 'boox-id.install'))
             grouped.open_group('deliver.devices.1')
-            self.assertEqual(set(view.run_choices.rows), {'samsung-id.connect', 'samsung-id.install'})
+            self.assertEqual(set(view.results_workspace.rows), {'samsung-id.connect', 'samsung-id.install'})

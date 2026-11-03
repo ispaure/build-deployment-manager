@@ -1,12 +1,12 @@
 """Pure scheduling decisions; execution, approvals and resource admission stay separate."""
 
 
-def phase_is_ready(phase, *, running, pending, rows, max_workers, retry_after, now, cancelled):
+def can_consider_phase(phase, *, running, pending, rows, max_workers, retry_not_before_by_phase, now, cancelled):
     """Readiness requires completion edges; success gates are checked on admission."""
     if phase.reuse_key and any(active.reuse_key == phase.reuse_key for active in running):
         # Do not occupy workers waiting for an equivalent evidence producer.
         return False
-    if not cancelled and now < retry_after.get(phase.id, 0):
+    if not cancelled and now < retry_not_before_by_phase.get(phase.id, 0):
         return False
     prerequisites = (*phase.dependencies, *phase.waits_for)
     if any(name not in rows or rows[name]['status'] in {'running', 'retrying'} for name in prerequisites):

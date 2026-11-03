@@ -59,7 +59,7 @@ class ActionHierarchyTests(unittest.TestCase):
                 return dict(projects={key: dict(name=key, root=str(project.root))
                     for key in ('one', 'two')}, selected='one')
             def select(self, *_): pass
-            def selections(self, *_): pass
+            def save_selections(self, *_): pass
             def resolve(self, *_):
                 return dict(root=str(project.root)), dict(name='Fixture', interpreter=project.interpreter)
         factory = patch('build_manager.app.ProjectBridge', return_value=project)
@@ -161,7 +161,7 @@ class ActionHierarchyTests(unittest.TestCase):
         view.attention_problems.click()
         self.assertEqual(view.selected, 'ios')
         self.assertEqual(view.pages.currentIndex(), 0)
-        self.assertIs(view.run_choices.inspector_tabs.currentWidget(), view.run_choices.details_scroll)
+        self.assertIs(view.results_workspace.inspector_tabs.currentWidget(), view.results_workspace.details_scroll)
         self.assertIn('Simulator check failed', view.detail.toPlainText())
 
     def test_problem_tests_clear_unrelated_selection_and_search(self):

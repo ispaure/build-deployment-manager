@@ -4,7 +4,7 @@ import signal
 import subprocess
 
 
-def identity(pid):
+def read_process_fingerprint(pid):
     pid=int(pid)
     if os.name!='nt':
         result=subprocess.run(['ps','-p',str(pid),'-o','lstart=','-o','command='],capture_output=True,text=True,timeout=10)
@@ -24,12 +24,12 @@ def identity(pid):
     finally:kernel.CloseHandle(handle)
 
 
-def stop_owned(pid,expected,*,token=None):
+def stop_owned_process(pid, expected_fingerprint, *, token=None):
     pid=int(pid)
     if os.name!='nt':
-        current=identity(pid)
+        current=read_process_fingerprint(pid)
         if current is None:return
-        if current!=expected or token and token not in current:raise ValueError('Persistent process identity changed; refusing termination.')
+        if current!=expected_fingerprint or token and token not in current:raise ValueError('Persistent process identity changed; refusing termination.')
         try:os.killpg(pid,signal.SIGTERM)
         except ProcessLookupError:return
         return
@@ -45,6 +45,14 @@ def stop_owned(pid,expected,*,token=None):
         times=[w.FILETIME() for _ in range(4)]
         if not kernel.GetProcessTimes(handle,*[c.byref(t) for t in times]):raise c.WinError(c.get_last_error())
         actual=(times[0].dwHighDateTime<<32)|times[0].dwLowDateTime
-        if actual!=expected:raise ValueError('Persistent process creation identity changed; refusing termination.')
+        if actual!=expected_fingerprint:raise ValueError('Persistent process creation identity changed; refusing termination.')
         if not kernel.TerminateProcess(handle,1):raise c.WinError(c.get_last_error())
     finally:kernel.CloseHandle(handle)
+
+
+# Keep the original process helpers available to project adapters.
+identity = read_process_fingerprint
+
+
+def stop_owned(pid, expected, *, token=None):
+    return stop_owned_process(pid, expected, token=token)

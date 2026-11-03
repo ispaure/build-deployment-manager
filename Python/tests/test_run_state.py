@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 import unittest
 
-from build_manager.run_state import EventStream, RunState
+from build_manager.run_state import RunEventLineBuffer, RunState
 
 
 class RunStateTests(unittest.TestCase):
@@ -20,11 +20,11 @@ class RunStateTests(unittest.TestCase):
         snapshot = state.snapshot()['checks']
         self.assertEqual(snapshot['seconds'], 7)
         self.assertEqual(snapshot['tests'], [{'name': 'first'}])
-        self.assertFalse(state.pending)
+        self.assertFalse(state.pending_events_by_phase)
         state.update(dict(id='checks', status='passed', seconds=8))
         now[0] = 200
         self.assertEqual(state.snapshot()['checks']['seconds'], 8)
-        self.assertFalse(state.started)
+        self.assertFalse(state.started_at_by_phase)
 
     def test_resource_wait_is_cleared_and_retained_measurement_does_not_tick(self):
         state = RunState(clock=lambda: 50)
@@ -42,10 +42,10 @@ class RunStateTests(unittest.TestCase):
         state.cancelling = True
         state.reset([SimpleNamespace(id='new')])
         self.assertEqual(state.facts, {'new': {'id': 'new', 'status': 'queued'}})
-        self.assertFalse(state.pending or state.started or state.outcome or state.cancelling)
+        self.assertFalse(state.pending_events_by_phase or state.started_at_by_phase or state.outcome or state.cancelling)
 
     def test_json_lines_wait_for_completion_and_plain_output_survives(self):
-        stream = EventStream()
+        stream = RunEventLineBuffer()
         stream.append('{"type":"phase", "id":"checks",')
         self.assertFalse(stream.has_line())
         stream.append('"status":"passed"}\nplain text\n[1, 2]\ntrailing')

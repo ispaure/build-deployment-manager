@@ -14,7 +14,7 @@ class PhaseFact(TypedDict):
     live_tests: NotRequired[list[dict[str, Any]]]
 
 
-class EventStream:
+class RunEventLineBuffer:
     """Keep incomplete JSON lines until the next process read."""
     def __init__(self):
         self.buffer = ''
@@ -39,28 +39,28 @@ class RunState:
     def __init__(self, *, clock=None):
         self.clock = clock if clock is not None else lambda: time.monotonic()
         self.facts: dict[str, PhaseFact] = {}
-        self.started: dict[str, float] = {}
-        self.pending: dict[str, dict[str, Any]] = {}
+        self.started_at_by_phase: dict[str, float] = {}
+        self.pending_events_by_phase: dict[str, dict[str, Any]] = {}
         self.outcome = ''
         self.cancelling = False
 
     def reset(self, phases):
         self.facts.clear()
         self.facts.update((phase.id, dict(id=phase.id, status='queued')) for phase in phases)
-        self.started.clear()
-        self.pending.clear()
+        self.started_at_by_phase.clear()
+        self.pending_events_by_phase.clear()
         self.outcome = ''
         self.cancelling = False
 
     def queue_event(self, event: dict[str, Any]) -> str | None:
         key = event['id']
-        previous = self.pending.get(key, self.facts.get(key, {})).get('status')
-        self.pending.setdefault(key, {}).update(event)
+        previous = self.pending_events_by_phase.get(key, self.facts.get(key, {})).get('status')
+        self.pending_events_by_phase.setdefault(key, {}).update(event)
         return previous
 
     def drain_events(self):
-        events = list(self.pending.values())
-        self.pending.clear()
+        events = list(self.pending_events_by_phase.values())
+        self.pending_events_by_phase.clear()
         return events
 
     def update(self, event: dict[str, Any]) -> PhaseFact:
@@ -69,17 +69,17 @@ class RunState:
             event = dict(event, resource='', reason=event.get('reason', ''))
         self.facts.setdefault(key, {}).update(event)
         if event['status'] == 'running':
-            self.started.setdefault(key, self.clock() - (event.get('seconds') or 0))
+            self.started_at_by_phase.setdefault(key, self.clock() - (event.get('seconds') or 0))
         else:
-            self.started.pop(key, None)
+            self.started_at_by_phase.pop(key, None)
         return self.facts[key]
 
     def snapshot(self) -> dict[str, PhaseFact]:
         now = self.clock()
-        return {key: dict(fact, seconds=now - self.started[key]) if key in self.started else dict(fact)
+        return {key: dict(fact, seconds=now - self.started_at_by_phase[key]) if key in self.started_at_by_phase else dict(fact)
                 for key, fact in self.facts.items()}
 
     def complete(self, status):
-        self.started.clear()
+        self.started_at_by_phase.clear()
         self.cancelling = False
         self.outcome = status

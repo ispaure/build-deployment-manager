@@ -37,7 +37,7 @@ commands; the owning project must implement its real supported combinations. A
 project can declare Firebase on iOS if its adapter actually supports that path.
 Platform rows can include `backends_by_host`, mapping `darwin`, `linux` or
 `win32` to explicit backend labels. The bridge and directly embedded adapters
-use `journeys.for_host` to resolve those declarations. An absent mapping retains
+use `journeys.resolve_host_backends` to resolve those declarations. An absent mapping retains
 the declared default; it never substitutes a hosted backend.
 
 ## One planning request

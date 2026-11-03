@@ -8,8 +8,8 @@ import unittest
 
 from build_manager import Executor
 from build_manager.bridge import ProjectBridge
-from build_manager.onboarding import scaffold, check_adapter, readiness
-from build_manager.registry import Registry, inspect
+from build_manager.onboarding import scaffold, probe_adapter, readiness
+from build_manager.registry import Registry, read_project_descriptor
 
 
 class CommandProjectTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class CommandProjectTests(unittest.TestCase):
         self.assertEqual(result['status'], 'passed', result)
         self.assertEqual(Path(plan.phases[0].artifacts[0]).read_text(), 'before')
         self.assertEqual(bridge.settings_view(), {})
-        self.assertEqual(check_adapter(self.registry)['stage'], 'adapter_loaded')
+        self.assertEqual(probe_adapter(self.registry)['stage'], 'adapter_loaded')
 
     def test_scaffold_never_overwrites_and_cli_does_not_run_command(self):
         marker = self.root / 'executed'
@@ -67,7 +67,7 @@ class CommandProjectTests(unittest.TestCase):
                        lambda d: d['commands'].update(source=['../private']),
                        lambda d: d['commands']['operations']['Check'][0].update(artifacts=['../escape'])]:
             value = json.loads(json.dumps(original)); mutate(value); path.write_text(json.dumps(value))
-            with self.assertRaises(ValueError): inspect(self.root)
+            with self.assertRaises(ValueError): read_project_descriptor(self.root)
 
     def test_links_missing_source_and_unsupported_selection_fail(self):
         path = self.create()
@@ -86,7 +86,7 @@ class CommandProjectTests(unittest.TestCase):
         marker = self.root / 'executed'
         path = self.create(f"open({str(marker)!r}, 'w').close()")
         self.bridge()
-        result = check_adapter(self.registry, prepare=True)
+        result = probe_adapter(self.registry, prepare_plan_matrix=True)
         self.assertEqual(result['status'], 'passed')
         self.assertEqual(len(result['plans']), 1)
         self.assertFalse(marker.exists())
@@ -114,4 +114,4 @@ class CommandProjectTests(unittest.TestCase):
                 data = json.loads(json.dumps(original))
                 data['commands']['operations']['Check'][0][field] = value
                 path.write_text(json.dumps(data))
-                with self.assertRaises(ValueError): inspect(self.root)
+                with self.assertRaises(ValueError): read_project_descriptor(self.root)

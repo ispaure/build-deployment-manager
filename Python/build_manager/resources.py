@@ -9,7 +9,7 @@ from .profiles import load_profile,save_profile
 from .registry import config_directory
 
 
-class Resources:
+class HostResourceSlots:
     def __init__(self,directory=None):
         self.directory=Path(directory) if directory else config_directory()/'resources'
 

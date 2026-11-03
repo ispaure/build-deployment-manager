@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 from build_manager import Executor, Phase, Plan
 from build_manager.bridge import ProjectBridge
-from build_manager.credentials import protected_reference, reject_secrets
-from build_manager.journeys import request, validate_capability, validate_plan, outcomes, for_host
+from build_manager.credentials import resolve_external_credential_path, reject_secrets
+from build_manager.journeys import build_journey_intent, validate_capability, validate_plan, outcomes, resolve_host_backends
 from build_manager.registry import Registry
 from build_manager.workflows import approve
 
@@ -53,7 +53,7 @@ class JourneyTests(unittest.TestCase):
         from copy import deepcopy
         capability = deepcopy(CAPABILITY)
         capability['destinations']['device'] = dict(label='Device', platforms=['android'], testing_optional=True)
-        intent = request(capability, 'deliver', [], ['device'], backends={})
+        intent = build_journey_intent(capability, 'deliver', [], ['device'], backends={})
         self.assertEqual(intent['destination_platforms']['device'], [])
         prepare = Phase('prepare', (sys.executable, '-c', 'pass'), str(self.root), kind='build', effect='build')
         deploy = Phase('device', (sys.executable, '-c', 'pass'), str(self.root),
@@ -63,8 +63,8 @@ class JourneyTests(unittest.TestCase):
         plan = Plan('Fixture', 'Build and deploy', {}, (prepare, deploy), str(self.root), journey=data)
         validate_plan(plan, intent)
         with self.assertRaises(ValueError):
-            request(capability, 'deliver', [], ['firebase'])
-        selected = request(capability, 'deliver', ['ios'], ['device'], backends={'ios': 'Local'})
+            build_journey_intent(capability, 'deliver', [], ['firebase'])
+        selected = build_journey_intent(capability, 'deliver', ['ios'], ['device'], backends={'ios': 'Local'})
         self.assertEqual(selected['destination_platforms']['device'], ['ios'])
         with self.assertRaises(ValueError):
             validate_plan(plan, selected)
@@ -74,8 +74,8 @@ class JourneyTests(unittest.TestCase):
         capability = deepcopy(CAPABILITY)
         capability['platforms']['android']['backends_by_host'] = {'linux': 'This Linux host'}
         validate_capability(capability, CAPABILITIES)
-        self.assertEqual(for_host(capability, 'linux')['platforms']['android']['backend'], 'This Linux host')
-        self.assertEqual(for_host(capability, 'darwin')['platforms']['android']['backend'], 'Local')
+        self.assertEqual(resolve_host_backends(capability, 'linux')['platforms']['android']['backend'], 'This Linux host')
+        self.assertEqual(resolve_host_backends(capability, 'darwin')['platforms']['android']['backend'], 'Local')
         self.assertEqual(capability['platforms']['android']['backend'], 'Local')
         capability['platforms']['android']['backends_by_host']['unsupported'] = 'GitHub'
         with self.assertRaisesRegex(ValueError, 'host backends'):
@@ -93,12 +93,12 @@ class JourneyTests(unittest.TestCase):
     def test_request_preserves_conflicts_and_validates_before_execution(self):
         validate_capability(CAPABILITY, CAPABILITIES)
         with self.assertRaisesRegex(ValueError, 'requires: android'):
-            request(CAPABILITY, 'deliver', ['ios'], ['firebase'])
+            build_journey_intent(CAPABILITY, 'deliver', ['ios'], ['firebase'])
         with self.assertRaisesRegex(ValueError, 'Validation cannot'):
-            request(CAPABILITY, 'validate', ['android'], ['firebase'])
+            build_journey_intent(CAPABILITY, 'validate', ['android'], ['firebase'])
         with self.assertRaisesRegex(ValueError, 'at least one'):
-            request(CAPABILITY, 'validate', [], [])
-        intent = request(CAPABILITY, 'deliver', ['android', 'ios'], ['firebase', 'testflight'])
+            build_journey_intent(CAPABILITY, 'validate', [], [])
+        intent = build_journey_intent(CAPABILITY, 'deliver', ['android', 'ios'], ['firebase', 'testflight'])
         self.assertEqual(intent['platforms'], ['android', 'ios'])
         with self.assertRaises(ValueError):
             validate_capability(dict(CAPABILITY, schema=2), CAPABILITIES)
@@ -106,7 +106,7 @@ class JourneyTests(unittest.TestCase):
     def test_returned_plan_cannot_ignore_intent_or_bypass_release_gates(self):
         plan = integrated(self.root)
         with self.assertRaisesRegex(ValueError, 'does not match'):
-            validate_plan(plan, request(CAPABILITY, 'validate', ['ios'], []))
+            validate_plan(plan, build_journey_intent(CAPABILITY, 'validate', ['ios'], []))
         with self.assertRaisesRegex(ValueError, 'required platform'):
             replace(plan, phases=(*plan.phases[:-1], replace(plan.phases[-1], dependencies=('ios',))))
         evidence = dict(plan.journey, destinations={'firebase': plan.journey['destinations']['firebase']})
@@ -141,7 +141,7 @@ class JourneyTests(unittest.TestCase):
         evidence = dict(plan.journey, destinations={'testflight': dict(identity='testflight:fixture',
             steps=['testflight'], platforms=['ios'])})
         plan = replace(plan, phases=(android, admit, ios, prepare, upload), journey=evidence)
-        validate_plan(plan, request(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
+        validate_plan(plan, build_journey_intent(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
         executor = Executor(resource_directory=self.root / 'resources')
         first = executor.run(plan, self.root / 'result')
         self.assertEqual(first['status'], 'awaiting_review')
@@ -152,7 +152,7 @@ class JourneyTests(unittest.TestCase):
         forged = dict(evidence, destinations={'testflight': dict(identity='testflight:fixture',
             steps=['testflight'], platforms=['android'])})
         with self.assertRaises(ValueError):
-            validate_plan(replace(plan, journey=forged), request(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
+            validate_plan(replace(plan, journey=forged), build_journey_intent(CAPABILITY, 'deliver', ['android', 'ios'], ['testflight']))
 
     def test_required_failure_blocks_every_delivery(self):
         plan = integrated(self.root, fail_gate=True)
@@ -268,7 +268,7 @@ print(json.dumps(dict(schema=1,result=json.loads(Path('fixture-plan.json').read_
             self.assertNotIn('synthetic-api-credential', Redactor()('request failed synthetic-api-credential'))
         (self.root / '.git').mkdir()
         with self.assertRaisesRegex(ValueError, 'outside Git'):
-            protected_reference(self.root / 'ignored-signing.p8')
+            resolve_external_credential_path(self.root / 'ignored-signing.p8')
         plan = integrated(self.root)
         with self.assertRaises(ValueError):
             replace(plan, settings={'auth': {'password': 'synthetic'}}).save(self.root / 'unsafe.json')

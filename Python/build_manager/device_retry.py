@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from .history import load_run
 from .models import Phase, Plan
-from .workflows import ancestors, verify_artifacts
+from .workflows import transitive_dependency_ids, verify_artifacts
 
 
 def candidates(plan, report):
@@ -17,29 +17,29 @@ def candidates(plan, report):
         return []
     return [phase for phase in plan.phases if phase.effect == 'deploy'
             and states.get(phase.id) == 'unknown' and phase.artifacts
-            and all(states.get(key) == 'passed' for key in ancestors(plan, phase.id))
+            and all(states.get(key) == 'passed' for key in transitive_dependency_ids(plan, phase.id))
             and all(path in phase.argv for path in phase.artifacts)]
 
 
-def inspect(output, step, expected=None):
+def verify_retry_inputs(output, step, expected_review_digest=None):
     output = Path(output).resolve()
     plan, report = load_run(output / 'result.json')
     phase = next((item for item in candidates(plan, report) if item.id == step), None)
     if phase is None:
         raise ValueError('Choose an uncertain device installation with passed preparation and declared receipt outputs.')
-    needed = ancestors(plan, step)
+    needed = transitive_dependency_ids(plan, step)
     rows = [row for row in report['phases'] if row['id'] in needed]
     for row in rows:
         verify_artifacts(row)
     digest = hashlib.sha256(json.dumps(dict(plan=plan.identity, report=report, step=step), sort_keys=True).encode()).hexdigest()
-    if expected is not None and expected != digest:
+    if expected_review_digest is not None and expected_review_digest != digest:
         raise ValueError('Original run changed; review the device retry again.')
     return plan, phase, rows, digest
 
 
 def prepare(output, step, *, authorized=False):
     """Produce a fresh plan with fresh receipt paths and an input-verification gate."""
-    plan, phase, rows, digest = inspect(output, step)
+    plan, phase, rows, digest = verify_retry_inputs(output, step)
     workspace = Path(plan.workspace) / 'explicit-device-retries' / uuid4().hex
     paths = {path: str(workspace / ('receipt-' + str(index) + Path(path).suffix))
              for index, path in enumerate(phase.artifacts)}
@@ -65,5 +65,5 @@ def prepare(output, step, *, authorized=False):
 
 
 if __name__ == '__main__':
-    _, _, rows, digest = inspect(*sys.argv[1:])
+    _, _, rows, digest = verify_retry_inputs(*sys.argv[1:])
     print(json.dumps(dict(status='verified', identity=digest, prerequisites=len(rows))))

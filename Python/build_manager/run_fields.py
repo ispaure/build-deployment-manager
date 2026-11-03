@@ -55,11 +55,11 @@ def validate_overrides(fields, values):
         if row.get('kind') == 'choice' and row['id'] in values and values[row['id']] not in row['options']:
             raise ValueError('Choose a declared option for ' + row['label'] + '.')
         if row.get('kind') == 'multiselect' and row['id'] in values:
-            selection_ids(values[row['id']])
+            parse_multiselect_ids(values[row['id']])
     return dict(values)
 
 
-def selection_ids(value):
+def parse_multiselect_ids(value):
     try:
         rows = json.loads(value)
     except (ValueError, TypeError) as error:
@@ -69,3 +69,6 @@ def selection_ids(value):
             or len(set(rows)) != len(rows)):
         raise ValueError('Choose up to 50 distinct device IDs using letters, numbers, dots, colons or hyphens.')
     return rows
+
+
+selection_ids = parse_multiselect_ids  # Compatibility for project adapters.

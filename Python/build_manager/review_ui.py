@@ -7,9 +7,9 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QLabel, QPla
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .grouped_workflow_ui import GroupedFlowView
-from .plan_summary import captured_choices, phase_title, summary_rows, destination_identity
-from .workflow_ui import WorkflowFlow
-from .workflow_presentation import blocking_prerequisite, display_states, state_label, step_time
+from .plan_summary import captured_choices, phase_title, summary_rows, destination_label_for_phase
+from .workflow_ui import WorkflowGraphView
+from .workflow_presentation import blocking_prerequisite, display_states, state_label, format_step_time
 from .test_tree_ui import update_test_children, time_share
 from .ui_components import style_tabs
 
@@ -95,7 +95,7 @@ class ReviewPlanView(QWidget):
         self.splitter = QSplitter()
         self.splitter.setChildrenCollapsible(False)
         self.flow = GroupedFlowView(graph_mode=True, inspect_single_cards=True, nested_navigation=False)
-        self.graph = WorkflowFlow(graph_only=True)
+        self.graph = WorkflowGraphView(graph_only=True)
         self.flow.attach_inspector(self.graph)
         self.flow.group_selected.connect(self.select_group)
         self.graph.phase_selected.connect(self.select_step)
@@ -420,7 +420,7 @@ class ReviewPlanView(QWidget):
             row.setText(1, 'Reused' if fact.get('reused') else {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
             if fact.get('recovery', {}).get('status') == 'recovered':
                 row.setText(1, 'Passed after recovery')
-            elapsed = step_time(self.facts.get(key, {}), state) or 'Not recorded'
+            elapsed = format_step_time(self.facts.get(key, {}), state) or 'Not recorded'
             row.setText(2, '—' if elapsed in {'Not started', 'Not recorded'} else elapsed)
             row.setToolTip(1, reason)
             row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
@@ -564,7 +564,7 @@ class ReviewPlanView(QWidget):
         description = getattr(phase, 'description', '')
         self.set_fact('Purpose', description)
         self.set_fact('Runs on', self.execution_location(key))
-        elapsed = step_time(fact, state)
+        elapsed = format_step_time(fact, state)
         self.set_fact('Elapsed', elapsed if elapsed not in {'', 'Not started'} else '')
         if fact.get('current_test'):
             case = fact['current_test']
@@ -578,7 +578,7 @@ class ReviewPlanView(QWidget):
         self.set_fact('Outputs', '\n'.join(path.replace('\\', '/').rsplit('/', 1)[-1] for path in phase.artifacts) or 'No output files declared')
         self.fact_values['Outputs'].setToolTip('\n'.join(phase.artifacts))
         effect = phase.effect if phase.effect != 'inherit' else self.plan.effect
-        destinations = [destination_identity(destination, key) for destination in getattr(self.plan, 'journey', {}).get('destinations', {}).values()
+        destinations = [destination_label_for_phase(destination, key) for destination in getattr(self.plan, 'journey', {}).get('destinations', {}).values()
                         if key in destination['steps']]
         delivery = '\n'.join(destinations)
         if effect in {'upload', 'deploy', 'publish', 'dispatch'} and getattr(phase, 'approval_required', True):

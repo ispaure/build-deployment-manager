@@ -4,7 +4,7 @@ FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', '
 PENDING = {'queued', 'pending', 'planned'}
 
 
-def duration(seconds):
+def format_elapsed_time(seconds):
     if seconds is None:
         return '—'
     return f'{seconds:.2f}s' if seconds < 60 else f'{int(seconds // 60)}m {seconds % 60:.1f}s'
@@ -40,7 +40,7 @@ def plan_overview(plan):
     for number, phase in enumerate(plan.phases, 1):
         effect = phase.effect if phase.effect != 'inherit' else plan.effect
         lines += [f'{number}. {phase.id} · {phase.kind} · {effect}',
-                  f'   {"Required" if phase.required else "Optional"}; timeout {duration(phase.timeout)}; '
+                  f'   {"Required" if phase.required else "Optional"}; timeout {format_elapsed_time(phase.timeout)}; '
                   f'depends on: {", ".join(phase.dependencies) or "none"}',
                   '   ' + ('External action: explicit review required.' if effect in {'upload', 'deploy', 'publish','dispatch'}
                             else 'Preparation / local execution.')]
@@ -132,14 +132,14 @@ def state_label(status):
         'skipped': 'Skipped'}.get(status, status.replace('_', ' ').capitalize())
 
 
-def step_time(fact, status):
+def format_step_time(fact, status):
     """Never present a never-started step's synthetic zero as measured runtime."""
     if status in {'queued', 'pending', 'planned', 'blocked', 'skipped', 'waiting_resource'}:
-        return 'Not started' if not fact.get('seconds') else duration(fact['seconds'])
-    return duration(fact.get('seconds')) if fact.get('seconds') is not None else ''
+        return 'Not started' if not fact.get('seconds') else format_elapsed_time(fact['seconds'])
+    return format_elapsed_time(fact.get('seconds')) if fact.get('seconds') is not None else ''
 
 
-def timing_duration(seconds):
+def format_compact_duration(seconds):
     """Compact timing labels retain subsecond precision and comparable units."""
     if seconds is None:
         return '—'

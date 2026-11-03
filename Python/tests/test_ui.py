@@ -71,7 +71,7 @@ with TemporaryDirectory() as folder:
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def inspect(self, panel):
-        panel.inspect_plan()
+        panel.request_plan_preparation()
         deadline = time.monotonic()+5
         while panel.preparing:
             self.app.processEvents()
@@ -250,7 +250,7 @@ with TemporaryDirectory() as folder:
         panel=ManagerPanel(project)
         ticks=[]
         timer=QTimer();timer.setInterval(10);timer.timeout.connect(lambda:ticks.append(True));timer.start()
-        panel.inspect_plan()
+        panel.request_plan_preparation()
         self.assertTrue(panel.preparing)
         # Programmatic changes cannot install a plan for the previous selection.
         panel.revision.setText('different revision')

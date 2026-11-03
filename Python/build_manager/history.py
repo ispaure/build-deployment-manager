@@ -29,6 +29,12 @@ def read_report(path):
             or not isinstance(report.get('phases'), list)):
         raise ValueError('Invalid result report.')
     seconds = report.get('seconds')
+    if (not isinstance(report.get('holds', []), list)
+            or any(not isinstance(path, str) for path in report.get('holds', []))):
+        raise ValueError('Invalid workflow holds.')
+    if 'retirement' in report and (not isinstance(report['retirement'], dict)
+            or any(not isinstance(report['retirement'].get(key), str) for key in ('at', 'reason'))):
+        raise ValueError('Invalid workflow retirement.')
     if seconds is not None and not valid_seconds(seconds):
         raise ValueError('Invalid run duration.')
     for row in report['phases']:
@@ -70,7 +76,8 @@ def recent_runs(directory, limit=100, cancelled=lambda: False):
             report = read_report(path)
             rows.append(dict(path=str(path), started_at=str(report.get('started_at', '')),
                              operation=str(report.get('operation', '')), status=report['status'],
-                             seconds=report.get('seconds')))
+                             seconds=report.get('seconds'), retired=bool(report.get('retirement')),
+                             holds=len(report.get('holds', []))))
         except (OSError, ValueError):
             rows.append(dict(path=str(path), status='unreadable', operation=path.parent.name))
     return rows
