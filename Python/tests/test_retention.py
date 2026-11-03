@@ -27,7 +27,8 @@ class RetentionTests(unittest.TestCase):
                 self.assertEqual(protection_reason(root), 'Pinned by .keep')
                 pin.unlink()
                 hold = native_path(leaf.parent / '.fixture.manager-holds.json')
-                hold.write_text('{"leases": {"synthetic-test": 9999999999}}')
+                from build_manager.profiles import save_profile
+                save_profile(hold, dict(leases={'synthetic-test': 9999999999}), allowed={'leases'})
                 self.assertEqual(nested_workflow_hold_reason(root), 'Contains retained workflow outputs; protected')
                 hold.unlink()
                 self.assertEqual(nested_workflow_hold_reason(root), '')
