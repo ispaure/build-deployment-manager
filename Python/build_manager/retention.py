@@ -10,6 +10,7 @@ import time
 
 from .locking import workspace_lock
 from commonUtils.filesystem.links import is_junction
+from commonUtils.filesystem.native_paths import native_path
 
 
 def linked(path):
@@ -33,7 +34,7 @@ def remove_tree(path, *, ownership_files=()):
 
 def _remove_owned_tree_once(path, ownership_files):
     """Keep ownership proof until bulk removal finishes, including hard stops."""
-    path = Path(path)
+    path = native_path(path)
     names = set(ownership_files)
     if any(not isinstance(name, str) or name in {'', '.', '..'} or '/' in name or '\\' in name for name in names):
         raise ValueError('Ownership proof must name direct files only.')
@@ -63,7 +64,7 @@ def _remove_owned_tree_once(path, ownership_files):
 
 
 def _remove_tree_once(path):
-    path = Path(path)
+    path = native_path(path)
     def readonly(function, name, error):
         target = Path(name)
         if (os.name != 'nt' or not isinstance(error, PermissionError) or linked(target)
