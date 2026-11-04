@@ -85,7 +85,9 @@ def _executable_hash(path):
 def _collect_failure(root, target):
     if not _owned_executable(root, target):
         return dict(error='owned_path_check_failed')
-    return dict(schema=1, python=sys.version, compiler=platform.python_compiler(),
+    return dict(schema=1, system=platform.system(), windows_version=platform.win32_ver(),
+        machine=platform.machine(), python_bits=8 * c.sizeof(c.c_void_p),
+        python=sys.version, compiler=platform.python_compiler(),
         build=platform.python_build(), executable=sys.executable, base_executable=sys._base_executable,
         base_hash=_executable_hash(sys._base_executable), fixture_hash=_executable_hash(target),
         attributes=getattr(Path(target).stat(), 'st_file_attributes', None),
@@ -94,7 +96,8 @@ def _collect_failure(root, target):
 
 def _diagnose_failure(root, target):
     # The child imports only stdlib, queries one exact fixture resource, and
-    # cannot outlive the three-second bound. Never forward arbitrary stderr.
+    # cannot outlive the three-second bound. Limit accepted evidence to 16 KiB
+    # after capture of this fixed child's small schema; never forward stderr.
     result = subprocess.run([sys.executable, '-I', '-B', str(Path(__file__).resolve()),
         str(root), str(target)], capture_output=True, text=True, timeout=3)
     if result.returncode or len(result.stdout) > 16384:
