@@ -1,5 +1,6 @@
 """Real process overlap and cross-process host resource exclusion."""
 import json
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -8,6 +9,7 @@ from threading import Event,Timer
 import unittest
 
 from build_manager import Executor,Phase,Plan
+from process_rendezvous import rendezvous_argv
 
 
 class SchedulerTests(unittest.TestCase):
@@ -26,7 +28,10 @@ class SchedulerTests(unittest.TestCase):
     def times(self,name):return json.loads((self.root/(name+'.json')).read_text())
 
     def test_independent_branches_overlap_and_dependency_waits(self):
-        result=self.run_plan([self.phase('a'),self.phase('b'),self.phase('c',dependencies=('a','b'))])
+        phases = [replace(self.phase(name), argv=rendezvous_argv(self.root, name, peer))
+                  for name, peer in (('a', 'b'), ('b', 'a'))]
+        phases.append(self.phase('c', dependencies=('a', 'b')))
+        result=self.run_plan(phases)
         self.assertEqual(result['status'],'passed')
         a,b,c=[self.times(name) for name in 'abc']
         self.assertLess(max(a[0],b[0]),min(a[1],b[1]));self.assertGreaterEqual(c[0],max(a[1],b[1]))

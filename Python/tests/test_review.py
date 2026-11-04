@@ -59,7 +59,7 @@ class ReviewTests(unittest.TestCase):
         expected = engine_review_identity(report['engine'], capture_engine_source_identity())
         panel = ManagerPanel(fixtures.OtherProject(self.root))
         self.addCleanup(panel.close)
-        with patch('build_manager.ui.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes) as review, \
+        with patch('build_manager.ui.QMessageBox.exec', return_value=QMessageBox.StandardButton.Yes) as review, \
                 patch.object(panel, 'confirm_continuation', return_value=('upload',)), \
                 patch.object(panel.session, 'launch') as launch:
             panel.resume_workflow(result)

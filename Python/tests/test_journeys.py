@@ -16,6 +16,7 @@ from build_manager.credentials import resolve_external_credential_path, reject_s
 from build_manager.journeys import build_journey_intent, validate_capability, validate_plan, outcomes, resolve_host_backends
 from build_manager.registry import Registry
 from build_manager.workflows import approve
+from process_rendezvous import rendezvous_argv
 
 
 CAPABILITIES = dict(platforms=['android', 'ios'], operations=['Test'])
@@ -119,23 +120,9 @@ class JourneyTests(unittest.TestCase):
     def test_real_run_pauses_and_independent_approved_deliveries_overlap_without_rebuilding(self):
         plan = integrated(self.root)
         deliveries = []
-        for name, peer in (('firebase', 'testflight'), ('testflight', 'firebase')):
-            # Require both real children to enter before either completes.
-            # A short sleep races process startup on a busy host and does not
-            # establish whether the scheduler admitted concurrent work.
-            code = f'''import json,time
-from pathlib import Path
-started=time.monotonic()
-Path({str(self.root / (name + '.started'))!r}).touch()
-deadline=time.monotonic()+5
-while not Path({str(self.root / (peer + '.started'))!r}).is_file():
-    if time.monotonic() >= deadline:
-        raise RuntimeError('Independent reviewed delivery was not admitted concurrently')
-    time.sleep(.01)
-Path({str(self.root / (name + '.json'))!r}).write_text(json.dumps([started,time.monotonic()]))
-'''
-            phase = next(phase for phase in plan.phases if phase.id == name)
-            deliveries.append(replace(phase, argv=(sys.executable, '-c', code)))
+        for phase in plan.phases[-2:]:
+            peer = 'testflight' if phase.id == 'firebase' else 'firebase'
+            deliveries.append(replace(phase, argv=rendezvous_argv(self.root, phase.id, peer)))
         plan = replace(plan, phases=(*plan.phases[:-2], *deliveries))
         executor = Executor(resource_directory=self.root / 'resources')
         first = executor.run(plan, self.root / 'result')
