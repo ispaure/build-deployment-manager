@@ -148,8 +148,14 @@ preset store. `start` is prepare plus ordinary supervised execution.
 runtime identities. `run_plan(..., resume=True, engine_review=identity)` accepts
 only that exact reviewed pair. The executor records a transition and retained
 phase IDs in `engine_history` after locked recovery verifies prior artifacts.
-Original phase results remain unchanged. Unknown external outcomes and pending
-artifact approvals retain their existing recovery requirements.
+Retained phase records remain unchanged. Recovery invalidates successful
+nonexternal consumers and cleanup transitively over `dependencies` and
+`waits_for` when a prerequisite will run again. An unscoped whole-workflow cleanup
+refreshes whenever work is scheduled. This prevents a prior no-op cleanup from
+admitting concurrent owners on resume. Completed/unknown external effects remain
+retained; stale external cleanup blocks automatic continuation instead of being
+replayed. Unknown outcomes and pending artifact approvals retain their existing
+recovery requirements.
 
 `run_plan(..., resume=True, confirmed=True, approve_steps=('ready-step',),
 retry_failed=False)` verifies and binds only the named pending external actions.
