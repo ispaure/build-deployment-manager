@@ -58,3 +58,10 @@ A process stuck in kernel exit can require host recovery; repeatedly launching
 more commands does not establish readiness. Resume only after the selected tools
 can complete normally. Existing personal simulators are never reset or deleted
 as a workaround.
+
+Disposable emulator starts on the same host are serialized through readiness,
+including starts from different checkouts or SDKs. This
+keeps another manager run from selecting a console/ADB pair while the first
+emulator is binding it. Cleanup verifies the AVD name before console commands;
+if a serial belongs to another run, only the recorded process may be stopped,
+after checking its creation time and unique AVD token.
