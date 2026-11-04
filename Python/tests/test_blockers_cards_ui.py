@@ -191,6 +191,55 @@ class BlockerCardTests(unittest.TestCase):
         with patch.object(splitter, 'fontMetrics', return_value=Mock(height=lambda: 32)):
             self.check_small_run_inspection(extra_summary_height=23)
             self.assertEqual(splitter.orientation(), Qt.Orientation.Vertical)
+        self.check_task_row_visible()
+
+    def test_fedora_height_inspector_keeps_repair_and_both_captions_inside_pane(self):
+        view = self.panel.run_view.results_workspace
+        # Reproduce the recorded Fedora ancestor bound without depending on
+        # platform-specific font substitution or initial splitter proportions.
+        view.sidebar_splitter.widget(1).setFixedHeight(129)
+        with patch.object(view.splitter, 'fontMetrics', return_value=Mock(height=lambda: 32)):
+            self.check_small_run_inspection(extra_summary_height=43)
+        self.assertEqual(view.sidebar_splitter.widget(1).height(), 129)
+        self.check_task_row_visible()
+        for caption in (view.selection_heading, view.scope_label):
+            self.assertTrue(caption.isVisible())
+            self.assertGreater(caption.width(), 0)
+            self.assertGreaterEqual(caption.height(), caption.heightForWidth(caption.width()))
+            parent = caption.parentWidget()
+            self.assertTrue(parent.rect().contains(caption.rect().translated(caption.mapTo(parent, QPoint()))))
+
+    def test_long_inspector_captions_wrap_inside_narrow_panes(self):
+        from build_manager.review_ui import ReviewPlanView
+        view = ReviewPlanView()
+        self.addCleanup(view.close)
+        view.reset(integrated(self.root), preview=False)
+        view.inspect_phase('firebase')
+        original = QFont(self.app.font()); self.addCleanup(self.app.setFont, original)
+        font = QFont(original); font.setPointSize(14); self.app.setFont(font)
+        view.selection_heading.setText('Selected task with a longer readable caption')
+        view.scope_label.setText('Scope: task · Selected task with a longer readable caption')
+        # Exercise the actual inspector pane, independently of the map toolbar's
+        # larger native minimum width. No copied layout or relaxed control sizes.
+        pane = view.sidebar_splitter.widget(1)
+        pane.setParent(None)
+        self.addCleanup(pane.close)
+        pane.show()
+        for _ in range(8): self.app.processEvents()
+        for width in (360, 520):
+            with self.subTest(width=width):
+                pane.resize(width, 900)
+                for _ in range(8): self.app.processEvents()
+                self.assertEqual(pane.width(), width)
+                for caption in (view.selection_heading, view.scope_label):
+                    self.assertTrue(caption.isVisible())
+                    self.assertGreater(caption.width(), 0)
+                    self.assertGreaterEqual(caption.height(), caption.heightForWidth(caption.width()))
+                    parent = caption.parentWidget()
+                    self.assertTrue(parent.rect().contains(caption.rect().translated(caption.mapTo(parent, QPoint()))))
+                    self.assertTrue(pane.rect().contains(caption.rect().translated(caption.mapTo(pane, QPoint()))))
+
+    def check_task_row_visible(self):
         tasks = self.panel.run_view.results_workspace.tasks
         tasks.scrollToItem(tasks.currentItem(), tasks.ScrollHint.PositionAtTop)
         self.app.processEvents()
