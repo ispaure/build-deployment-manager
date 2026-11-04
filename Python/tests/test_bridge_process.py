@@ -278,11 +278,22 @@ class BridgeOwnershipUnitTests(unittest.TestCase):
         fallback.assert_called_once_with(process, grace=15)
 
     def test_signals_revalidate_sid_and_pgid_before_touching_a_group(self):
-        with patch.object(bridge_process.os, 'getsid', side_effect=[41, 99]), \
-                patch.object(bridge_process.os, 'getpgid', return_value=70), \
-                patch.object(bridge_process.os, 'killpg') as kill:
+        with patch.object(bridge_process.os, 'getsid', side_effect=[41, 99], create=True), \
+                patch.object(bridge_process.os, 'getpgid', return_value=70, create=True), \
+                patch.object(bridge_process.os, 'killpg', create=True) as kill:
             bridge_process.signal_session(41, {70: [12], 80: [13]}, signal.SIGTERM)
         kill.assert_called_once_with(70, signal.SIGTERM)
+
+    def test_signal_ownership_mock_contract_needs_no_host_posix_attributes(self):
+        result = unittest.TestResult()
+        # Windows has none of these POSIX APIs. Run the same ownership contract
+        # with an empty host namespace, rather than skipping its assertions.
+        with patch.object(bridge_process, 'os', SimpleNamespace()):
+            type(self)('test_signals_revalidate_sid_and_pgid_before_touching_a_group').run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(result.skipped, [])
 
     def windows(self, *, cancelled=False, timeout=5, cleanup_error=False):
         events = []
