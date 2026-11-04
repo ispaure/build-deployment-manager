@@ -93,8 +93,11 @@ class ManagerWindow(QWidget):
                 [('Accounts…', lambda: self.accounts(view)), ('Test machines…', lambda: self.test_machines(view)),
                  ('Check connections and settings…', lambda: view.request_connection_check_plan() if view.project else None),
                  ('Manage build storage…', lambda: view.open_storage_dialog() if view.project else None)],
-                [('Project tooling…', lambda: self.open_project_tooling(view))],
+                ([('Project tooling…', lambda: self.open_project_tooling(view))]
+                    if supports(view.project, 'tooling_status') else []),
                 [('App settings…', lambda: self.open_app_settings(view))]):
+            if not group:
+                continue
             if view.menu_actions:
                 menu.addSeparator()
             for label, action in group:
@@ -391,7 +394,8 @@ class ManagerWindow(QWidget):
             view.menu_actions[label].setEnabled(available and not busy)
         view.menu_actions['Check connections and settings…'].setEnabled(not busy and view.project is not None and supports(view.project, 'verification'))
         view.menu_actions['Manage build storage…'].setEnabled(not busy and view.project is not None)
-        view.menu_actions['Project tooling…'].setEnabled(not busy and view.project is not None and supports(view.project, 'tooling_status'))
+        if 'Project tooling…' in view.menu_actions:
+            view.menu_actions['Project tooling…'].setEnabled(not busy and view.project is not None and supports(view.project, 'tooling_status'))
 
     def set_active(self, value):
         docks = self.run_workspace.all_docks if self.run_workspace else []

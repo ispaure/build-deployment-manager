@@ -448,7 +448,8 @@ guidance. Ordinary actions retain the strict configured-interpreter requirement.
 ## Bridge process ownership
 
 Each bridge request owns a fresh POSIX session or a Windows job established
-before child execution. POSIX teardown inventories only process IDs, group IDs
+before child execution. POSIX inventory is checked before adapter launch; a
+missing host `ps` utility stops before project effects. POSIX teardown inventories only process IDs, group IDs
 and state, verifies session/group membership before signalling, and retires child
 subgroups as well as the bridge group. Missing inventory is an explicit teardown
 failure, not successful cancellation. Windows retains its existing job owner and

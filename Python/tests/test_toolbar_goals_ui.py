@@ -27,6 +27,7 @@ class ToolbarGoalTests(unittest.TestCase):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        self.tooling_enabled = False
         self.data = dict(projects={key: dict(name=key, root=str(self.root / key), presets={})
             for key in ('one', 'two')}, selected='one')
         owner = self
@@ -48,6 +49,8 @@ class ToolbarGoalTests(unittest.TestCase):
             project.make_plan = Mock(side_effect=AssertionError('Intent must not start planning'))
             project.make_journey = Mock(side_effect=AssertionError('Intent must not start planning'))
             project.verification_plan = Mock(side_effect=AssertionError('Intent must not start verification'))
+            if self.tooling_enabled:
+                project.tooling_status = Mock(side_effect=AssertionError('Menu discovery must not call bootstrap'))
             return project
         factory = patch('build_manager.app.ProjectBridge', side_effect=bridge)
         factory.start()
@@ -66,10 +69,22 @@ class ToolbarGoalTests(unittest.TestCase):
             'Remove registration', 'Accounts…', 'Test machines…', 'Check connections and settings…',
             'Manage build storage…', 'App settings…'})
         self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
+        self.assertNotIn('Project tooling…', window.menu_actions)
         self.assertIs(window.controls.itemAt(4).widget(), window.help_button)
         self.data['projects']['two']['name'] = 'one'
         window.refresh()
         self.assertNotEqual(window.projects.itemText(0), window.projects.itemText(1))
+
+    def test_tooling_menu_is_present_only_when_the_project_opts_in(self):
+        self.tooling_enabled = True
+        window = ManagerWindow(self.window.registry)
+        self.addCleanup(window.close)
+        self.assertIn('Project tooling…', window.menu_actions)
+        self.assertTrue(window.menu_actions['Project tooling…'].isEnabled())
+        window.panel.project.tooling_status.assert_not_called()
+        with patch.object(window, 'open_project_tooling') as open_tooling:
+            window.menu_actions['Project tooling…'].trigger()
+            open_tooling.assert_called_once_with(window.panel)
 
     def test_text_size_reaches_docked_controls_after_native_style_resolution(self):
         original = QFont(self.app.font())

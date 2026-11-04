@@ -6,7 +6,7 @@ import sys
 import unittest
 from unittest.mock import Mock
 
-from PySide6.QtCore import QPoint, Qt, QRectF
+from PySide6.QtCore import QPoint, Qt, QRectF, qVersion
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
@@ -203,7 +203,12 @@ class BlockerCardTests(unittest.TestCase):
         ancestor = button.parentWidget()
         while ancestor:
             rect = button.rect().translated(button.mapTo(ancestor, QPoint()))
-            self.assertTrue(ancestor.rect().contains(rect), type(ancestor).__name__)
+            self.assertTrue(ancestor.rect().contains(rect),
+                f'{type(ancestor).__name__} name={ancestor.objectName()!r} '
+                f'bounds={ancestor.rect().getRect()} button={rect.getRect()} '
+                f'window={self.window.size().toTuple()} Qt={qVersion()} '
+                f'style={self.app.style().objectName()} font={self.app.font().toString()} '
+                f'DPI={self.app.primaryScreen().logicalDotsPerInch()}')
             ancestor = ancestor.parentWidget()
         button.click()
         self.assertEqual(panel.run_view.selected, 'ios')

@@ -29,6 +29,17 @@ from Android acceptance. The current release records Linux/Windows Android as a
 known limitation. Never create/access held guests to obtain coverage. Project-owned
 native suites retain their own supported-toolchain limits.
 
+## Adapter process supervision prerequisites
+
+POSIX hosts need the system `ps` utility with PID, process-group and state output
+for owned bridge-session teardown. macOS includes it; minimal Linux images must
+provision the distribution's process tools (for example, Fedora's `procps-ng`).
+The project/image owner installs this host dependency, not the SDK or a project
+virtual environment. The manager checks inventory before launching an adapter;
+missing or unusable inventory stops the request before project effects. Teardown
+remains fail closed if inventory later becomes unavailable. Windows uses its
+owned job mechanism and does not require `ps`.
+
 ## Android emulator host architecture
 
 Android guest image ABI, vendor host support and manager availability are separate

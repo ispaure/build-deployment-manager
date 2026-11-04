@@ -62,8 +62,8 @@ class StartUploadTests(unittest.TestCase):
         plan = apply_start_review_policy(integrated(self.root))
         executor = Executor()
         run_phase = executor.run_phase
-        def tamper(phase, *args):
-            row = run_phase(phase, *args)
+        def tamper(phase, *args, **kwargs):
+            row = run_phase(phase, *args, **kwargs)
             if phase.id == 'prepare':
                 (self.root / 'package.bin').write_bytes(b'changed')
             return row

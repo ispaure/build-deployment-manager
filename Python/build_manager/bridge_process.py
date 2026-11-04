@@ -96,6 +96,11 @@ def check_request(cancelled, deadline):
 def run(argv, payload, *, cwd, env, timeout, cancelled):
     if os.name == 'nt':
         return run_windows(argv, payload, cwd=cwd, env=env, timeout=timeout, cancelled=cancelled)
+    try:
+        session_groups(os.getsid(0))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError('Cannot start project bridge: host process inventory is unavailable. '
+                         'Install or repair the host ps utility before running project actions.') from error
     process = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
     deadline = time.monotonic() + timeout
