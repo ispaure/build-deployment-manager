@@ -2,14 +2,24 @@
 
 ## November 4 integration status
 
-Manager implementation and fixture work is committed on root `3e4cafb`.
-The separate `428b3ca` candidate merges reviewed dependency ancestry and a newer
-real commonUtils pin; it has not been consolidated into this checkout.
+The initial manager implementation, dependency integration and component
+extractions are integrated. The original candidate's complete 101-module coverage
+was collected across two batches, as documented in
 [Current validation scope](validation.md#november-4-documentation-audit-and-integrated-validation)
-records the candidate-bound checks and ten pending manager modules. Completion
-requires that continuation after the release quiet hold and an updated acceptance
-record; no complete suite pass is claimed. The dated observations below describe
-their original snapshots rather than today's registration or dependency state.
+and remains bound to that source rather than subsequent changes.
+
+The later [Windows contract follow-up](validation.md#november-4-windows-offscreen-fonts-and-interpreter-cleanup)
+identifies missing offscreen fonts as the cause of both sizing failures. Published
+SDK `5d068f4` supplies the existing Windows system font directory to contract
+children when no explicit directory or native platform was selected. All 40
+affected Windows cases pass through the actual runner with unchanged UI
+assertions. The two historical hosted interpreter-deletion errors remain
+unreproduced on the managed guest; no cleanup-policy fix or hosted rerun is
+claimed. Logistics passes 130 project-context compatibility cases against that
+published SDK, with both private interpreters' dependency roots verified. Separate
+failure-only fixture diagnostics prepare the next planned hosted Windows job to
+retain actionable evidence. The dated observations below describe their original
+snapshots rather than today's registration or dependency state.
 
 ## Scope and conclusion
 
