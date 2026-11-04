@@ -61,9 +61,9 @@ under ignored `test-results/`.
 Subsequent test-only diagnostics in `ab6e8e2` preserve the original cleanup call
 and exception. Only a matching Windows deletion failure for the exact owned,
 non-reparse private interpreter starts a three-second isolated diagnostic child.
-Its bounded metadata includes executable hashes/build provenance, file attributes
-and Restart Manager owner identities or explicit query errors. No diagnostic query
-runs on success, and failures are never retried or suppressed. Seven portable
+Its bounded metadata includes Windows version/architecture, executable hashes/build
+provenance, file attributes and Restart Manager owner identities or explicit query errors.
+No diagnostic query runs on success, and failures are never retried or suppressed. Eight portable
 diagnostic checks and all 23 existing tooling/retained-delivery fixture methods
 pass; the latter require OS process-inventory access. These diagnostics have not
 yet captured the hosted failure. The next already-planned alpha Windows job is

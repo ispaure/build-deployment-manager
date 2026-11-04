@@ -19,7 +19,8 @@ class OwnedCleanupTests(unittest.TestCase):
         diagnostic.assert_not_called(); guard.assert_not_called()
 
     def test_original_error_survives_metadata_timeout_and_bad_serialization(self):
-        for result in ({'resource_owners': {'query_error': 5}}, object(), TimeoutError()):
+        for result in ({'resource_owners': {'query_error': 5}}, object(), TimeoutError(),
+                       json.JSONDecodeError('invalid', '', 0)):
             with self.subTest(result=type(result).__name__):
                 error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe')
                 error.winerror = 5
@@ -91,3 +92,19 @@ class OwnedCleanupTests(unittest.TestCase):
             with target.open('wb') as stream:
                 stream.truncate(16 * 1024 * 1024 + 1)
             self.assertEqual(owned_cleanup._executable_hash(target), {'error': 'size_limit'})
+
+    def test_failure_metadata_distinguishes_guest_os_from_python_build(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            target = root / '.venv/Scripts/python.exe'
+            target.parent.mkdir(parents=True); target.write_bytes(b'fixture')
+            with patch.object(owned_cleanup.platform, 'win32_ver', return_value=('11', '26300', '', '')), \
+                    patch.object(owned_cleanup.platform, 'machine', return_value='ARM64'), \
+                    patch.object(owned_cleanup, '_executable_hash', return_value={'sha256': 'fixture'}), \
+                    patch.object(owned_cleanup, '_resource_owners', return_value={'query_error': 5}):
+                evidence = owned_cleanup._collect_failure(root, target)
+            self.assertEqual(evidence['windows_version'][:2], ('11', '26300'))
+            self.assertEqual(evidence['machine'], 'ARM64')
+            self.assertIn('compiler', evidence)
+            self.assertIn('python_bits', evidence)
+            self.assertEqual(evidence['resource_owners'], {'query_error': 5})
