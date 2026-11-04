@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import time
 
 from .models import Plan
 from .redaction import Redactor
@@ -115,24 +114,10 @@ class ProjectBridge:
         reject_secrets(values)
         if cancelled():
             raise ValueError('Project request cancelled.')
-        with subprocess.Popen([str(python), *interpreter_options, str(script)], cwd=self.root, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment) as process:
-            deadline = time.monotonic() + timeout
-            try:
-                while True:
-                    if cancelled():
-                        raise ValueError('Project request cancelled.')
-                    if time.monotonic() >= deadline:
-                        raise ValueError('Project request timed out. Check the project interpreter and adapter.')
-                    try:
-                        stdout, stderr = process.communicate(payload, timeout=.1)
-                        break
-                    except subprocess.TimeoutExpired:
-                        payload = None
-            finally:
-                if process.poll() is None:
-                    process.kill()
-                    process.communicate()
+        from .bridge_process import run
+        process = run([str(python), *interpreter_options, str(script)], payload,
+                      cwd=self.root, env=environment, timeout=timeout, cancelled=cancelled)
+        stdout, stderr = process.stdout, process.stderr
         redact = Redactor(environment.get(name) for name in ('GH_TOKEN','GITHUB_TOKEN','FIREBASE_TOKEN'))
         context = f"{descriptor['name']} adapter action {action!r} ({script})"
         if process.returncode:
