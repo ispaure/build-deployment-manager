@@ -1,11 +1,135 @@
 """Cleanup is limited to the exact device and ownership label created by a run."""
 import json
+import subprocess
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from build_manager.apple_simulators import AppleSimulators
 
 DEVICE = '00000000-0000-0000-0000-000000000001'
+OWNER = 'Owned boot fixture'
+
+
+class InitialBootTimeoutTests(unittest.TestCase):
+    def test_owned_booting_transition_requires_successful_normal_readiness_command(self):
+        client = AppleSimulators()
+        original = subprocess.TimeoutExpired(['xcrun', 'simctl', 'boot', DEVICE], 60)
+        with patch.object(client, 'matching', side_effect=[dict(state='Shutdown'),
+                dict(state='Booting'), dict(state='Booted')]) as matching, \
+                patch.object(client, 'invoke', side_effect=[original, '']) as invoke, \
+                patch('build_manager.apple_simulators.time.monotonic', return_value=0), \
+                patch('build_manager.apple_simulators.time.sleep'):
+            client.boot(DEVICE, name=OWNER)
+        self.assertEqual([call.args for call in invoke.call_args_list],
+                         [('boot', DEVICE), ('bootstatus', DEVICE, '-b')])
+        self.assertEqual(invoke.call_args_list[-1].kwargs, {'timeout': 180})
+        self.assertTrue(all(call.args == (DEVICE, OWNER) for call in matching.call_args_list))
+        self.assertTrue(all(0 < call.kwargs['timeout'] <= 5 for call in matching.call_args_list))
+
+    def test_readiness_failure_preserves_original_rpc_timeout_without_reboot(self):
+        for failure in (RuntimeError('not ready'), subprocess.TimeoutExpired('bootstatus', 180)):
+            with self.subTest(failure=type(failure).__name__):
+                client = AppleSimulators()
+                original = subprocess.TimeoutExpired('boot', 60)
+                with patch.object(client, 'matching', side_effect=[dict(state='Shutdown'), dict(state='Booted')]), \
+                        patch.object(client, 'invoke', side_effect=[original, failure]) as invoke, \
+                        patch('build_manager.apple_simulators.time.monotonic', return_value=0):
+                    with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                        client.boot(DEVICE, name=OWNER)
+                self.assertIs(caught.exception, original)
+                self.assertEqual([call.args[0] for call in invoke.call_args_list], ['boot', 'bootstatus'])
+
+    def test_unknown_state_missing_device_or_lost_ownership_preserves_original_timeout(self):
+        for observed in (None, dict(state='Shutdown'), dict(state='Shutting Down'),
+                         dict(state='Unknown'), ValueError('ownership changed'),
+                         subprocess.TimeoutExpired('list', 5)):
+            with self.subTest(observed=observed):
+                client = AppleSimulators()
+                original = subprocess.TimeoutExpired('boot', 60, output='Booted')
+                with patch.object(client, 'matching', side_effect=[dict(state='Shutdown'), observed]), \
+                        patch.object(client, 'invoke', side_effect=original) as invoke, \
+                        patch('build_manager.apple_simulators.time.monotonic', return_value=0):
+                    with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                        client.boot(DEVICE, name=OWNER)
+                self.assertIs(caught.exception, original)
+                invoke.assert_called_once_with('boot', DEVICE)
+
+    def test_booting_observation_has_a_deadline_and_never_reboots(self):
+        client = AppleSimulators()
+        original = subprocess.TimeoutExpired('boot', 60)
+        clock = dict(now=0)
+        def elapsed(seconds):
+            clock['now'] += 31
+        with patch.object(client, 'matching', side_effect=[dict(state='Shutdown'), dict(state='Booting')]), \
+                patch.object(client, 'invoke', side_effect=original) as invoke, \
+                patch('build_manager.apple_simulators.time.monotonic', side_effect=lambda: clock['now']), \
+                patch('build_manager.apple_simulators.time.sleep', side_effect=elapsed) as sleep:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                client.boot(DEVICE, name=OWNER)
+        self.assertIs(caught.exception, original)
+        self.assertIsInstance(caught.exception.__cause__, TimeoutError)
+        invoke.assert_called_once_with('boot', DEVICE)
+        sleep.assert_called_once()
+
+    def test_other_booted_device_never_satisfies_owned_readiness(self):
+        bad_rows = [
+            [dict(udid='00000000-0000-0000-0000-000000000002', name=OWNER, state='Booted')],
+            [dict(udid=DEVICE, name='Other owner', state='Booted')],
+            [dict(udid=DEVICE, name=OWNER, state='Booted')] * 2,
+        ]
+        for rows in bad_rows:
+            with self.subTest(rows=rows):
+                client = AppleSimulators()
+                original = subprocess.TimeoutExpired('boot', 60)
+                inventories = [dict(devices={'runtime': [dict(udid=DEVICE, name=OWNER, state='Shutdown')]}),
+                               dict(devices={'runtime': rows})]
+                with patch.object(client, 'devices', side_effect=inventories), \
+                        patch.object(client, 'invoke', side_effect=original) as invoke, \
+                        patch('build_manager.apple_simulators.time.monotonic', return_value=0):
+                    with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                        client.boot(DEVICE, name=OWNER)
+                self.assertIs(caught.exception, original)
+                invoke.assert_called_once_with('boot', DEVICE)
+
+    def test_late_booted_observation_cannot_bypass_the_deadline(self):
+        client = AppleSimulators()
+        original = subprocess.TimeoutExpired('boot', 60)
+        clock = dict(now=0)
+        def observed(*args, **kwargs):
+            clock['now'] = 31
+            return dict(state='Booted')
+        with patch.object(client, 'matching', side_effect=[dict(state='Shutdown')]) as matching, \
+                patch.object(client, 'invoke', side_effect=original) as invoke, \
+                patch('build_manager.apple_simulators.time.monotonic', side_effect=lambda: clock['now']):
+            def preflight_then_late(*args, **kwargs):
+                if matching.call_count == 1:
+                    return dict(state='Shutdown')
+                return observed()
+            matching.side_effect = preflight_then_late
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                client.boot(DEVICE, name=OWNER)
+        self.assertIs(caught.exception, original)
+        self.assertIsInstance(caught.exception.__cause__, TimeoutError)
+        invoke.assert_called_once_with('boot', DEVICE)
+
+    def test_unnamed_initial_timeout_is_not_reconciled(self):
+        client = AppleSimulators()
+        original = subprocess.TimeoutExpired('boot', 60)
+        with patch.object(client, 'invoke', side_effect=original) as invoke, \
+                patch.object(client, 'devices') as devices:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                client.boot(DEVICE)
+        self.assertIs(caught.exception, original)
+        invoke.assert_called_once_with('boot', DEVICE)
+        devices.assert_not_called()
+
+    def test_missing_owned_device_is_rejected_before_initial_boot(self):
+        client = AppleSimulators()
+        with patch.object(client, 'matching', return_value=None), patch.object(client, 'invoke') as invoke:
+            with self.assertRaises(ValueError):
+                client.boot(DEVICE, name=OWNER)
+        invoke.assert_not_called()
 
 
 class SimulatorLeaseTests(unittest.TestCase):

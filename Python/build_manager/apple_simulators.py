@@ -57,32 +57,64 @@ class AppleSimulators:
             values[name] = result.stdout.strip()
         return values
 
-    def devices(self):
-        return json.loads(self.invoke('list', 'devices', '--json'))
+    def devices(self, *, timeout=60):
+        return json.loads(self.invoke('list', 'devices', '--json', timeout=timeout))
 
     def create(self, name, device_type, runtime):
         device = self.invoke('create', name, device_type, runtime)
         UUID(device)
         return device
 
-    def boot(self, device):
+    def boot(self, device, *, name=None):
         UUID(device)
-        self.invoke('boot', device)
+        if name is not None:
+            if not isinstance(name, str) or not name or self.matching(device, name, timeout=5) is None:
+                raise ValueError('Simulator identity/ownership label is unavailable; refusing boot.')
+        try:
+            self.invoke('boot', device)
+        except subprocess.TimeoutExpired as original:
+            if name is None:
+                raise
+            try:
+                self._observe_owned_boot(device, name)
+                # Inventory only reconciles the uncertain boot RPC. Readiness
+                # still requires the normal command to complete successfully.
+                self.invoke('bootstatus', device, '-b', timeout=180)
+            except Exception as failure:
+                raise original from failure
+            return
         try:
             self.invoke('bootstatus', device, '-b', timeout=180)
         except subprocess.TimeoutExpired:
             rows = [row for items in self.devices()['devices'].values()
                     for row in items if row['udid'] == device]
-            if len(rows) != 1 or rows[0]['state'] != 'Booted':
+            if (len(rows) != 1 or rows[0]['state'] != 'Booted'
+                    or name is not None and rows[0].get('name') != name):
                 raise
             # simctl can hang after completing boot. Recheck the exact booted
             # device once, requiring a real successful exit; never reboot it or
             # infer readiness from partial stdout/the inventory state alone.
             self.invoke('bootstatus', device, '-b', timeout=30)
 
-    def matching(self, device, name):
+    def _observe_owned_boot(self, device, name):
+        deadline = time.monotonic() + 30
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Owned simulator did not reach Booted after its boot RPC timed out.')
+            row = self.matching(device, name, timeout=min(5, remaining))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Owned simulator boot observation exceeded its deadline.')
+            if row is None or row['state'] not in ('Booting', 'Booted'):
+                raise ValueError('Owned simulator boot state is unverified.')
+            if row['state'] == 'Booted':
+                return
+            time.sleep(min(.2, remaining))
+
+    def matching(self, device, name, *, timeout=60):
         UUID(device)
-        rows = [row for items in self.devices()['devices'].values() for row in items if row['udid'] == device]
+        rows = [row for items in self.devices(timeout=timeout)['devices'].values() for row in items if row['udid'] == device]
         if not rows:
             return None
         if len(rows) != 1 or rows[0]['name'] != name:
