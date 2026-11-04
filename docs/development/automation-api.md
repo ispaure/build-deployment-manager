@@ -140,3 +140,11 @@ digests. The compact report's additive `continuation` object exposes completed,
 pending, failed and unknown actions plus suggested command argument arrays.
 These are guidance, not authorization. A successful independent delivery leaves
 other failed required branches and the overall failed status unchanged.
+
+`ManagerAPI.prepare_retained_delivery(run_directory, destinations, project=...,
+run_overrides=...)` returns a fresh plan through an optional declared adapter
+action. It neither starts that plan nor reinterprets an uncertain install as
+authorization. See [the retained-input contract](adapters.md#optional-delivery-from-retained-inputs)
+for the exact payload, ownership and validation boundaries. The manager does not
+require current HEAD to equal the retained source; the project must verify its
+retained snapshot and selected platform's prerequisite closure.

@@ -25,6 +25,22 @@ priority regression and a test-mock binding error; the corrected targeted run
 passes. This is new scoped coverage, not a replay of the earlier 101-module suite
 or new native desktop, mobile, signing, device or provider acceptance.
 
+## November 4 optional retained-input delivery work
+
+The optional `retained_delivery_plan` bridge/API/CLI and GUI preparation route
+has 51 passing headless/protocol checks: eight new retained-delivery cases,
+24 CLI cases, 13 registration/bridge cases and six guidance/transport cases.
+The new cases cover an isolated project-interpreter round trip, exact callback
+values, project/checkout scope, retired or missing inputs, declared fields and
+destinations, fresh workspaces, actionable project errors and unchanged original
+evidence despite an unrelated failed leg. Project archive, gate and provisioning
+policy is deliberately mocked here and requires its own adapter validation.
+
+The three new offscreen GUI regressions are written but have not run during the
+exclusive timing window. Their acceptance is pending; the earlier 15-case UI
+pass covers the preceding continuation change, not this subsequent UI source.
+No new native, signing, device or provider acceptance is established.
+
 ## November 4 documentation audit and integrated validation
 
 The documentation audit reviewed manager source and test definitions at

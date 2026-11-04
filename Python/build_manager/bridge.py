@@ -166,6 +166,11 @@ class ProjectBridge:
             from .run_fields import validate_overrides
             options['run_overrides'] = validate_overrides(self.run_fields, options['run_overrides'])
 
+    def retained_delivery_plan(self, run_directory, destinations, run_overrides=None):
+        from .retained_delivery import prepare
+        return prepare(self, run_directory, destinations, run_overrides,
+            request=lambda **values: self.call('retained_delivery_plan', timeout=600, **values))
+
     def run_defaults(self, *, cancelled=lambda: False):
         if self.descriptor.get('dynamic_run_inputs') is True:
             return self.call('run_defaults', cancelled=cancelled, timeout=30)
