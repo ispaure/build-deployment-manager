@@ -4,9 +4,9 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from copy import deepcopy
 import sys
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from PySide6.QtCore import QPoint, Qt, QRectF, qVersion
+from PySide6.QtCore import QPoint, Qt, QRect, QRectF, qVersion
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel
@@ -184,7 +184,26 @@ class BlockerCardTests(unittest.TestCase):
         self.assertIs(view.tabs.currentWidget(), view.steps.parentWidget())
         self.assertEqual(plan.data(), before)
 
+    def test_short_run_inspector_keeps_repair_visible_with_taller_font_metrics(self):
+        splitter = self.panel.run_view.results_workspace.splitter
+        # Fedora's substituted font leaves 23px less inspector height than
+        # the local font. Recreate that bounded space at the same window size.
+        with patch.object(splitter, 'fontMetrics', return_value=Mock(height=lambda: 32)):
+            self.check_small_run_inspection(extra_summary_height=23)
+            self.assertEqual(splitter.orientation(), Qt.Orientation.Vertical)
+        tasks = self.panel.run_view.results_workspace.tasks
+        tasks.scrollToItem(tasks.currentItem(), tasks.ScrollHint.PositionAtTop)
+        self.app.processEvents()
+        row = tasks.visualItemRect(tasks.currentItem())
+        self.assertGreater(row.height(), 0)
+        self.assertTrue(tasks.viewport().rect().contains(QRect(0, row.y(), tasks.viewport().width(), row.height())))
+        header = tasks.header()
+        self.assertTrue(tasks.rect().contains(header.rect().translated(header.mapTo(tasks, QPoint()))))
+
     def test_small_run_inspection_keeps_repair_action_inside_every_scroll_viewport(self):
+        self.check_small_run_inspection()
+
+    def check_small_run_inspection(self, *, extra_summary_height=0):
         panel = self.panel
         panel.run_view.reset(integrated(self.root))
         panel.run_view.update_phase(dict(id='ios', status='failed', error='Synthetic check failure'))
@@ -196,6 +215,10 @@ class BlockerCardTests(unittest.TestCase):
         font = QFont(original); font.setPointSize(14); self.app.setFont(font)
         self.window.resize(1024, 700); self.window.show()
         for _ in range(8): self.app.processEvents()
+        if extra_summary_height:
+            summary = panel.run_view.summary
+            summary.setMinimumHeight(summary.height() + extra_summary_height)
+            for _ in range(8): self.app.processEvents()
         button = panel.run_view.results_workspace.blocker
         panel.run_view.results_workspace.details_scroll.ensureWidgetVisible(button)
         self.app.processEvents()
