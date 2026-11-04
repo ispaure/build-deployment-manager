@@ -48,6 +48,62 @@ class WorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(result['seconds'], first['seconds'] + result['attempt_seconds'])
         self.assertEqual(Executor().run(plan,output,resume=True)['status'],'passed')
 
+    def test_review_deferred_acceptance_runs_on_continue_without_retrying_failures(self):
+        for other_platform_failed in (False, True):
+            with self.subTest(other_platform_failed=other_platform_failed):
+                root = self.root / str(other_platform_failed)
+                root.mkdir()
+                dispatched, accepted, forbidden = (root / name for name in ('dispatch', 'accepted', 'forbidden'))
+                plan = Plan('Fixture', 'combined validation', {}, (
+                    self.phase('android.prepare', 'pass', effect='build'),
+                    self.phase('android.dispatch',
+                               f'from pathlib import Path;Path({str(dispatched)!r}).write_text("once")',
+                               dependencies=('android.prepare',), effect='dispatch'),
+                    self.phase('android.inspect',
+                               f'from pathlib import Path;assert Path({str(dispatched)!r}).read_text()=="once"',
+                               dependencies=('android.dispatch',), effect='inspect'),
+                    self.phase('android.validated',
+                               f'from pathlib import Path;Path({str(accepted)!r}).touch()',
+                               dependencies=('android.inspect',), effect='test'),
+                    self.phase('linux.prepare', 'raise SystemExit(3)' if other_platform_failed else 'pass', effect='build'),
+                    self.phase('linux.validated',
+                               f'from pathlib import Path;Path({str(forbidden)!r}).touch()',
+                               dependencies=('linux.prepare', 'android.dispatch'), effect='test'),
+                    self.phase('cleanup', 'pass', always=True, waits_for=('android.validated', 'linux.validated')),
+                ), str(root / 'workspace'), max_workers=2)
+                output = root / 'result'
+                first = Executor().run(plan, output)
+                self.assertEqual(first['status'], 'awaiting_review')
+                before = {row['id']: row for row in first['phases']}
+                self.assertEqual(before['android.dispatch']['status'], 'awaiting_review')
+                self.assertEqual(before['cleanup']['status'], 'passed')
+                self.assertNotIn('android.inspect', before)
+                self.assertNotIn('android.validated', before)
+                self.assertFalse(dispatched.exists())
+                self.assertFalse(accepted.exists())
+                self.assertFalse(forbidden.exists())
+                if other_platform_failed:
+                    self.assertEqual(before['linux.prepare']['status'], 'failed')
+                    self.assertEqual(before['linux.validated']['status'], 'skipped')
+                else:
+                    self.assertNotIn('linux.validated', before)
+                permission = approve(plan, 'android.dispatch', first)
+                result = Executor().run(plan, output, resume=True, approvals=[permission], retry_failed=False)
+                after = {row['id']: row for row in result['phases']}
+                self.assertEqual(result['status'], 'failed' if other_platform_failed else 'passed')
+                for name in ('android.dispatch', 'android.inspect', 'android.validated'):
+                    self.assertEqual(after[name]['status'], 'passed')
+                self.assertTrue(accepted.exists())
+                self.assertEqual(after['android.prepare'], before['android.prepare'])
+                self.assertEqual(after['cleanup'], before['cleanup'])
+                if other_platform_failed:
+                    self.assertEqual(after['linux.prepare'], before['linux.prepare'])
+                    self.assertEqual(after['linux.validated'], before['linux.validated'])
+                    self.assertFalse(forbidden.exists())
+                else:
+                    self.assertEqual(after['linux.validated']['status'], 'passed')
+                    self.assertTrue(forbidden.exists())
+
     def test_recovery_never_repeats_uncertain_effect_and_artifact_loss_is_explicit(self):
         artifact=self.root/'a';artifact.write_text('fixed')
         import hashlib

@@ -17,7 +17,7 @@ from commonUtils.runtime.operations import OperationCancelled
 from .locking import workspace_lock
 from .redaction import Redactor
 from .run_recording import RunRecorder, timestamp
-from .scheduling import can_consider_phase, skip_reason, final_status
+from .scheduling import can_consider_phase, defer_for_review, skip_reason, final_status
 
 
 def signal_group(group, sig):
@@ -216,6 +216,7 @@ class Executor:
                 recorder.save()
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
+                deferred = set()
                 retry_not_before_by_phase = {}
                 retry_history = {row['id']: row['retry_attempts'] for row in previous if row.get('retry_attempts')}
                 with ThreadPoolExecutor(max_workers=plan.max_workers) as pool:
@@ -228,7 +229,15 @@ class Executor:
                                     running=tuple(active for active, _ in running.values()),
                                     pending=pending, rows=rows, max_workers=plan.max_workers,
                                     retry_not_before_by_phase=retry_not_before_by_phase, now=time.monotonic(),
+                                    cancelled=self.cancelled.is_set(), deferred=deferred):
+                                continue
+                            if defer_for_review(phase, rows, deferred=deferred,
                                     cancelled=self.cancelled.is_set()):
+                                # Leave no terminal row to preserve on --no-retry-failed.
+                                # Cleanup may finish this attempt while these steps await review.
+                                deferred.add(phase.id)
+                                pending.remove(phase)
+                                changed = True
                                 continue
                             reason = skip_reason(phase, rows, cancelled=self.cancelled.is_set())
                             row = None
