@@ -53,8 +53,8 @@ Nothing was replayed, approved or reconciled as part of this audit.
 | P1 | `ProjectBridge.call` used `.get` on arbitrary decoded JSON. A JSON list/null raised an uncaught type error; invalid JSON and child exits lacked project/action context. | Report the project, action, bridge path and protocol expectation or exit code. Do not echo private stdout. Preserve redaction and valid result types. Test real isolated subprocesses. | Implemented in this pass |
 | P2 | CLI `inspect` passed its selector directly to `Registry.resolve`, which accepts registration keys. Names/paths failed despite other discovery commands supporting them. Multiple Logistics checkouts expose the inconsistency. | Use the existing unique-selector resolver. Exercise names, paths, IDs and ambiguous worktrees without invoking the adapter. | Implemented in this pass |
 | P2 | Broad validation exposed two timing-sensitive UI fixtures: the responsiveness test raced a 150 ms worker sleep, and the workflow test shared one 15-second deadline across preparation, artifact rejection, review and two executions. Both failed again on separate reruns. | Hold the planning worker with an event until the main loop delivers timer ticks; retain stale-selection rejection. Give each asynchronous workflow operation its own bounded 15-second wait. Preserve assertions for artifact rejection, approval and exactly one effect. | Implemented in this pass |
-| P1 | `build_manager.__init__` prepends its source root. A Logistics interpreter probe with Logistics first on `PYTHONPATH` still selected manager commonUtils after manager import. Preloading Logistics commonUtils selected the consumer copy instead. The pins differ. | Decide and document the dependency contract for adapters running in consumer processes. Add subprocess acceptance for both import orders and report the actual loaded dependency. Keep standalone manager tied to its real submodule; do not silently redirect it to Logistics. | Follow-up; compatibility checked with explicit consumer preload, bootstrap behavior unchanged |
-| P2 | `ui.py` has 1,314 lines and a 263-line constructor; `run_ui.py` has 1,031 lines and a 262-line constructor; `configuration_ui.py` has a 317-line constructor. Existing session/state/inspector owners already provide seams, but construction and coordination remain hard to follow. | Extract one Qt view at a time using explicit inputs/signals: configuration section construction first, then run-summary/test presentation. Retain parent ownership, stale-worker guards, selection and approval rules. Use current lifecycle/accessibility/selection tests as acceptance; require native Qt acceptance for lifecycle changes. | Ordered follow-up; no unreviewed UI architecture rewrite |
+| P1 | `build_manager.__init__` prepends its source root. A Logistics interpreter probe with Logistics first on `PYTHONPATH` still selected manager commonUtils after manager import. Preloading Logistics commonUtils selected the consumer copy instead. The pins differ. | Decide and document the dependency contract for adapters running in consumer processes. Add subprocess acceptance for both import orders and report the actual loaded dependency. Keep standalone manager tied to its real submodule; do not silently redirect it to Logistics. | Addressed by explicit project context and loaded-dependency provenance in the three follow-up passes below |
+| P2 | `ui.py` has 1,314 lines and a 263-line constructor; `run_ui.py` has 1,031 lines and a 262-line constructor; `configuration_ui.py` has a 317-line constructor. Existing session/state/inspector owners already provide seams, but construction and coordination remain hard to follow. | Extract one Qt view at a time using explicit inputs/signals: configuration section construction first, then run-summary/test presentation. Retain parent ownership, stale-worker guards, selection and approval rules. Use current lifecycle/accessibility/selection tests as acceptance; require native Qt acceptance for lifecycle changes. | Source/delivery and summary/test owners extracted in the three follow-up passes below; shared visual work remains separately owned |
 | P2 | Historical audits contain old line counts, backend availability and acceptance totals alongside current guides. New developers must distinguish history from instructions. | Add a current Logistics trace and link this dated assessment from the developer landing and earlier audit. Keep current behavior in task/reference guides and raw evidence outside the wiki. | Implemented in this pass |
 
 ## Delivery sequence
@@ -108,3 +108,41 @@ Logistics edits remain in place. No consumer files or private configuration were
 edited.
 
 [Developer guide](development.md) · [Earlier refactoring audit](refactoring.md)
+
+## Three follow-up review and fix passes — November 3, 2026
+
+The follow-up implements the remaining dependency and component boundaries above.
+The original assessment and validation totals remain historical evidence.
+
+1. **Dependency isolation.** Adapter subprocesses explicitly use project dependency
+   context; standalone manager processes bind the manager source root. Fresh
+   Logistics subprocesses resolve Logistics commonUtils in both import orders.
+   Runtime provenance now records the loaded package's checkout. No consumer or
+   manager pin is changed. The direct-tooling contract is documented in
+   [the Logistics trace](logistics-integration.md#distinguish-the-three-dependency-identities).
+2. **UI composition.** Source revision synchronization and delivery controls move
+   into dedicated configuration views. Run summary and scoped test/timing views
+   receive explicit plan/facts values and emit navigation requests. Coordinators
+   retain preparation, approval and review policy. Existing named control handles
+   remain available to callers. The concurrent, separately approved Balanced
+   workspace implementation owns the shared layout/visual changes and preserves
+   these extracted components; its full visual acceptance belongs to that work.
+3. **Missed state and fixture contracts.** Test presentation resets its own cache
+   when reopening identical retained facts. A changed scope updates column
+   visibility even when final cases are identical; expired interim totals and
+   deselected case details clear. Native Qt parents explicitly retain summary
+   activity controls. Logistics' isolated journey fixture now mocks the current
+   `capture_engine_source_identity` API instead of its unused compatibility alias,
+   so its scheduling/approval tests actually have the fixed engine they declare.
+
+Validation includes isolated import orders and bridge-context fixtures, an actual
+Logistics read-only saved-recipient bridge request, all 24 isolated Logistics
+journey cases, focused configuration/results tests and six native Cocoa result
+cases. The first native attempt could not access a display from the sandbox;
+the desktop-access run passed. This does not certify native mobile builds,
+Windows/Linux GUI behavior, signing, personal devices or provider publication.
+Raw per-pass evidence remains under ignored `test-results/`.
+
+The import-order and UI ownership findings are addressed by these changes. Future
+extractions should follow measured responsibilities rather than a line-count
+target. The dormant nested workflow browser remains disconnected.
