@@ -1,5 +1,6 @@
 """Bounded workflow orchestration, dependency gates and owned process cleanup."""
 from contextlib import ExitStack
+import errno
 import json
 import os
 from pathlib import Path
@@ -432,11 +433,13 @@ class Executor:
                 try:
                     process = subprocess.Popen(list(phase.argv), cwd=phase.cwd, env=environment,
                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
-                except OSError:
-                    # POSIX Popen reports failed creation/exec via its error pipe;
-                    # the requested executable has not run. Do not extend this
-                    # proof to arbitrary exceptions or other process backends.
-                    if launch is not None:
+                except OSError as error:
+                    # Child exec/chdir rejection carries the requested filename.
+                    # A generic parent pipe/descriptor error may follow fork, so
+                    # an OSError alone is never evidence that no command ran.
+                    rejected = (error.errno in {errno.ENOENT, errno.EACCES, errno.ENOEXEC, errno.ENOTDIR}
+                                and error.filename in {phase.argv[0], phase.cwd})
+                    if rejected and launch is not None:
                         launch('not_started')
                     raise
             if launch is not None:
