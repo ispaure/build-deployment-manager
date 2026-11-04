@@ -271,7 +271,7 @@ class WindowsGuest:
         raise RuntimeError('Windows source staging was not admitted after bounded recovery.')
 
     def write(self, relative, data):
-        self.call(WRITE, values=dict(file=relative), data=data)
+        self.call_idempotent(WRITE, values=dict(file=relative), data=data)
 
     def run(self, python, argv, directory, reports, environment, cancelled, *, timeout, progress=None):
         invocation = uuid4().hex
