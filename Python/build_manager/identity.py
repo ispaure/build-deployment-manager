@@ -28,9 +28,10 @@ def checkout_identity(root):
 
 
 def capture_engine_source_identity():
+    import commonUtils
     root = Path(__file__).resolve().parents[2]
     return dict(api=API_VERSION, manager=checkout_identity(root),
-                commonUtils=checkout_identity(root / 'Python/commonUtils'))
+                commonUtils=checkout_identity(Path(commonUtils.__file__).resolve().parent))
 
 
 # Compatibility for adapters recording the manager source identity.
