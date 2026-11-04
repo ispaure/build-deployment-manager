@@ -1,14 +1,10 @@
 """Editable workflow intent beside a non-executable, live dependency sketch."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
-from .ui_components import SelectionSummary, ActionStrip, style_tabs
-
-
-def delivery_tab_label(category):
-    return {'Mobile tester platforms': 'Tester', 'Mobile dev devices': 'Development',
-            'Mobile stores': 'Store', 'Source releases': 'Source'}.get(category, category)
+from .ui_components import SelectionSummary, ActionStrip, style_tabs, AdaptiveSplitter, WrappingLayout
+from .configuration_delivery_ui import DeliveryOptionsView, delivery_tab_label
 
 
 class ConfigurationSection(QWidget):
@@ -44,7 +40,7 @@ class ConfigurationView(QWidget):
         self.project = project
         self.body_layout = QVBoxLayout(self)
         self.body_layout.setContentsMargins(0, 0, 0, 0)
-        self.body_layout.setSpacing(4)
+        self.body_layout.setSpacing(12)
         self.editor = QWidget()
         configuration_layout = QVBoxLayout(self.editor)
         configuration_layout.setContentsMargins(0, 0, 4, 0)
@@ -52,10 +48,9 @@ class ConfigurationView(QWidget):
         self.editor_scroll.setWidgetResizable(True)
         self.editor_scroll.setWidget(self.editor)
         self.editor_scroll.setAccessibleName('Workflow configuration sections')
-        self.editor_scroll.setMinimumWidth(350)
         from .workflow_ui import WorkflowGraphView
         self.proposed_flow = WorkflowGraphView()
-        self.proposed_flow.setMinimumWidth(330)
+        self.proposed_flow.scroll.readable_scale = .75
         self.proposed_flow.phase_selected.connect(self.open_proposed_card)
         preview = QWidget()
         preview_layout = QVBoxLayout(preview)
@@ -63,23 +58,21 @@ class ConfigurationView(QWidget):
         self.proposed_flow.overview_heading.setText('Workflow overview')
         self.proposed_flow.overview_heading.show()
         preview_layout.addWidget(self.proposed_flow, 1)
-        self.splitter = QSplitter()
+        self.splitter = AdaptiveSplitter(sizes=(420, 580))
         self.editor_pane = QWidget()
         self.editor_layout = QVBoxLayout(self.editor_pane)
         self.editor_layout.setContentsMargins(0, 0, 0, 0)
         self.editor_layout.addWidget(self.editor_scroll, 1)
         self.splitter.addWidget(self.editor_pane)
         self.splitter.addWidget(preview)
-        self.splitter.setSizes([400, 1200])
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 3)
+        self.splitter.setSizes([420, 580])
+        self.splitter.setStretchFactor(0, 42)
+        self.splitter.setStretchFactor(1, 58)
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setMinimumHeight(240)
         self.body_layout.addWidget(self.splitter, 1)
         self.current_proposal = None
         self.last_opened_section = ''
-        self._syncing_source = False
-        self._custom_revision = ''
         self.sections = {}
         guidance = QLabel('Choose your settings, then review the plan before starting.')
         guidance.setWordWrap(True)
@@ -96,7 +89,7 @@ class ConfigurationView(QWidget):
         self.intent_header = QWidget()
         header = QVBoxLayout(self.intent_header)
         header.setContentsMargins(0, 0, 0, 0)
-        self.goal_row = QHBoxLayout()
+        self.goal_row = WrappingLayout()
         self.goal_group = QButtonGroup(self)
         self.goal_buttons = {}
         for value, text in (('validate', 'Run checks'), ('build', 'Build only'), ('deliver', 'Prepare and deliver'), ('advanced', 'Project operation…')):
@@ -108,7 +101,7 @@ class ConfigurationView(QWidget):
                 border: 1px solid palette(mid); border-radius: 6px; background: palette(button); font-weight: 600; }
                 QPushButton:checked, QToolButton:checked { border: 2px solid palette(highlight);
                     padding: 5px 11px; background: palette(alternate-base); color: palette(text); }
-                QPushButton:focus, QToolButton:focus { border: 2px solid palette(highlight); padding: 5px 11px; }
+                QPushButton:focus, QToolButton:focus { border: 2px dashed palette(highlight); padding: 5px 11px; }
                 QPushButton:disabled, QToolButton:disabled { color: palette(mid); }''')
             self.goal_group.addButton(button)
             self.goal_buttons[value] = button
@@ -127,7 +120,7 @@ class ConfigurationView(QWidget):
         self.config_tabs.setUsesScrollButtons(True)
         style_tabs(self.config_tabs)
         self.config_pages, self.page_layouts = {}, {}
-        for key, label in [('source', 'Source'), ('platforms', 'Test'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
+        for key, label in [('source', 'Source'), ('platforms', 'Platforms'), ('delivery', 'Delivery'), ('advanced', 'Options')]:
             page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(6)
             self.config_tabs.addTab(page, label); self.config_pages[key], self.page_layouts[key] = page, body
         configuration_layout.addWidget(self.config_tabs, 1)
@@ -138,35 +131,22 @@ class ConfigurationView(QWidget):
             self.page_layouts['platforms' if key == 'validation' else key].addWidget(item)
             return item
         source = section('source', 'Source · which files to build')
-        self.source_mode = QComboBox()
-        self.source_mode.setAccessibleName('Source to build')
-        self.source_mode.addItem('Current files — include uncommitted edits', 'working-tree')
-        self.source_mode.addItem('Latest commit — exclude uncommitted edits', 'HEAD')
-        self.source_mode.addItem('Specific commit, branch or tag', 'custom')
-        self.revision = QLineEdit('working-tree')
-        self.revision.setAccessibleName('Specific source revision')
-        self.revision.setPlaceholderText('Commit SHA, branch or tag')
-        self.source_form = QFormLayout()
-        self.source_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        self.source_form.addRow('Build from', self.source_mode)
-        self.source_form.addRow('Revision', self.revision)
-        self.source_form.setRowVisible(self.revision, False)
-        source.body.addLayout(self.source_form)
-        self.source_summary = QLabel()
-        self.source_summary.setWordWrap(True)
-        self.source_summary.setTextFormat(Qt.TextFormat.PlainText)
-        source.body.addWidget(self.source_summary)
+        from .configuration_source_ui import SourceSelectionView
+        self.source_selection = SourceSelectionView(source)
+        source.body.addWidget(self.source_selection)
+        self.source_mode = self.source_selection.source_mode
+        self.revision = self.source_selection.revision
+        self.source_form = self.source_selection.source_form
+        self.source_summary = self.source_selection.source_summary
         platforms = section('platforms', 'Platforms · what to test and where')
         self.guided = QWidget()
         guided_layout = QVBoxLayout(self.guided)
         guided_layout.setContentsMargins(0, 0, 0, 0)
-        self.platform_checks, self.platform_backends, self.destination_checks = {}, {}, {}
-        self.delivery_widgets = []
-        self.destination_options, self.destination_forms, self.destination_groups = {}, {}, {}
+        self.platform_checks, self.platform_backends = {}, {}
         capability = getattr(project, 'journey_capability', None)
         self.selectable_backends = bool(capability and capability.get('selectable_backends'))
         self.platform_table = QTableWidget(0, 2)
-        self.platform_table.setHorizontalHeaderLabels(['Platform', 'Test on'])
+        self.platform_table.setHorizontalHeaderLabels(['Platform', 'Run on'])
         self.platform_table.verticalHeader().hide()
         self.platform_table.setShowGrid(False)
         self.platform_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
@@ -191,8 +171,7 @@ class ConfigurationView(QWidget):
                 self.platform_table.setRowHeight(index, 38)
                 self.platform_table.setCellWidget(index, 0, control)
                 self.platform_table.setCellWidget(index, 1, location)
-            self.platform_table.setMinimumHeight(38 * self.platform_table.rowCount() + 34)
-            self.platform_table.setMaximumHeight(38 * self.platform_table.rowCount() + 34)
+            self.size_platform_rows()
         else:
             note = QLabel('This project supports one platform per run. Advanced operation exposes its project workflows.')
             note.setWordWrap(True)
@@ -216,7 +195,7 @@ class ConfigurationView(QWidget):
         self.operation.addItems(project.operations)
         self.platform.addItems(project.platforms)
         self.suite.setAccessibleName('Test suite')
-        for label, control in [('Platform', self.platform), ('Operation', self.operation), ('Backend', self.backend)]:
+        for label, control in [('Platform', self.platform), ('Operation', self.operation), ('Run on', self.backend)]:
             control.setAccessibleName(label)
             form.addRow(label, control)
         form.addRow('Test suite', self.suite)
@@ -237,82 +216,18 @@ class ConfigurationView(QWidget):
         note.setWordWrap(True)
         validation.body.addWidget(note)
         delivery = section('delivery', 'Delivery · destinations and recipients')
-        self.delivery_tabs = QTabWidget()
-        self.delivery_categories, self.destination_categories = {}, {}
-        self.delivery_platform_tabs, self.delivery_platform_pages, self.destination_platforms = {}, {}, {}
-        if capability:
-            delivery.body.addWidget(self.delivery_tabs)
-            def category(label, platforms=()):
-                if label not in self.delivery_categories:
-                    page = QWidget(); body = QVBoxLayout(page); body.setContentsMargins(4, 4, 4, 4); body.setSpacing(4)
-                    self.delivery_tabs.addTab(page, delivery_tab_label(label)); self.delivery_categories[label] = (page, body)
-                    if label in {'Mobile tester platforms', 'Mobile dev devices'}:
-                        tabs = QTabWidget()
-                        style_tabs(tabs)
-                        tabs.setAccessibleName(delivery_tab_label(label) + ' delivery platforms')
-                        body.addWidget(tabs)
-                        self.delivery_platform_tabs[label] = tabs
-                        self.delivery_platform_pages[label] = {}
-                        for platform, title in (('android', 'Android'), ('ios', 'iOS')):
-                            platform_page = QWidget()
-                            platform_body = QVBoxLayout(platform_page)
-                            platform_body.setContentsMargins(4, 4, 4, 4)
-                            platform_body.setSpacing(4)
-                            tabs.addTab(platform_page, title)
-                            self.delivery_platform_pages[label][platform] = (platform_page, platform_body)
-                if len(platforms) == 1 and platforms[0] in self.delivery_platform_pages.get(label, {}):
-                    return self.delivery_platform_pages[label][platforms[0]][1]
-                return self.delivery_categories[label][1]
-            categories = {'Mobile tester platforms': 0, 'Mobile dev devices': 1, 'Mobile stores': 2, 'Source releases': 3}
-            for name, row in sorted(capability.get('destinations', {}).items(), key=lambda item: categories.get(item[1].get('category'), 4)):
-                group = QWidget()
-                group_layout = QVBoxLayout(group)
-                group_layout.setContentsMargins(0, 0, 0, 4)
-                group_layout.setSpacing(3)
-                control = QCheckBox(row['label'])
-                control.setToolTip('Select to show options. Requires: ' + ', '.join(row['platforms']))
-                self.destination_checks[name] = control
-                group_layout.addWidget(control)
-                options = QWidget()
-                options.setAccessibleName(row['label'] + ' options')
-                options_layout = QVBoxLayout(options)
-                options_layout.setContentsMargins(4, 0, 0, 0)
-                explanation = QLabel(row.get('description', '') + ' Requires: ' + ', '.join(row['platforms']))
-                explanation.setWordWrap(True)
-                options_layout.addWidget(explanation)
-                # Run-scoped guidance is shared once below the delivery choices.
-                destination_form = QFormLayout()
-                destination_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-                destination_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-                options_layout.addLayout(destination_form)
-                self.destination_options[name], self.destination_forms[name] = options, destination_form
-                self.destination_groups[name] = group
-                group_layout.addWidget(options)
-                label = row.get('category', 'Destinations')
-                category(label, row.get('platforms', ())).addWidget(group)
-                self.destination_categories[name] = label
-                self.destination_platforms[name] = row['platforms'][0] if len(row.get('platforms', ())) == 1 else ''
-                self.delivery_widgets.append(group)
-            for row in capability.get('unavailable_destinations', []):
-                label = QLabel(row['label'] + ' · unavailable in this workflow\n' + row['reason'])
-                label.setWordWrap(True)
-                label.setTextFormat(Qt.TextFormat.PlainText)
-                category(row.get('category', 'Destinations'), row.get('platforms', ())).addWidget(label)
-            for pages in self.delivery_platform_pages.values():
-                for page, body in pages.values():
-                    if not body.count():
-                        empty = QLabel('No destinations declared by this project.')
-                        empty.setWordWrap(True)
-                        body.addWidget(empty)
-                    body.addStretch()
-            for page, body in self.delivery_categories.values():body.addStretch()
-            for index, label in enumerate(sorted(self.delivery_categories, key=lambda name: categories.get(name, 4))):
-                current = self.delivery_tabs.indexOf(self.delivery_categories[label][0])
-                self.delivery_tabs.tabBar().moveTab(current, index)
-        else:
-            note = QLabel('Integrated delivery is not declared by this project. Choose Advanced operation for its existing workflows.')
-            note.setWordWrap(True)
-            delivery.body.addWidget(note)
+        self.delivery_options = DeliveryOptionsView(capability, delivery)
+        delivery.body.addWidget(self.delivery_options)
+        # Compatibility handles refer to controls owned by the delivery view.
+        self.delivery_categories = self.delivery_options.delivery_categories
+        self.destination_categories = self.delivery_options.destination_categories
+        self.delivery_platform_pages = self.delivery_options.delivery_platform_pages
+        self.destination_platforms = self.delivery_options.destination_platforms
+        self.destination_checks = self.delivery_options.destination_checks
+        self.destination_options = self.delivery_options.destination_options
+        self.destination_forms = self.delivery_options.destination_forms
+        self.destination_groups = self.delivery_options.destination_groups
+        self.delivery_widgets = self.delivery_options.delivery_widgets
         from .run_fields_ui import RunFieldsView
         self.run_fields = RunFieldsView(project, self)
         self.run_fields.set_destination_forms(self.destination_forms)
@@ -322,7 +237,7 @@ class ConfigurationView(QWidget):
         delivery.body.addWidget(self.run_fields)
         advanced = section('advanced', 'Advanced options · focused checks and build numbers', expanded=False)
         self.advanced_toggle = advanced.toggle
-        advanced_form = QFormLayout()
+        self.options_form = advanced_form = QFormLayout()
         self.pattern = QLineEdit()
         self.pattern.setPlaceholderText('Blank runs the full declared suite')
         self.build_override = QSpinBox()
@@ -343,8 +258,7 @@ class ConfigurationView(QWidget):
         self.readiness.setAccessibleName('Proposed choices and unresolved requirements')
         self.readiness.hide()
         for body in self.page_layouts.values():body.addStretch()
-        self.source_mode.currentIndexChanged.connect(self.choose_source)
-        self.revision.textChanged.connect(self.source_revision_changed)
+        self.source_selection.changed.connect(self.update_summary)
         self.goal.currentIndexChanged.connect(self.update_mode)
         for control in (*self.platform_checks.values(), *self.destination_checks.values()):
             control.toggled.connect(self.update_mode)
@@ -357,38 +271,31 @@ class ConfigurationView(QWidget):
         self.run_fields.defaults_loaded.connect(self.refresh_proposal)
         self.update_mode()
 
+    def size_platform_rows(self):
+        table = self.platform_table
+        height = table.horizontalHeader().sizeHint().height() + 2 * table.frameWidth()
+        for index, control in enumerate(self.platform_checks.values()):
+            row_height = max(control.sizeHint().height(), table.cellWidget(index, 1).sizeHint().height(),
+                             self.fontMetrics().height()) + 12
+            table.setRowHeight(index, row_height)
+            height += row_height
+        table.setFixedHeight(height)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in {QEvent.Type.FontChange, QEvent.Type.StyleChange} and hasattr(self, 'platform_table'):
+            self.size_platform_rows()
+
     def choose_goal(self, value):
         self.goal.setCurrentIndex(self.goal.findData(value))
         if value in {'advanced', 'build'}:
             self.open_section('platforms')
 
     def choose_source(self, *_):
-        if self._syncing_source:
-            return
-        value = self.source_mode.currentData()
-        self._syncing_source = True
-        try:
-            if value != 'custom':
-                self.revision.setText(value)
-            elif self.revision.text() in ('working-tree', 'HEAD'):
-                self.revision.setText(self._custom_revision)
-        finally:
-            self._syncing_source = False
-        self.source_form.setRowVisible(self.revision, value == 'custom')
-        self.update_summary()
+        self.source_selection.choose_source()
 
     def source_revision_changed(self, *_):
-        if not self._syncing_source and not (self.source_mode.currentData() == 'custom' and self.revision.hasFocus()):
-            self._syncing_source = True
-            try:
-                value = self.revision.text()
-                self.source_mode.setCurrentIndex(self.source_mode.findData(value if value in ('working-tree', 'HEAD') else 'custom'))
-            finally:
-                self._syncing_source = False
-            self.source_form.setRowVisible(self.revision, self.source_mode.currentData() == 'custom')
-        if self.source_mode.currentData() == 'custom' and self.revision.text() not in ('working-tree', 'HEAD'):
-            self._custom_revision = self.revision.text()
-        self.update_summary()
+        self.source_selection.source_revision_changed()
 
     def ensureWidgetVisible(self, widget):
         if self.editor.isAncestorOf(widget):
@@ -432,6 +339,7 @@ class ConfigurationView(QWidget):
         self.run_fields.update_context(self.goal.currentData(),
             [name for name, control in self.destination_checks.items() if control.isChecked()], self.operation.currentText())
         self.legacy_form.setRowVisible(self.suite, self.goal.currentData() != 'build')
+        self.options_form.setRowVisible(self.pattern, self.goal.currentData() != 'build')
         for control in self.run_controls.values():
             self.legacy_form.setRowVisible(control, self.goal.currentData() != 'build')
         self.update_summary()
@@ -480,8 +388,8 @@ class ConfigurationView(QWidget):
         source_messages = [message for message in proposal.messages if 'committed source' in message]
         source_blocked = any(blocker.id == 'source' for blocker in proposal.blockers)
         self.source_summary.setText(('This work requires committed source. Choose Latest commit or a specific revision.'
-            if source_messages else 'Enter a commit, branch or tag.') if source_blocked else '')
-        self.source_summary.setVisible(source_blocked)
+            if source_messages else 'Enter a commit, branch or tag.') if source_blocked else self._source_help)
+        self.source_summary.setVisible(True)
         source_help = '\n'.join((self._source_help, *source_messages))
         self.source_mode.setToolTip(source_help)
         self.source_mode.setAccessibleDescription(source_help)
@@ -510,7 +418,7 @@ class ConfigurationView(QWidget):
         warning = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
         for key in self.config_pages:
             index = self.config_tabs.indexOf(self.config_pages[key])
-            label = {'source': 'Source', 'platforms': f'Test ({len(platforms)})' if guided else 'Operation',
+            label = {'source': 'Source', 'platforms': f'Platforms ({len(platforms)})' if guided else 'Operation',
                      'delivery': f'Delivery ({len(destinations)})', 'advanced': 'Options'}[key]
             self.config_tabs.setTabText(index, label)
             self.config_tabs.setTabIcon(index, warning if key in issues else QIcon())
@@ -531,13 +439,11 @@ class ConfigurationView(QWidget):
                             platform = self.destination_platforms.get(name, '')
                             devices.setdefault(platform, set()).update(parse_multiselect_ids(field.text()))
                 count = sum(len(ids) for ids in devices.values())
-                tabs = self.delivery_platform_tabs[category]
                 for platform, (platform_page, _) in self.delivery_platform_pages[category].items():
                     title = 'Android' if platform == 'android' else 'iOS'
-                    tabs.setTabText(tabs.indexOf(platform_page), f'{title} ({len(devices[platform])})')
-            index = self.delivery_tabs.indexOf(page)
-            self.delivery_tabs.setTabText(index, f'{delivery_tab_label(category)} ({count})')
-            self.delivery_tabs.setTabToolTip(index, f'{category} · {count} selected')
+                    self.delivery_options.platform_headings[category, platform].setText(f'{title} · {len(devices.get(platform, ())) } devices selected')
+            unit = 'devices' if category == 'Mobile dev devices' else 'destinations'
+            page.setTitle(f'{delivery_tab_label(category)} · {count} {unit} selected')
 
     def refresh_blockers(self, blockers):
         if blockers == self.current_blockers:
@@ -548,7 +454,6 @@ class ConfigurationView(QWidget):
             button = SelectionSummary()
             button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning))
             button.set_summary(blocker.label)
-            button.setStyleSheet(button.styleSheet() + 'QPushButton { border-left: 4px solid #b37c12; }')
             button.clicked.connect(lambda checked=False, blocker=blocker: self.open_blocker(blocker))
             self.blocker_actions[blocker.id] = button
         self.blocker_strip.set_buttons(list(self.blocker_actions.values()))
@@ -585,12 +490,6 @@ class ConfigurationView(QWidget):
         item = self.sections[section]
         item.reveal()
         self.config_tabs.setCurrentWidget(self.config_pages['platforms' if section == 'validation' else section])
-        if section == 'delivery' and target in self.destination_categories:
-            category = self.destination_categories[target]
-            self.delivery_tabs.setCurrentWidget(self.delivery_categories[category][0])
-            platform = self.destination_platforms.get(target)
-            if platform in self.delivery_platform_pages.get(category, {}):
-                self.delivery_platform_tabs[category].setCurrentWidget(self.delivery_platform_pages[category][platform][0])
         if section == 'source':
             control = self.source_mode
         elif section == 'delivery' and target in self.destination_checks:
@@ -602,7 +501,7 @@ class ConfigurationView(QWidget):
         elif section == 'platforms':
             control = self.platform if self.goal.currentData() == 'advanced' or not self.platform_checks else next(iter(self.platform_checks.values()))
         elif section == 'delivery':
-            control = self.delivery_tabs
+            control = next(iter(self.destination_checks.values()), self.delivery_options)
         elif section == 'advanced':
             control = self.pattern
         else:

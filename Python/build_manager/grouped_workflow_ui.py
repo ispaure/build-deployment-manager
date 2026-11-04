@@ -44,6 +44,8 @@ class GroupedFlowView(QWidget):
         self.canvas.card_action_requested.connect(self.card_action_requested.emit)
         self.canvas.selected.connect(self.open_group)
         self.map = FitMapView(self.canvas)
+        if not nested_navigation:
+            self.map.readable_scale = .8
         self.orientation = orientation_picker(self.map)
         map_options.addWidget(self.orientation)
         if not nested_navigation:
@@ -64,7 +66,14 @@ class GroupedFlowView(QWidget):
         self.map.scale_changed.connect(lambda scale: self.zoom_out.setEnabled(scale > self.map.minimum_scale))
         self.map.scale_changed.connect(lambda scale: self.zoom_in.setEnabled(scale < self.map.maximum_scale))
         body.addLayout(toolbar)
-        body.addLayout(map_options)
+        if nested_navigation:
+            body.addLayout(map_options)
+        else:
+            from .ui_components import map_view_options
+            map_options.removeWidget(self.orientation)
+            map_options.removeWidget(self.follow_mouse)
+            self.view_options = map_view_options(self.orientation, self.follow_mouse)
+            toolbar.insertWidget(toolbar.count() - 3, self.view_options)
         body.addWidget(self.map, 1)
         self.pages.addWidget(overview)
         inside = QWidget()
@@ -116,7 +125,7 @@ class GroupedFlowView(QWidget):
         layout.addWidget(self.content_splitter, 1)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.fit)
+        self.timer.timeout.connect(self.fit if nested_navigation else self.map.fit_map)
         self.rows = {}
         self.graph = None
 

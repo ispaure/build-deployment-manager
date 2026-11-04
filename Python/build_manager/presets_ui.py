@@ -1,6 +1,6 @@
 """Saved-preset controls and lifecycle for one run workspace."""
 from PySide6.QtCore import QObject, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QInputDialog, QMenu, QToolButton
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QInputDialog, QMenu, QToolButton, QLabel
 
 
 class PresetController(QObject):
@@ -11,10 +11,11 @@ class PresetController(QObject):
         self.presets = dict(registry.read()['projects'][key].get('presets', {}))
         # Keep presets on their own row for native laptop font metrics.
         row = QHBoxLayout()
-        panel.configuration.intent_header.layout().addLayout(row)
+        panel.configuration.editor_layout.insertLayout(0, row)
+        row.addWidget(QLabel('Preset'))
         self.picker = QComboBox()
         self.picker.setAccessibleName('Saved project run presets')
-        self.picker.setMinimumContentsLength(32)
+        self.picker.setMinimumContentsLength(10)
         self.picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.picker.setToolTip('Load saved choices')
         self.picker.addItem('Presets…', None)

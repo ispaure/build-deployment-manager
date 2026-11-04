@@ -1,11 +1,12 @@
 """Workflow cards, dependency paths and canvas rendering."""
-from PySide6.QtCore import Qt, QPointF, Signal, QRectF, QEvent
+from PySide6.QtCore import Qt, QPointF, Signal, QRectF, QEvent, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF, QTransform, QTextLayout, QTextOption
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget, QProgressBar, QToolTip
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
 from .workflow_graph import layout_positions, visible_dependencies, connection_groups
 from .workflow_presentation import FAILED, title, effect_label, display_states, state_label, format_step_time
 from .test_tree_ui import current_test_seconds
+from .ui_components import status_colors
 
 SECTION_COLORS = {'Source': '#7296ca', 'Testing': '#71ab8b',
                   'Delivery': '#d6aa64', 'Build / package': '#aa8ac4'}
@@ -13,7 +14,7 @@ SECTION_COLORS = {'Source': '#7296ca', 'Testing': '#71ab8b',
 
 def section_tint(heading, palette):
     color = QColor(SECTION_COLORS.get(heading, '#8998ac'))
-    color.setAlpha(30 if palette.window().color().lightness() >= 128 else 42)
+    color.setAlpha(9 if palette.window().color().lightness() >= 128 else 18)
     return color
 
 
@@ -128,6 +129,9 @@ class FlowCanvas(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.font_timer = QTimer(self)
+        self.font_timer.setSingleShot(True)
+        self.font_timer.timeout.connect(self.reflow_font)
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.setToolTip('Hover a card to trace its prerequisites and downstream steps. '
                         'Other cards and lines stay visible in gray. Move away to restore the full map. '
@@ -189,29 +193,16 @@ class FlowCanvas(QWidget):
                 'awaiting_review' if status == 'needs_selection' else status)
         # Teal-green and orange-red separate along the blue/yellow axis too,
         # making outcomes easier to distinguish with deuteranopia.
-        colors = ({
-            'passed': ('#164b46', '#d0f5ed', '#58b8a8'),
-            'failed': ('#542d22', '#ffe0d1', '#df8a64'),
-            'running': ('#1d3c5a', '#d5e9ff', '#75ace0'),
-            'awaiting_review': ('#4c3d20', '#ffebbb', '#c7a055'),
-            'muted': ('#292d33', '#a5acb6', '#646b75'),
-        } if dark else {
-            'passed': ('#d4f2eb', '#12483e', '#398779'),
-            'failed': ('#f8dfd0', '#672b18', '#ba6845'),
-            'running': ('#deecfb', '#163e69', '#4d86bd'),
-            'awaiting_review': ('#fff0cf', '#604500', '#b58a2e'),
-            'muted': ('#eceef1', '#626262', '#a0a6ae'),
-        }).get(kind)
-        background, text, border = colors or ('palette(base)', 'palette(text)', 'palette(mid)')
+        background, text, border = status_colors(self, kind)
         muted = bool(card.property('traceMuted'))
         if muted:
-            background, text, border = (('#343434', '#aaaaaa', '#777777') if dark else
-                                        ('#e4e4e4', '#777777', '#999999'))
+            background, text, border = (('#343434', '#c0c0c0', '#777777') if dark else
+                                        ('#e4e4e4', '#626262', '#999999'))
         stylesheet = f'''
             QPushButton#workflowCard {{ background: {background}; color: {text};
                 border: 2px solid {border}; border-radius: 8px; text-align: left; }}
-            QPushButton#workflowCard:hover, QPushButton#workflowCard:checked,
-            QPushButton#workflowCard:focus {{ border: 2px solid palette(highlight); }}
+            QPushButton#workflowCard:hover, QPushButton#workflowCard:checked {{ border: 2px solid palette(highlight); }}
+            QPushButton#workflowCard:focus {{ border: 2px dashed palette(highlight); }}
             QPushButton#workflowCard QLabel {{ color: {text}; background: transparent; }}
         '''
         if muted:
@@ -229,10 +220,40 @@ class FlowCanvas(QWidget):
 
     def changeEvent(self, event):
         super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange and hasattr(self, 'font_timer'):
+            self.font_timer.start(0)
         if event.type() in {QEvent.Type.PaletteChange, QEvent.Type.ApplicationPaletteChange}:
             for card, _, _ in getattr(self, 'cards', {}).values():
                 self.style_card(card, card.property('state') or '')
             self.update()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.FontChange:
+            self.font_timer.start(0)
+        return False
+
+    def reflow_font(self):
+        identity = (self.font().key(), tuple((key, tuple(child.font().key() for child in card.findChildren(QWidget)))
+                    for key, (card, _, _) in self.cards.items()))
+        if not self.cards or identity == getattr(self, '_reflowed_font', None):
+            return
+        self._reflowed_font = identity
+        previous = self.base_card_width
+        self.base_card_width = max(216, self.fontMetrics().horizontalAdvance('Waiting for approval') + 48)
+        for card, _, _ in self.cards.values():
+            width = round(card.width() / previous * self.base_card_width)
+            card.setFixedWidth(width)
+            progress = card.findChild(QProgressBar, 'cardProgress')
+            if progress is not None:
+                progress.setFixedHeight(max(18, progress.fontMetrics().height() + 6))
+            card.layout().invalidate()
+            card.setMinimumHeight(max(self.base_card_height, card.layout().totalHeightForWidth(width)))
+        self.arrange(self.vertical)
+        self.sections_changed.emit()
+        proxy = self.graphicsProxyWidget()
+        if proxy and proxy.scene():
+            for view in proxy.scene().views():
+                view.setSceneRect(proxy.boundingRect().adjusted(-4, -4, 4, 4))
 
     def reset(self, plan, keys=None, *, reserve_activity=None):
         self.hover_key = self.keyboard_key = ''
@@ -310,7 +331,7 @@ class FlowCanvas(QWidget):
             body.setSpacing(6)
             heading, kind = QLabel(), QLabel()
             status = CardActivityLabel(1) if reserve_activity else QLabel()
-            counts = CardActivityLabel(2) if reserve_activity else QLabel()
+            counts = CardActivityLabel(1) if reserve_activity else QLabel()
             heading.setText(title(phase))
             heading.setStyleSheet('font-weight: 600;')
             kind.setText(effect_label(phase, plan))
@@ -363,6 +384,8 @@ class FlowCanvas(QWidget):
                         policy.setRetainSizeWhenHidden(True)
                         widget.setSizePolicy(policy)
             card.clicked.connect(lambda checked=False, key=phase.id: self.selected.emit(key))
+            for child in card.findChildren(QWidget):
+                child.installEventFilter(self)
             level, lane = self.positions[phase.id]
             self.grid.addWidget(card, lane + 1, level, 2, 1)
             self.cards[phase.id] = (card, status, counts)

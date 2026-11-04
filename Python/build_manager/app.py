@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, QTimer
 from .bridge import ProjectBridge
 from .ui import ManagerPanel
-from .ui_components import style_button
+from .ui_components import style_button, install_font_refresh
 
 
 _CURRENT_PROJECT = object()
@@ -41,6 +41,8 @@ _CURRENT_PROJECT = object()
 class ManagerWindow(QWidget):
     def __init__(self,registry):
         super().__init__()
+        from PySide6.QtWidgets import QApplication
+        install_font_refresh(QApplication.instance())
         from PySide6.QtCore import Qt
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.registry,self.panel,self.active = registry,None,False
@@ -72,9 +74,11 @@ class ManagerWindow(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         view.projects = QComboBox()
         view.projects.setMinimumContentsLength(18)
+        view.projects.setMaximumWidth(460)
         view.projects.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         view.projects.setAccessibleName('Project for this run tab')
         controls.addWidget(view.projects, 1)
+        controls.addStretch()
         view.project_settings = QPushButton('Project settings…')
         view.project_settings.clicked.connect(lambda: self.open_project_settings(view))
         controls.addWidget(view.project_settings)
@@ -277,7 +281,8 @@ class ManagerWindow(QWidget):
             panel.status = QLabel('')
             panel.status.setWordWrap(True)
             panel.layout().addWidget(panel.status)
-            empty = QLabel('Add a local project folder, choose your work, then review its plan before starting.')
+            empty = QLabel('Review and run your project’s checks, builds and deliveries.\n'
+                'Adding a checkout lets its local tools prepare plans; execution still requires Start.')
             empty.setWordWrap(True)
             panel.layout().addWidget(empty)
             panel.layout().addStretch()

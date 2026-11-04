@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .redaction import Redactor
-from .ui_components import style_button, style_dialog_buttons, search_shortcut
+from .ui_components import style_button, style_dialog_buttons, search_shortcut, HeadingLabel, style_utilities
 
 
 class SettingsTask(QRunnable):
@@ -37,6 +37,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle('Project settings')
         self.resize(800, 650)
         layout = QVBoxLayout(self)
+        layout.setSpacing(12)
         scope = QLabel('Settings for: ' + str(getattr(project, 'root', 'selected project')))
         scope.setWordWrap(True)
         layout.addWidget(scope)
@@ -68,6 +69,8 @@ class SettingsDialog(QDialog):
             self.navigation.setStretchFactor(1, 1)
             self.navigation.setSizes([210, 570])
         self.sidebar.setAccessibleName('Settings categories')
+        self.category_heading = HeadingLabel('Project settings', section=True)
+        layout.addWidget(self.category_heading)
         self.sidebar.currentItemChanged.connect(self.select_section)
         layout.addWidget(self.navigation, 1)
         # Hidden navigation must not leave the remaining labels sharing all the
@@ -212,6 +215,8 @@ class SettingsDialog(QDialog):
                 scroll.setWidgetResizable(True)
                 content = QWidget()
                 form = QFormLayout(content)
+                form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+                form.setVerticalSpacing(16)
                 form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
                 scroll.setWidget(content)
                 forms[group] = form
@@ -228,7 +233,7 @@ class SettingsDialog(QDialog):
                 control.setCurrentText(str(entry['value']))
             elif entry.get('kind') == 'multiline':
                 control = QPlainTextEdit(str(entry['value']))
-                control.setFixedHeight(110)
+                control.setMinimumHeight(self.fontMetrics().height() * 4 + 16)
                 control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             elif entry.get('kind') == 'bool':
                 control = QCheckBox()
@@ -245,6 +250,7 @@ class SettingsDialog(QDialog):
             description = entry.get('description', label)
             control.setToolTip(description)
             if entry.get('read_only', False):
+                control.setAccessibleDescription('Read only. ' + entry.get('description', 'Provided by the project or environment.'))
                 self.read_only.add(name)
                 if isinstance(control, (QLineEdit, QPlainTextEdit)):
                     control.setReadOnly(True)
@@ -287,6 +293,7 @@ class SettingsDialog(QDialog):
             signal.connect(self.mark_dirty)
             signal.connect(self.filter_fields)
         self.filter_fields()
+        style_utilities(self)
 
     def toggle_origins(self, visible):
         for label in self.origins:
@@ -321,6 +328,7 @@ class SettingsDialog(QDialog):
 
     def select_section(self, item, previous):
         if item is not None:
+            self.category_heading.setText(item.text(0))
             from PySide6.QtCore import Qt
             self.stack.setCurrentIndex(item.data(0, Qt.ItemDataRole.UserRole))
 

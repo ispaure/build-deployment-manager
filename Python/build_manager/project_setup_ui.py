@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayo
     QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout)
 
 from .registry import read_project_descriptor
-from .ui_components import style_dialog_buttons
+from .ui_components import style_dialog_buttons, style_utilities
 
 
 def interpreter_path(root, descriptor):
@@ -23,7 +23,7 @@ class AddProjectDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Add a project')
-        self.resize(690, 430)
+        self.resize(690, 360)
         self.root = None
         layout = QVBoxLayout(self)
         intro = QLabel('Choose the local folder containing the project you want to build or test. '
@@ -40,23 +40,27 @@ class AddProjectDialog(QDialog):
         row.addWidget(self.path, 1)
         row.addWidget(browse)
         layout.addLayout(row)
-        layout.addWidget(QLabel('Registration name'))
+        layout.addWidget(QLabel('Registration name · optional'))
         self.registration_name = QLineEdit()
         self.registration_name.setAccessibleName('Registration name')
         self.registration_name.setPlaceholderText('Defaults to the project name. Use a unique name for a worktree.')
         layout.addWidget(self.registration_name)
+        name_help = QLabel('Leave blank to use the project name. Give a worktree its own recognizable name.')
+        name_help.setWordWrap(True)
+        layout.addWidget(name_help)
         self.summary = QLabel('Select a folder to see the project and its available work.')
         self.summary.setWordWrap(True)
         self.summary.setTextFormat(Qt.TextFormat.PlainText)
         self.summary.setAccessibleName('Project setup preview')
         layout.addWidget(self.summary)
+        layout.insertWidget(layout.indexOf(self.registration_name) - 1, self.summary)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setAccessibleName('Project description details')
         self.details.hide()
-        toggle = QPushButton('Show project description')
-        toggle.clicked.connect(self.toggle_details)
-        layout.addWidget(toggle)
+        self.description_toggle = QPushButton('Show project description')
+        self.description_toggle.clicked.connect(self.toggle_details)
+        layout.addWidget(self.description_toggle)
         layout.addWidget(self.details)
         layout.addStretch()
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
@@ -71,9 +75,11 @@ class AddProjectDialog(QDialog):
         self.timer.setInterval(120)
         self.timer.timeout.connect(self.preview)
         self.path.textChanged.connect(self.schedule_preview)
+        style_utilities(self)
 
     def toggle_details(self):
         self.details.setVisible(not self.details.isVisible())
+        self.description_toggle.setText('Hide project description' if self.details.isVisible() else 'Show project description')
 
     def schedule_preview(self, *_):
         self.timer.start()

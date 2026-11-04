@@ -117,7 +117,7 @@ class WorkflowGraphView(QWidget):
         tools.addStretch()
         self.fit_button, self.zoom_in, self.zoom_out = QPushButton('Fit'), QPushButton('+'), QPushButton('−')
         for control, name in ((self.fit_button, 'Fit entire workflow'), (self.zoom_in, 'Zoom in'), (self.zoom_out, 'Zoom out')):
-            control.setAccessibleName(name); control.setToolTip(name); control.setMaximumWidth(52); tools.addWidget(control)
+            control.setAccessibleName(name); control.setToolTip(name); tools.addWidget(control)
         layout.addLayout(tools)
         self.guidance = QLabel('Read left to right. Arrows show prerequisites. Branches can overlap when workers and resources allow. Select a card for details.')
         self.guidance.setWordWrap(True)
@@ -125,9 +125,10 @@ class WorkflowGraphView(QWidget):
         self.canvas = FlowCanvas()
         self.scroll = FitMapView(self.canvas)
         self.orientation = orientation_picker(self.scroll)
-        tools.insertWidget(tools.count() - 3, self.orientation)
         self.follow_mouse = pointer_follow_picker(self.scroll)
-        tools.insertWidget(tools.count() - 3, self.follow_mouse)
+        from .ui_components import map_view_options
+        self.view_options = map_view_options(self.orientation, self.follow_mouse)
+        tools.insertWidget(tools.count() - 3, self.view_options)
         self.scroll.setAccessibleName('Workflow dependency map. Scroll or drag to pan. Tab between cards; Space selects a step.')
         self.scroll.scale_changed.connect(lambda scale: self.zoom_out.setEnabled(scale > self.scroll.minimum_scale))
         self.scroll.scale_changed.connect(lambda scale: self.zoom_in.setEnabled(scale < self.scroll.maximum_scale))

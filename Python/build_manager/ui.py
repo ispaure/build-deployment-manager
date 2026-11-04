@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from .settings_ui import SettingsDialog
 from .approval_ui import EffectReviewDialog
-from .ui_components import style_button, style_dialog_buttons, ViewportStack, CurrentPageStack
+from .ui_components import style_button, style_dialog_buttons, ViewportStack, CurrentPageStack, HeadingLabel, WrappingLayout, install_font_refresh
 
 
 class PreparationFailure(str):
@@ -66,6 +66,8 @@ class ManagerPanel(QWidget):
 
     def __init__(self, project, parent=None):
         super().__init__(parent)
+        from PySide6.QtWidgets import QApplication
+        install_font_refresh(QApplication.instance())
         self.project, self.plan, self.result = project, None, None
         self.preparing = False
         self.applying_preset, self.preset_error = False, ''
@@ -109,9 +111,13 @@ class ManagerPanel(QWidget):
         self.identity.setWordWrap(True)
         layout.addWidget(self.identity)
         self.stage_tabs = QTabBar()
+        self.stage_tabs.setExpanding(False)
+        self.stage_tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        history_separator = QLabel('  |  ')
         self.stage_tabs.setAccessibleName('Run steps and history')
         for title in ('Choose work', 'Review plan', 'Progress && results', 'History'):
             self.stage_tabs.addTab(title)
+        self.stage_tabs.setTabButton(3, QTabBar.ButtonPosition.LeftSide, history_separator)
         self.stage_tabs.setTabEnabled(1, False)
         self.stage_tabs.setTabEnabled(2, False)
         layout.addWidget(self.stage_tabs)
@@ -169,7 +175,7 @@ class ManagerPanel(QWidget):
         self.storage_button.setEnabled(True)
         self.storage_button.setToolTip('Review project storage, clean owned outputs and retire superseded workflows.')
         self.storage_button.clicked.connect(self.open_storage_dialog)
-        self.resume = QPushButton('Continue a saved run…', self)
+        self.resume = QPushButton('Open saved result file…', self)
         self.resume.clicked.connect(self.resume_workflow)
         self.verify = QPushButton('Verify connections/settings', self)
         self.verify.clicked.connect(self.request_connection_check_plan)
@@ -193,8 +199,7 @@ class ManagerPanel(QWidget):
         review_layout = QVBoxLayout(review)
         review_layout.setContentsMargins(6, 4, 6, 4)
         review_layout.setSpacing(4)
-        review_heading = QLabel('Review your run')
-        review_heading.setStyleSheet('font-size: 18pt; font-weight: 600;')
+        review_heading = HeadingLabel('Review your run')
         review_layout.addWidget(review_heading)
         self.review_state = QLabel('Prepare a plan to review your choices.')
         self.review_state.setWordWrap(True)
@@ -229,6 +234,7 @@ class ManagerPanel(QWidget):
         run_layout.setContentsMargins(6, 4, 6, 4)
         run_layout.setSpacing(4)
         self.run_view = RunView()
+        self.run_view.actions_in_footer = True
         run_layout.addWidget(self.run_view, 1)
         self.preview = self.run_view.log
         self.phase_status = self.run_view.steps
@@ -278,7 +284,7 @@ class ManagerPanel(QWidget):
                 ((self.cancel,), (self.open_results, self.run_problems, self.retry_device, self.continue_run)),
                 ((self.refresh_history_button, self.resume), (self.view_history_button,))):
             page = QWidget()
-            actions = QHBoxLayout(page)
+            actions = WrappingLayout(page)
             actions.setContentsMargins(0, 0, 0, 0)
             for button in left:
                 actions.addWidget(style_button(button))
@@ -550,9 +556,9 @@ class ManagerPanel(QWidget):
         if hasattr(self, 'footer_pages'):
             self.footer_pages.setCurrentIndex(index)
         self.stage_heading.setText((
-            '<b>1 · Choose work</b> → 2 · Review plan → 3 · Run & results<br>Choose what you want to test and where to deliver it.',
-            '1 · Choose work → <b>2 · Review plan</b> → 3 · Run & results<br>Check the source and destinations. Go back to change your choices.',
-            '1 · Choose work → 2 · Review plan → <b>3 · Run & results</b><br>Follow progress, inspect test results and review any delivery approval.',
+            '<b>Choose work</b><br>Choose source, platforms and destinations.',
+            'Review captured source, work and destinations.',
+            'Follow progress and inspect evidence.',
             '<b>History</b><br>Open a saved run to see its original results. Open another run with the + tab button.'
         )[index])
 
@@ -574,7 +580,8 @@ class ManagerPanel(QWidget):
         self.run_problems.setText(self.run_view.attention_problems.text())
         approval = review and (self.run_view.outcome == 'awaiting_review' or any(
             row.get('status') == 'awaiting_review' for row in self.run_view.facts.values()))
-        primary = self.continue_run if approval else self.run_problems if problems else (
+        unknown = self.run_view.outcome == 'unknown' or any(row.get('status') == 'unknown' for row in self.run_view.facts.values())
+        primary = self.run_problems if unknown else self.continue_run if approval else self.run_problems if problems else (
             self.continue_run if review else self.open_results)
         for button in (self.open_results, self.run_problems, self.continue_run):
             style_button(button, 'primary' if button is primary else 'secondary')
@@ -822,14 +829,22 @@ class ManagerPanel(QWidget):
         try:
             engine_change = getattr(continuation, 'engine_change', None)
             if engine_change is not None:
-                answer = QMessageBox.question(self, 'Manager updated since this run',
+                versions = []
+                for name, identity in (('Previous', engine_change['previous']), ('Current', engine_change['current'])):
+                    versions.append(name + ':')
+                    for dependency in ('manager', 'commonUtils'):
+                        value = identity.get(dependency, {})
+                        versions.append('  ' + dependency + ' · ' + str(value.get('commit') or 'installed version')[:16]
+                            + (' · local edits' if value.get('dirty') else ''))
+                box = QMessageBox(QMessageBox.Icon.Question, 'Manager updated since this run',
                     'This saved run used a different manager or commonUtils revision. '
                     'Prepared artifacts and completed steps were verified and will be retained. '
-                    'Continue unfinished steps with the versions below?\n\n' +
-                    json.dumps(self.redacted_data(engine_change), indent=2),
+                    'Continue unfinished steps with the current versions?\n\n' + '\n'.join(versions),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No)
-                if answer != QMessageBox.StandardButton.Yes:
+                    self)
+                box.setDetailedText(json.dumps(self.redacted_data(engine_change), indent=2))
+                box.setDefaultButton(QMessageBox.StandardButton.No)
+                if box.exec() != QMessageBox.StandardButton.Yes:
                     return
             self.present_plan(plan)
             self.initialize_results_workspace(plan, previous['phases'])
@@ -1082,7 +1097,7 @@ class ManagerPanel(QWidget):
             summary=self.review_summary.text(), inputs=self.review_run_inputs.toPlainText())
         self.start.setToolTip(scope)
         effects = {phase.effect if phase.effect != 'inherit' else plan_view.effect for phase in plan_view.phases}
-        self.review_help.setText(scope if effects & {'upload', 'deploy', 'publish', 'dispatch'} else '')
+        self.review_help.setText(scope)
         self.review_help.setVisible(bool(self.review_help.text()))
         self.review_state.setText('Ready to start · ' + str(len(plan_view.phases)) + ' execution steps · ' + plan_view.project)
 
@@ -1183,6 +1198,11 @@ class ManagerPanel(QWidget):
             self.present_plan(plan)
             self.initialize_results_workspace(plan, report['phases'])
             self.run_view.complete(report)
+            self.run_view.saved_context.setText('Saved run · ' + path.parent.name +
+                (' · ' + str(report['started_at']) if report.get('started_at') else ''))
+            self.run_view.saved_context.setToolTip('Original engine identity:\n' +
+                self.redact(json.dumps(report.get('engine', {}), indent=2)))
+            self.run_view.saved_context.show()
             self.run_view.set_output(self.redact(json.dumps(report, indent=2)))
             self.resumable = not report.get('retirement') and report['status'] in {'awaiting_review', 'failed', 'cancelled', 'unknown'}
             self.continue_run.setEnabled(self.resumable)

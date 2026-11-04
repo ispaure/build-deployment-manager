@@ -11,7 +11,7 @@ from .plan_summary import captured_choices, phase_title, summary_rows, destinati
 from .workflow_ui import WorkflowGraphView
 from .workflow_presentation import blocking_prerequisite, display_states, state_label, format_step_time
 from .test_tree_ui import update_test_children, time_share
-from .ui_components import style_tabs
+from .ui_components import EvidenceNavigator, EvidenceGroup, AdaptiveSplitter
 
 
 class DisclosureToggle(QToolButton):
@@ -78,8 +78,18 @@ class ReviewPlanView(QWidget):
         self.plan, self.phases, self.facts, self.rows = None, {}, {}, {}
         self.selected, self.detail_selection = '', None
         self.log_reader = None
+        self.show_global_problems = True
+        self.manual_task_split = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        self.captured_summary = QLabel()
+        self.captured_summary.setWordWrap(True)
+        self.captured_summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.captured_summary.setTextFormat(Qt.TextFormat.PlainText)
+        self.captured_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.captured_summary.setAccessibleName('Captured source, execution hosts and destinations')
+        layout.addWidget(self.captured_summary)
         self.captured = QLabel()
         self.captured.setWordWrap(True)
         self.captured.setTextFormat(Qt.TextFormat.PlainText)
@@ -92,7 +102,7 @@ class ReviewPlanView(QWidget):
         self.problems.clicked.connect(self.show_problems)
         self.problems.hide()
         layout.addWidget(self.problems)
-        self.splitter = QSplitter()
+        self.splitter = AdaptiveSplitter(sizes=(450, 550), minimums=(300, 400))
         self.splitter.setChildrenCollapsible(False)
         self.flow = GroupedFlowView(graph_mode=True, inspect_single_cards=True, nested_navigation=False)
         self.graph = WorkflowGraphView(graph_only=True)
@@ -101,7 +111,6 @@ class ReviewPlanView(QWidget):
         self.graph.phase_selected.connect(self.select_step)
         self.splitter.addWidget(self.flow)
         self.inspector = QWidget()
-        self.inspector.setMinimumWidth(360)
         self.inspector.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.inspector_scroll = self.inspector  # Compatibility handle; no outer scrolling container.
         inspector_layout = QVBoxLayout(self.inspector)
@@ -109,6 +118,7 @@ class ReviewPlanView(QWidget):
         self.sidebar_splitter = QSplitter(Qt.Orientation.Vertical)
         self.sidebar_splitter.setChildrenCollapsible(False)
         self.sidebar_splitter.setHandleWidth(5)
+        self.sidebar_splitter.splitterMoved.connect(lambda *_: setattr(self, 'manual_task_split', True))
         inspector_layout.addWidget(self.sidebar_splitter)
         task_panel = QWidget()
         side = QVBoxLayout(task_panel)
@@ -130,9 +140,9 @@ class ReviewPlanView(QWidget):
         self.tasks.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tasks.header().setStretchLastSection(False)
         self.tasks.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.tasks.setColumnWidth(1, 76)
+        self.tasks.setColumnWidth(1, max(96, self.fontMetrics().horizontalAdvance('Needs approval') + 12))
         self.tasks.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.tasks.setColumnWidth(2, 120)
+        self.tasks.setColumnWidth(2, 80)
         self.tasks.currentItemChanged.connect(self.task_changed)
         self.tasks.itemExpanded.connect(lambda _: self.size_task_list(False))
         self.tasks.itemExpanded.connect(lambda _: self.refresh_rows(force_tests=True))
@@ -145,8 +155,8 @@ class ReviewPlanView(QWidget):
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(4)
         self.sidebar_splitter.addWidget(details_panel)
-        self.sidebar_splitter.setSizes([420, 280])
-        self.sidebar_splitter.setStretchFactor(0, 3)
+        self.sidebar_splitter.setSizes([180, 380])
+        self.sidebar_splitter.setStretchFactor(0, 1)
         self.sidebar_splitter.setStretchFactor(1, 2)
         self.case_detail = QLabel()
         self.case_detail.setAccessibleName('Selected underlying test outcome and details')
@@ -159,8 +169,12 @@ class ReviewPlanView(QWidget):
         self.selection_heading.setTextFormat(Qt.TextFormat.PlainText)
         self.selection_heading.setStyleSheet('font-weight: 600;')
         side.addWidget(self.selection_heading)
-        self.inspector_tabs = QTabWidget()
-        style_tabs(self.inspector_tabs)
+        self.scope_label = QLabel('Scope: whole workflow')
+        self.scope_label.setWordWrap(True)
+        self.scope_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.scope_label.setAccessibleName('Evidence scope')
+        side.addWidget(self.scope_label)
+        self.inspector_tabs = EvidenceNavigator()
         self.inspector_tabs.setAccessibleName('Selected task details, command and complete plan')
         side.addWidget(self.inspector_tabs, 3)
         self.details_scroll = QScrollArea()
@@ -198,10 +212,10 @@ class ReviewPlanView(QWidget):
         self.fact_panel = QWidget()
         self.fact_form = QFormLayout(self.fact_panel)
         self.fact_form.setContentsMargins(0, 0, 0, 0)
-        self.fact_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        self.fact_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.fact_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.fact_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.fact_form.setVerticalSpacing(6)
+        self.fact_form.setVerticalSpacing(10)
         self.fact_values = {}
         for label in ('Purpose', 'Runs on', 'Elapsed', 'Running test', 'Result', 'Outputs', 'Delivery', 'Notes'):
             value = QLabel()
@@ -221,9 +235,8 @@ class ReviewPlanView(QWidget):
         detail_side.addStretch()
         self.command = text_view('Exact selected step command and execution settings')
         self.command_section = self.command
-        self.inspector_tabs.addTab(self.command, 'Command')
-        self.plan_tabs = QTabWidget()
-        style_tabs(self.plan_tabs)
+        self.inspector_tabs.addTab(self.command, 'Technical · Command')
+        self.plan_tabs = EvidenceGroup(self.inspector_tabs, prefix='Technical · ')
         self.plan_tabs.setAccessibleName('Complete plan summary, dependencies and data')
         self.overview = text_view('Readable complete plan')
         self.plan_data = text_view('Complete redacted plan data')
@@ -234,12 +247,11 @@ class ReviewPlanView(QWidget):
         for label, widget in [('Summary', self.overview), ('Dependencies', self.board), ('Data', self.plan_data)]:
             self.plan_tabs.addTab(widget, label)
         self.technical_section = self.plan_tabs
-        self.inspector_tabs.addTab(self.plan_tabs, 'Plan')
         self.inspector_tabs.setMinimumHeight(140)
         self.splitter.addWidget(self.inspector_scroll)
-        self.splitter.setSizes([750, 460])
-        self.splitter.setStretchFactor(0, 3)
-        self.splitter.setStretchFactor(1, 2)
+        self.splitter.setSizes([450, 550])
+        self.splitter.setStretchFactor(0, 45)
+        self.splitter.setStretchFactor(1, 55)
         layout.addWidget(self.splitter, 1)
 
     def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='', preview=True):
@@ -264,10 +276,21 @@ class ReviewPlanView(QWidget):
         self.captured.setText('\n\n'.join(name + ': ' + value for name, value in captured_choices(plan)) +
                               ('\n\nCaptured notes and recipients:\n' + inputs if inputs else ''))
         source = plan.source.get('commit') or plan.source.get('fingerprint') or plan.source.get('revision', 'Captured source')
-        self.source_details.toggle.setText('Source: ' + str(source)[:16] + ' · ' + str(len(plan.phases)) + ' execution steps · captured choices')
+        choices = captured_choices(plan)
+        destinations = [row['identity'] for row in getattr(plan, 'journey', {}).get('destinations', {}).values()]
+        mode = str(plan.source.get('selection') or 'Captured source')
+        if plan.source.get('dirty'):
+            mode += ' · includes edits'
+        self.captured_summary.setText('Source: ' + mode + ' · ' + str(source)[:16] + '\n'
+            + 'Runs on: ' + choices[1][1].replace('\n', '; ') + '\n'
+            + ('Destinations: ' + '; '.join(destinations[:3]) +
+               (f'; +{len(destinations) - 3} more in captured choices' if len(destinations) > 3 else '')
+               if destinations else 'Goal: ' + plan.operation))
+        self.source_details.toggle.setText('Captured choices · full identity, notes and recipients')
         self.source_details.toggle.setChecked(False)
         self.inspector_tabs.setCurrentIndex(0)
         self.plan_tabs.setCurrentIndex(0)
+        self.inspector_tabs.setCurrentWidget(self.details_scroll)
         self.graph.reset(plan, preview=preview)
         # Reserve the same status space before and after Start.
         self.flow.reset(plan, fields, preview=preview, capability=capability, proposal=proposal, reserve_activity=True)
@@ -349,6 +372,12 @@ class ReviewPlanView(QWidget):
     def size_task_list(self, error_visible):
         # The vertical splitter owns space allocation; the tree scrolls itself.
         self.tasks.setMinimumHeight(90)
+        identity = (self.flow.selected, tuple(self.rows))
+        if not self.manual_task_split and identity != getattr(self, '_sized_scope', None) and self.sidebar_splitter.height() > 0:
+            rows = len(self.rows) + len(getattr(self, 'card_rows', {}))
+            desired = min(210, max(110, (min(rows, 6) + 1) * self.fontMetrics().height() + 24))
+            self.sidebar_splitter.setSizes([desired, max(180, self.sidebar_splitter.height() - desired)])
+            self._sized_scope = identity
 
     def task_changed(self, row, previous=None):
         if row is not None:
@@ -460,7 +489,7 @@ class ReviewPlanView(QWidget):
         self.refresh_rows()
         problems = sum(self.is_problem(key) for key in self.phases)
         self.problems.setText(f'{problems} step' + ('s' if problems != 1 else '') + ' with errors · View error details')
-        self.problems.setVisible(bool(problems))
+        self.problems.setVisible(bool(problems) and self.show_global_problems)
         self.render_details()
 
     def show_problems(self):
@@ -500,6 +529,9 @@ class ReviewPlanView(QWidget):
 
     def render_details(self):
         key = self.selected
+        group = self.flow.selected
+        self.scope_label.setText('Scope: task · ' + phase_title(self.phases[key]) if key else
+            'Scope: card · ' + self.flow.heading.text() if group else 'Scope: whole workflow')
         while self.prerequisite_layout.count():
             widget = self.prerequisite_layout.takeAt(0).widget()
             if widget:

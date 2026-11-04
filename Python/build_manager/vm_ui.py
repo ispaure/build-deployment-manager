@@ -3,8 +3,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout,
-                              QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QMessageBox)
-from .ui_components import style_button
+                              QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QMessageBox,
+                              QWidget, QScrollArea, QDialogButtonBox)
+from .ui_components import style_button, WrappingLayout, HeadingLabel, style_utilities, style_dialog_buttons
+from .review_ui import Disclosure
 
 
 class VMWorker(QThread):
@@ -51,11 +53,18 @@ class VMDialog(QDialog):
         self.worker = None
         self.setWindowTitle('Dedicated test machines')
         self.resize(760, 600)
-        layout = QVBoxLayout(self)
-        intro = QLabel('Prepare a Fedora or Windows test machine. Create or recover reuses this checkout’s owned machine, '
-                       'or creates a fresh one when missing. OS installation, guest tools and readiness checks are separate steps. '
-                       'VM files and private setup records stay in the checkout’s ignored VM folder.')
-        intro.setWordWrap(True); layout.addWidget(intro)
+        outer = QVBoxLayout(self)
+        outer.addWidget(HeadingLabel('Dedicated test machines'))
+        scope = QLabel('Machines owned by the manager checkout. Status is read only when requested.')
+        scope.setWordWrap(True)
+        outer.addWidget(scope)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setSpacing(12)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
         row = QHBoxLayout(); self.checkout = QLineEdit()
         candidate = Path(checkout) if checkout else Path(__file__).resolve().parents[2]
         if (candidate / 'Python/build_manager').is_dir(): self.checkout.setText(str(candidate))
@@ -64,38 +73,65 @@ class VMDialog(QDialog):
         row.addWidget(self.checkout, 1); row.addWidget(choose); layout.addLayout(row)
         self.kind = QComboBox(); self.kind.addItems(['Linux', 'Windows'])
         self.kind.setAccessibleName('Dedicated test machine operating system'); layout.addWidget(self.kind)
-        self.details = QLabel('Choose a machine, then Refresh status. Existing personal and held machines are never adopted.')
+        self.details = QLabel('Choose a machine, then Refresh status. Personal and held machines are never adopted.')
         self.details.setWordWrap(True); self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.details)
-        actions = QHBoxLayout(); self.buttons = [choose]
+        self.next_action_name = 'status'
+        self.next_action = style_button(QPushButton('Refresh status'), 'primary')
+        self.next_action.clicked.connect(lambda: self.launch(self.next_action_name))
+        layout.addWidget(self.next_action, 0, Qt.AlignmentFlag.AlignLeft)
+        actions = WrappingLayout(); self.buttons = [choose, self.next_action]
+        self.actions = {}
         for label, action in [('Refresh status', 'status'), ('Create or recover', 'ensure'),
                               ('Open console', 'open-console'), ('Start', 'start'), ('Check readiness', 'readiness'), ('Shut down', 'stop')]:
-            button = QPushButton(label); button.clicked.connect(lambda checked=False, action=action: self.launch(action))
-            style_button(button, 'primary' if action == 'status' else 'secondary')
-            actions.addWidget(button); self.buttons.append(button)
+            button = style_button(QPushButton(label))
+            button.clicked.connect(lambda checked=False, action=action: self.launch(action))
+            actions.addWidget(button); self.buttons.append(button); self.actions[action] = button
         layout.addLayout(actions)
+        setup = QWidget(); setup_layout = QVBoxLayout(setup); setup_layout.setSpacing(12)
         control = QPushButton('Allow guest test commands…'); control.clicked.connect(self.approve_commands)
-        layout.addWidget(control); self.buttons.append(control)
-        symlinks = QPushButton('Allow Windows filesystem tests…'); symlinks.clicked.connect(self.approve_symlinks)
-        layout.addWidget(symlinks); self.buttons.append(symlinks)
-        media = QHBoxLayout(); self.iso = QLineEdit(); self.iso.setPlaceholderText('OS installer ISO path')
-        self.iso.setAccessibleName('Operating system installer ISO')
-        browse = QPushButton('Choose ISO'); browse.clicked.connect(self.choose_media)
-        media.addWidget(self.iso, 1); media.addWidget(browse); layout.addLayout(media); self.buttons.append(browse)
+        setup_layout.addWidget(control); self.buttons.append(control)
+        self.symlinks = QPushButton('Allow Windows filesystem tests…'); self.symlinks.clicked.connect(self.approve_symlinks)
+        setup_layout.addWidget(self.symlinks); self.buttons.append(self.symlinks)
+        setup_layout.addWidget(QLabel('Verified operating system media'))
+        self.iso = QLineEdit(); self.iso.setPlaceholderText('ISO or cloud image path')
+        self.iso.setAccessibleName('Operating system installation media')
+        setup_layout.addWidget(self.iso)
+        browse = QPushButton('Choose OS media'); browse.clicked.connect(self.choose_media)
+        setup_layout.addWidget(browse); self.buttons.append(browse)
         self.digest = QLineEdit(); self.digest.setPlaceholderText('SHA-256 published by the OS vendor')
-        self.digest.setAccessibleName('Vendor installer SHA-256'); layout.addWidget(self.digest)
+        self.digest.setAccessibleName('Vendor installer SHA-256'); setup_layout.addWidget(self.digest)
         attach = QPushButton('Verify and attach installer'); attach.clicked.connect(lambda: self.launch('initialize'))
-        layout.addWidget(attach); self.buttons.append(attach)
-        bootstrap = QHBoxLayout()
-        for label, action in [('Initialize Fedora cloud image', 'initialize-cloud'), ('Initialize fresh Windows guest', 'initialize-windows')]:
+        setup_layout.addWidget(attach); self.buttons.append(attach)
+        self.initializers = {}
+        for label, action, kind in [('Initialize Fedora cloud image', 'initialize-cloud', 'Linux'), ('Initialize fresh Windows guest', 'initialize-windows', 'Windows')]:
             button = QPushButton(label); button.clicked.connect(lambda checked=False, action=action: self.launch(action))
-            bootstrap.addWidget(button); self.buttons.append(button)
-        layout.addLayout(bootstrap)
+            setup_layout.addWidget(button); self.buttons.append(button); self.initializers[kind] = button
+        self.setup_section = Disclosure('Installation and advanced permissions', setup)
+        layout.addWidget(self.setup_section)
         self.output = QPlainTextEdit(); self.output.setReadOnly(True); self.output.setMaximumBlockCount(300)
-        self.output.setAccessibleName('VM setup progress and errors'); layout.addWidget(self.output, 1)
-        note = QLabel('Finish OS setup and install Parallels Tools in the dedicated guest. Readiness checks report the actual '
-                      'OS, architecture, Python and Git; they do not mark native acceptance or Android acceleration as passed.')
-        note.setWordWrap(True); layout.addWidget(note)
+        self.output.setMinimumHeight(160)
+        self.output.setAccessibleName('VM setup progress and errors')
+        self.log_section = Disclosure('Progress and error log', self.output)
+        layout.addWidget(self.log_section)
+        note = QLabel('Readiness reports the actual OS, architecture, Python and Git. It does not certify native tests or acceleration.')
+        note.setWordWrap(True); layout.addWidget(note); layout.addStretch()
+        self.close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        self.close_buttons.rejected.connect(self.reject); outer.addWidget(self.close_buttons)
+        style_dialog_buttons(self.close_buttons)
+        style_utilities(self)
+        self.kind.currentTextChanged.connect(self.kind_changed)
+        self.kind_changed()
+
+    def kind_changed(self, *_):
+        kind = self.kind.currentText()
+        self.symlinks.setVisible(kind == 'Windows')
+        for target, button in self.initializers.items(): button.setVisible(target == kind)
+        self.next_action_name = 'status'
+        self.next_action.setText('Refresh status')
+        self.actions['status'].hide()
+        for action in ('ensure', 'start', 'readiness'): self.actions[action].show()
+        self.details.setText('Refresh ' + kind + ' status to see the next setup task. Personal and held machines are never adopted.')
 
     def choose_checkout(self):
         path = QFileDialog.getExistingDirectory(self, 'Choose the manager source checkout')
@@ -110,6 +146,8 @@ class VMDialog(QDialog):
         root = Path(self.checkout.text()).expanduser()
         if not (root / 'Python/build_manager').is_dir():
             self.output.appendPlainText('Choose a manager source checkout first.'); return
+        self.log_section.toggle.setChecked(True)
+        self.close_buttons.setEnabled(False)
         for control in [*self.buttons, self.kind, self.checkout, self.iso, self.digest]: control.setEnabled(False)
         self.worker = VMWorker(self.kind.currentText(), root, action, self.iso.text(), self.digest.text().strip(), self)
         self.worker.progress.connect(self.output.appendPlainText)
@@ -134,6 +172,13 @@ class VMDialog(QDialog):
         setup={'not-created':'Create this machine to begin','installation-required':'OS installation required',
                'first-boot-required':'Finish OS setup','test-tools-ready':'Test tools ready'}
         self.details.setText(f"{result['name']} · {states.get(result['state'],result['state'])} · {setup.get(result['setup'],result['setup'])}\n{result['requirements']}\n{result['storage']}")
+        self.next_action_name = ('ensure' if result['state'] == 'missing' else
+            'open-console' if result['setup'] in {'installation-required', 'first-boot-required'} else
+            'start' if result['state'] == 'stopped' else 'readiness')
+        self.next_action.setText({'ensure': 'Create or recover', 'open-console': 'Finish OS setup in console',
+                                 'start': 'Start machine', 'readiness': 'Check readiness'}[self.next_action_name])
+        for action, button in self.actions.items():
+            button.setVisible(action != self.next_action_name)
         self.output.appendPlainText(json.dumps(result, indent=2))
 
     def approve_symlinks(self):
@@ -148,6 +193,7 @@ class VMDialog(QDialog):
             self.launch('enable-symlink-testing')
 
     def finish(self):
+        self.close_buttons.setEnabled(True)
         for control in [*self.buttons, self.kind, self.checkout, self.iso, self.digest]: control.setEnabled(True)
 
     def reject(self):

@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLin
     QStyle, QStyledItemDelegate, QStyleOptionProgressBar)
 from .test_results import stage_label
 from .workflow_presentation import format_elapsed_time
-from .ui_components import search_shortcut
+from .ui_components import search_shortcut, WrappingLayout
 
 
 class TimingBarDelegate(QStyledItemDelegate):
@@ -35,13 +35,12 @@ class TestResultsView(QWidget):
         self.result_counts = QLabel('No test reports yet. Counts appear as tests finish.')
         self.result_counts.setWordWrap(True)
         self.result_counts.setAccessibleName('Reported test totals')
-        totals = QHBoxLayout()
+        totals = WrappingLayout()
         self.count_cards = {}
         for state, label in (('passed', 'Passed'), ('failed', 'Failed'), ('error', 'Errors'), ('skipped', 'Skipped')):
-            card = QLabel(f'<span style="font-size:24pt">0</span><br>{label}')
-            card.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            card.setMargin(18)
-            card.setFrameStyle(QLabel.Shape.StyledPanel)
+            card = QLabel(label + ' —')
+            card.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            card.setMargin(2)
             self.count_cards[state] = (card, label)
             totals.addWidget(card)
         totals_layout.addLayout(totals)
@@ -49,7 +48,7 @@ class TestResultsView(QWidget):
         self.actions_widget = QWidget(self)
         actions_layout = QVBoxLayout(self.actions_widget)
         actions_layout.setContentsMargins(0, 0, 0, 0)
-        result_actions = QHBoxLayout()
+        result_actions = WrappingLayout()
         problems = self.problems_button = QPushButton('Show failed tests')
         problems.setEnabled(False)
         problems.clicked.connect(self.problems_requested.emit)
@@ -60,7 +59,7 @@ class TestResultsView(QWidget):
         result_actions.addStretch()
         actions_layout.addLayout(result_actions)
         test_layout = QVBoxLayout(self)
-        filters = QHBoxLayout()
+        filters = WrappingLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText('Find a test, suite or failure message…')
         self.search.setAccessibleName('Search individual tests')
@@ -215,7 +214,7 @@ class TestResultsView(QWidget):
         self.result_counts.setText(totals)
         for state, (card, label) in self.count_cards.items():
             value = counts.get(state, 0) if counts else '—'
-            card.setText(f'<span style="font-size:24pt">{value}</span><br>{label}')
+            card.setText(f'{label} {value}')
             card.setAccessibleName(f'{value} {label.lower()} tests' if counts else label + ' count not reported yet')
         self.problems_button.setEnabled(bool(counts.get('failed') or counts.get('error')))
 

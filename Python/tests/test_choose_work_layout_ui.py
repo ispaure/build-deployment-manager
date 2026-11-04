@@ -41,14 +41,15 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         panel.destination_checks['firebase'].setChecked(True)
         for _ in range(5):
             self.app.processEvents()
-        for key, label in [('source', 'Source'), ('platforms', 'Test (1)'),
+        for key, label in [('source', 'Source'), ('platforms', 'Platforms (1)'),
                            ('delivery', 'Delivery (1)'), ('advanced', 'Options')]:
             index = view.config_tabs.indexOf(view.config_pages[key])
             self.assertEqual(view.config_tabs.tabText(index), label)
         self.assertTrue(view.config_tabs.tabBar().isVisible())
         self.assertTrue(view.editor_pane.isAncestorOf(view.config_tabs.tabBar()))
         left, right = view.splitter.sizes()
-        self.assertGreaterEqual(right / (left + right), .70)
+        self.assertGreaterEqual(left / (left + right), .38)
+        self.assertLessEqual(left / (left + right), .48)
         self.assertTrue(view.blocker_strip.isVisible())
         self.assertGreaterEqual(view.blocker_strip.mapTo(view, QPoint()).y(),
                                 view.splitter.geometry().bottom())
@@ -196,7 +197,7 @@ class ChooseWorkLayoutTests(unittest.TestCase):
         self.assertEqual(view.scroll.transform().m11(), scale)
         self.assertEqual({key: card.geometry() for key, card in cards.items()}, geometry)
 
-    def test_review_sections_fill_height_without_clipping_reserved_card_contents(self):
+    def test_review_fit_contains_content_sized_cards_without_clipping_approval_labels(self):
         self.panel.present_plan(integrated(self.root))
         self.panel.stages.setCurrentIndex(1)
         self.panel.show()
@@ -205,9 +206,9 @@ class ChooseWorkLayoutTests(unittest.TestCase):
             self.panel.resize(width, height)
             for _ in range(6):
                 self.app.processEvents()
-            flow.map.fit_map(force=True)
+            flow.fit()
             bounds = flow.map.mapFromScene(flow.map.proxy.sceneBoundingRect()).boundingRect()
-            self.assertGreaterEqual(bounds.height(), flow.map.viewport().height() - 20)
+            self.assertTrue(flow.map.viewport().rect().contains(bounds))
             for card, _, _ in flow.canvas.cards.values():
                 self.assertGreaterEqual(card.height(), card.layout().totalHeightForWidth(card.width()))
                 badge = card.findChild(QLabel, 'approvalBadge')

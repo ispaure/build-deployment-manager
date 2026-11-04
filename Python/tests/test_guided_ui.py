@@ -237,8 +237,10 @@ class GuidedUITests(unittest.TestCase):
 
     def test_history_loading_does_not_block_the_event_loop(self):
         from PySide6.QtCore import QTimer
+        from threading import Event
+        release = Event()
         def slow_history(*_):
-            time.sleep(.15)
+            release.wait(5)
             return []
         ticks = []
         with patch('build_manager.history.recent_runs', side_effect=slow_history):
@@ -247,6 +249,15 @@ class GuidedUITests(unittest.TestCase):
             timer.setInterval(10)
             timer.timeout.connect(lambda: ticks.append(True))
             timer.start()
+            try:
+                deadline = time.monotonic() + 5
+                while len(ticks) <= 3 and time.monotonic() < deadline:
+                    self.app.processEvents()
+                    time.sleep(.005)
+                self.assertTrue(panel.history_loading)
+                self.assertGreater(len(ticks), 3)
+            finally:
+                release.set()
+                timer.stop()
             self.wait_history(panel)
-            timer.stop()
         self.assertGreater(len(ticks), 3)
