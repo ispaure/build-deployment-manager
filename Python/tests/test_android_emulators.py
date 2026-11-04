@@ -24,14 +24,14 @@ class AndroidLeaseTests(unittest.TestCase):
             self.assertFalse(client.marker.exists());self.assertFalse((client.workspace/'avds').exists())
             self.assertTrue((client.workspace/'removed-lease.json').exists())
 
-    def test_start_holds_host_lock_through_readiness(self):
+    def test_start_holds_host_lock_until_console_registration(self):
         from contextlib import contextmanager
         with TemporaryDirectory() as folder:
             client = AndroidEmulator(Path(folder)/'sdk', Path(folder)/'owned')
             held = []
             @contextmanager
             def locked(path, **kwargs):
-                self.assertEqual(path, Path(folder)/'manager/locks/android-emulator-start.lock')
+                self.assertEqual(path, Path(folder)/'manager/locks/android-emulator-ports.lock')
                 held.append(True)
                 try:
                     yield
@@ -40,9 +40,13 @@ class AndroidLeaseTests(unittest.TestCase):
             def launch(*args):
                 self.assertEqual(held, [True])
                 return {'ready': True}
+            def ready(record):
+                self.assertEqual(held, [])
+                return record
             with patch.object(client, 'inspect'), patch('build_manager.locking.workspace_lock', locked), \
                  patch('build_manager.registry.config_directory', return_value=Path(folder)/'manager'), \
-                 patch.object(client, '_start', side_effect=launch):
+                 patch.object(client, '_launch', side_effect=launch), \
+                 patch.object(client, '_wait_ready', side_effect=ready):
                 self.assertEqual(client.start('image', 'model'), {'ready': True})
             self.assertEqual(held, [])
 
@@ -72,6 +76,32 @@ class AndroidLeaseTests(unittest.TestCase):
             for value in (0,-1,3601,True,1.5):
                 with self.assertRaises(ValueError):
                     AndroidEmulator(root/'sdk',root/'owned',startup_timeout=value)
+
+    def test_supported_ports_exhausted_never_launches_on_an_undiscoverable_port(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            client = AndroidEmulator(root/'sdk', root/'owned')
+            # Include offline transports: their ports are still occupied.
+            devices = 'List of devices attached\n' + '\n'.join(
+                f'emulator-{port}\t' + ('device' if port % 4 else 'offline')
+                for port in range(5554, 5586, 2))
+            with patch.object(client, 'inspect'), patch.object(client, 'invoke', return_value=devices), \
+                 patch('build_manager.registry.config_directory', return_value=root/'manager'), \
+                 patch('build_manager.android_emulators.socket.socket',
+                       side_effect=AssertionError('No supported port remains')), \
+                 patch('build_manager.android_emulators.subprocess.run') as create:
+                with self.assertRaisesRegex(RuntimeError, 'No unused emulator'):
+                    client.start('system-images;android-36;google_apis;arm64-v8a', 'pixel_9')
+            create.assert_not_called()
+            self.assertFalse(client.marker.exists())
+
+    def test_graphics_selection_is_explicit_and_recordable(self):
+        with TemporaryDirectory() as folder:
+            root=Path(folder)
+            self.assertEqual(AndroidEmulator(root/'sdk',root/'owned').gpu,'auto')
+            self.assertEqual(AndroidEmulator(root/'sdk',root/'owned',gpu='swiftshader').gpu,'swiftshader')
+            with self.assertRaises(ValueError):
+                AndroidEmulator(root/'sdk',root/'owned',gpu='unknown')
 
     def test_low_disk_startup_cause_survives_disposable_log_removal(self):
         with TemporaryDirectory() as folder:

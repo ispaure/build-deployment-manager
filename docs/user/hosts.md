@@ -59,13 +59,23 @@ more commands does not establish readiness. Resume only after the selected tools
 can complete normally. Existing personal simulators are never reset or deleted
 as a workaround.
 
-Disposable emulator starts on the same host are serialized through readiness,
-including starts from different checkouts or SDKs. This
-keeps another manager run from selecting a console/ADB pair while the first
-emulator is binding it. Cleanup verifies the AVD name before console commands;
+Disposable emulator port allocation and console registration are serialized on
+the same host, including starts from different checkouts or SDKs. This keeps
+another manager run from selecting a console/ADB pair while it is being bound.
+Once the unique console name is verified, guest boots may proceed concurrently. Cleanup verifies the AVD name before console commands;
 if a serial belongs to another run, only the recorded process may be stopped,
 after checking its creation time and unique AVD token.
 
 The disposable backend defaults to a 240-second boot deadline. An owning native
 probe may explicitly select a longer `startup_timeout`, up to 3600 seconds, for
 a busy host; boot-completion and AVD/process identity checks remain required.
+
+Owning probes may explicitly select `gpu="swiftshader"` when the SDK auto renderer
+fails to initialize a display. The selected renderer is recorded in the device
+lease. This selects software graphics explicitly; native ABI and hardware CPU
+acceleration checks still apply. The default remains `gpu="auto"`.
+
+Disposable Android devices use the SDK-supported even console ports 5554–5584,
+with the following port reserved for ADB. Advertised offline transports also
+reserve their ports. If that range is occupied, startup reports capacity rather
+than selecting an unsupported port.
