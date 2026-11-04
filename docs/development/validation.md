@@ -7,6 +7,68 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 Windows offscreen fonts and interpreter cleanup
+
+SDK `5d068f47cb880bcb67eeee13915e0e8cb9ca6992`, with real commonUtils
+`888872d1343d2adfa13918f76a1e2343d9d68ed8`, fixes the Windows contract runner's
+font discovery. Qt's [Windows offscreen backend](https://github.com/qt/qtbase/blob/6.10/src/plugins/platforms/offscreen/qoffscreenintegration.cpp)
+uses a FreeType font database and did not find fonts in the installed Qt package.
+The unchanged sizing fixtures reproduced
+the hosted failures exactly: a 1069-pixel panel instead of at most 1024, and a
+754-pixel recipient picker instead of 400. A child-only system-font-directory
+control loaded 54 font families, resolved Arial and passed both original
+assertions at 1024 and 400 pixels. Application layout and captions are unchanged.
+
+The runner now supplies the existing `SystemRoot/Fonts` directory, with `WINDIR`
+as a fallback, only for Windows offscreen children without `QT_QPA_FONTDIR`.
+Explicit font-directory choices, including empty values, native platform choices
+and other hosts retain their existing environment. The parent remains free of
+Qt imports. Nine portable runner/import checks pass, including 16 environment
+subcases for defaults, overrides and missing directories.
+
+The committed SDK passes all 40 cases in the complete balanced-workspace,
+project-tooling, retained-delivery and contract-runner modules through the actual
+module-isolating runner. The diagnostic harness supplied no font override, so
+this verifies the runner fix itself. The owned Windows ARM64 guest used AMD64
+python-build-standalone CPython 3.12.2 and Qt 6.12. The operation took 19.922
+seconds under a 120-second supervisor and a two-CPU process-affinity limit.
+Evidence was collected before verified removal of the owned staging/results
+paths. The original running VM state and prepared interpreter hash were preserved.
+This is Windows offscreen contract acceptance, not native-window, hosted x64,
+mobile, device or provider acceptance.
+
+Logistics compatibility at project `2342044cf6016a1f3a2ddad7dd84089f737e74ff`
+passes 130 tests across seven tooling/adapter/journey modules using published
+SDK `5d068f4`, real commonUtils `888872d` and the project's own interpreter.
+Project tree, SDK/CU identities, dependency-pin hash and clean tracked status
+match before and after. Both private desktop and mobile interpreters also pass
+both import orders in explicit project context: commonUtils resolves to the
+project's real submodule and the manager to the immutable SDK source. This is
+consumer-contract evidence, not a mobile build or a change to active release
+interpreters, pins or PDF work.
+
+The two archived hosted `WinError 5` interpreter-deletion failures remain
+unreproduced. Both original tests pass without diagnostic hooks, and their full
+modules pass above with immediate fixture cleanup. A separate instrumented run
+recorded empty owned jobs, closed root handles, normal file attributes and no
+Restart Manager resource owners before deletion. This does not establish a cause
+or a cleanup fix: the archived setup-python x64 distribution differs from the
+managed guest runtime. No retry, ignored cleanup error, containment relaxation or
+antivirus explanation was added. Matched hosted-toolchain evidence remains a
+separate acceptance gap. Raw attempts, provenance and cleanup receipts remain
+under ignored `test-results/`.
+
+Subsequent test-only diagnostics in `ab6e8e2` preserve the original cleanup call
+and exception. Only a matching Windows deletion failure for the exact owned,
+non-reparse private interpreter starts a three-second isolated diagnostic child.
+Its bounded metadata includes executable hashes/build provenance, file attributes
+and Restart Manager owner identities or explicit query errors. No diagnostic query
+runs on success, and failures are never retried or suppressed. Seven portable
+diagnostic checks and all 23 existing tooling/retained-delivery fixture methods
+pass; the latter require OS process-inventory access. These diagnostics have not
+yet captured the hosted failure. The next already-planned alpha Windows job is
+the matched-toolchain acceptance route; no additional dispatch is implied.
+
 ## November 4 hosted Fedora contract follow-up
 
 The hosted failure report for SDK `0d08194` identified a missing host `ps` utility,
