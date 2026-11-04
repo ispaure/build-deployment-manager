@@ -1,4 +1,5 @@
 """Durable boundary proof distinguishes safe admission retries from unknown effects."""
+import errno
 import json
 import os
 from pathlib import Path
@@ -115,6 +116,27 @@ class LaunchStateTests(unittest.TestCase):
         self.assertEqual(result['status'], 'unknown')
         self.assertEqual(result['phases'][0]['launch_state'], 'launching')
         self.journal(result['phases'][0])
+
+    @unittest.skipIf(os.name == 'nt', 'Actual POSIX constructor boundary')
+    def test_arbitrary_parent_oserror_does_not_prove_no_exec(self):
+        plan = self.plan()
+        original = subprocess.Popen
+        for error in (OSError(errno.EIO, 'parent pipe failed'),
+                      OSError(errno.EIO, 'parent error with executable filename', plan.phases[0].argv[0]),
+                      OSError(errno.ENOENT, 'unrelated missing pipe', 'unrelated-descriptor')):
+            with self.subTest(error=error):
+                def spawn(argv, *args, **kwargs):
+                    if list(argv) == list(plan.phases[0].argv):
+                        raise error
+                    return original(argv, *args, **kwargs)
+                output = self.root / ('result-' + str(len(list(self.root.glob('result-*')))))
+                with patch('build_manager.executor.subprocess.Popen', side_effect=spawn):
+                    result = Executor().run(plan, output)
+                row = result['phases'][0]
+                self.assertEqual((result['status'], row['status'], row['launch_state']),
+                                 ('unknown', 'unknown', 'launching'))
+                self.assertNotIn('retryable', row)
+                self.assertEqual(json.loads((output / row['launch_record']).read_text())['state'], 'launching')
 
     def test_launch_intent_persistence_failure_stops_before_constructor_and_is_conservative(self):
         from build_manager.profiles import save_json
