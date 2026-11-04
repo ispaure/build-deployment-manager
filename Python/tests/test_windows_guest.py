@@ -107,6 +107,65 @@ class WindowsEvidenceTests(unittest.TestCase):
             self.assertEqual(guest.recover_completion('reports', 'current', time.monotonic(), 10, Event()), 7)
             self.assertEqual(read.call_count, 2)
 
+    def test_unknown_status_queries_do_not_imply_absence(self):
+        identity = dict(token='token', operation='operation', invocation='current')
+        transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
+        for unknown in (transient, b''):
+            with self.subTest(unknown=type(unknown).__name__):
+                guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+                clock = [0.]
+                cancelled = Mock()
+                cancelled.is_set.return_value = False
+                cancelled.wait.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+                records = [unknown] * 24 + [json.dumps(dict(identity, exit=7)).encode()]
+                with patch.object(guest, 'call', side_effect=records) as read, \
+                        patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]):
+                    self.assertEqual(guest.recover_completion('reports', 'current', 0, 30, cancelled), 7)
+                self.assertEqual(read.call_count, 25)
+
+    def test_unknown_query_breaks_a_confirmed_absence_interval(self):
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        identity = dict(token='token', operation='operation', invocation='current')
+        absent = json.dumps(dict(identity, state='absent')).encode()
+        transient = RuntimeError('Windows guest command failed (255): transient')
+        records = [absent] * 17 + [transient] * 8 + [absent] * 9 + [json.dumps(dict(identity, exit=0)).encode()]
+        clock = [0.]
+        cancelled = Mock()
+        cancelled.is_set.return_value = False
+        cancelled.wait.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+        with patch.object(guest, 'call', side_effect=records), \
+                patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]):
+            self.assertEqual(guest.recover_completion('reports', 'current', 0, 30, cancelled), 0)
+
+    def test_confirmed_absence_remains_bounded(self):
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        clock = [0.]
+        cancelled = Mock()
+        cancelled.is_set.return_value = False
+        cancelled.wait.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+        absent = json.dumps(dict(token='token', operation='operation', invocation='current', state='absent')).encode()
+        with patch.object(guest, 'call', return_value=absent) as read, \
+                patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]):
+            self.assertIsNone(guest.recover_completion('reports', 'current', 0, 30, cancelled))
+        self.assertEqual(clock[0], 5.)
+        self.assertEqual(read.call_count, 21)
+
+    def test_unknown_status_does_not_extend_the_original_deadline(self):
+        from build_manager.windows_guest import CANCEL
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        clock = [0.]
+        cancelled = Mock()
+        cancelled.is_set.return_value = False
+        cancelled.wait.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+        def call(script, **kwargs):
+            if script == CANCEL:
+                return b''
+            raise RuntimeError('Windows guest command failed (255): transient')
+        with patch.object(guest, 'call', side_effect=call) as read, \
+                patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]):
+            self.assertEqual(guest.recover_completion('reports', 'current', 0, 2, cancelled), 124)
+        self.assertEqual(sum(c.args[0] == CANCEL for c in read.call_args_list), 1)
+
     def test_cleanup_retries_only_the_known_transient_and_remains_bounded(self):
         guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
         transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')

@@ -330,7 +330,7 @@ class WindowsGuest:
         raise RuntimeError('Windows operation transport failed: ' + Redactor()(detail))
 
     def recover_completion(self, reports, invocation, started, timeout, cancelled, *, progress=None):
-        absent_since = time.monotonic()
+        absent_since = None
         while True:
             if progress is not None:
                 progress('reconciling')
@@ -342,7 +342,10 @@ class WindowsGuest:
             except RuntimeError as error:
                 if '(255)' not in str(error):
                     raise
-                raw = b''
+                # A failed observation is unknown, not proof the worker is absent.
+                absent_since = None
+                cancelled.wait(.25)
+                continue
             if raw.strip():
                 record = json.loads(raw)
                 self.validate_completion(record, invocation)
@@ -350,8 +353,13 @@ class WindowsGuest:
                     return self.completion_code(record, invocation)
                 if record.get('state') == 'running':
                     absent_since = None
-                elif absent_since is None:
-                    absent_since = time.monotonic()
+                elif record.get('state') == 'absent':
+                    if absent_since is None:
+                        absent_since = time.monotonic()
+                else:
+                    raise ValueError('Invalid Windows worker completion state.')
+            else:
+                absent_since = None
             if absent_since is not None and time.monotonic() - absent_since >= 5:
                 return None  # No matching live worker or durable result: remain unverified.
             cancelled.wait(.25)
