@@ -195,15 +195,31 @@ class BlockerCardTests(unittest.TestCase):
 
     def test_fedora_height_inspector_keeps_repair_and_both_captions_inside_pane(self):
         view = self.panel.run_view.results_workspace
-        # Reproduce the recorded Fedora ancestor bound without depending on
-        # platform-specific font substitution or initial splitter proportions.
-        view.sidebar_splitter.widget(1).setFixedHeight(129)
+        # The recorded 129px details bound is a pane contract. Combining it
+        # with independent ancestor pressure can exceed the native tree minimum.
+        pane = view.sidebar_splitter.widget(1)
+        pane.setParent(None)
+        self.addCleanup(pane.close)
+        pane.setFixedHeight(129)
+        pane.resize(992, 129)
+        pane.show()
+        self.check_small_run_inspection()
+        self.assertEqual(pane.size().toTuple(), (992, 129))
+        self.check_inspector_captions_visible()
+
+    def test_natural_run_inspector_keeps_repair_visible_with_43px_ancestor_pressure(self):
+        view = self.panel.run_view.results_workspace
         with patch.object(view.splitter, 'fontMetrics', return_value=Mock(height=lambda: 32)):
             self.check_small_run_inspection(extra_summary_height=43)
-        self.assertEqual(view.sidebar_splitter.widget(1).height(), 129)
         self.check_task_row_visible()
+        self.check_inspector_captions_visible()
+
+    def check_inspector_captions_visible(self):
+        view = self.panel.run_view.results_workspace
+        self.assertEqual(view.scope_label.accessibleName(), 'Evidence scope')
         for caption in (view.selection_heading, view.scope_label):
             self.assertTrue(caption.isVisible())
+            self.assertTrue(caption.text())
             self.assertGreater(caption.width(), 0)
             self.assertGreaterEqual(caption.height(), caption.heightForWidth(caption.width()))
             parent = caption.parentWidget()
