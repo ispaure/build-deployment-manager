@@ -404,6 +404,36 @@ see [project integration](project-integration.md). Existing API-1 bridges remain
 supported. Command projects derive capabilities from their operation catalog;
 custom adapters can use the same capability resolver as the manager.
 
+## Optional delivery from retained inputs
+
+Declare `retained_delivery_plan` in `adapter_actions` to offer a new delivery from
+a saved run. The API-1 request values are exactly:
+
+```json
+{"run_directory": "/absolute/saved-run-directory", "destinations": ["declared-destination"], "run_overrides": {"declared-recipient-field": "[\"saved-device-id\"]"}}
+```
+
+The callback `Project.retained_delivery_plan(run_directory, destinations,
+run_overrides=None)` returns an ordinary `Plan` (serialized as `Plan.data()` by
+the bridge). `ManagerAPI.prepare_retained_delivery(...)` and CLI
+`retained-delivery` use the same optional action. Unsupported projects fail before
+an adapter process is invoked.
+
+The manager checks retained plan/result identity and registered project scope,
+declared destination IDs and ordinary non-secret run-field values. It rejects
+retired runs, an unrelated returned project, a reused original workspace, and
+returned journey destination metadata that differs from the requested scope.
+The project owns source/archive fingerprints, selected platform gate closure,
+recipient identity, provisioning, expiry and rebuild diagnostics. It may accept
+an independently verified platform even when another failed; current HEAD need
+not match the retained snapshot. Return a fresh workspace and verification/export/
+delivery phases, without executing signing or external effects during planning.
+The original run and its failed or unknown outcomes remain unchanged.
+
+This action is distinct from `retry-device`, which retries one uncertain install
+using the same verified prerequisites. Never reinterpret an unknown upload or
+device intent as permission for a new effect.
+
 ## Windows completion observations
 
 Lost guest-tools job handles are reconciled against the same invocation's

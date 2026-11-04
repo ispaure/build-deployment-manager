@@ -104,6 +104,10 @@ class ManagerAPI:
         """List only adapter-declared generated outputs, including active/pinned holds."""
         return self._project(project).call('storage_inventory', timeout=600)
 
+    def prepare_retained_delivery(self, run_directory, destinations, *, project=None, run_overrides=None):
+        """Prepare a fresh project-owned delivery from verified retained inputs."""
+        return self._project(project).retained_delivery_plan(run_directory, destinations, run_overrides)
+
     def retire_workflow(self, name, *, project=None, confirmed=False):
         return self.retire_run(name, project=project, confirmed=confirmed)
 

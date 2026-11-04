@@ -133,6 +133,12 @@ def parser_for_cli():
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
     retry.add_argument('--output', type=Path, required=True, help='New plan file; does not execute the install')
+    retained = sub.add_parser('retained-delivery', help='Prepare a new project-owned delivery from a saved run; does not execute it')
+    retained.add_argument('run_directory', type=Path)
+    retained.add_argument('--project')
+    retained.add_argument('--destination', action='append', required=True, dest='destinations')
+    retained.add_argument('--run-value', action='append', default=[], help='Declared field=value for the new recipients/delivery')
+    retained.add_argument('--output', type=Path, required=True, help='Fresh prepared plan JSON file')
     save = sub.add_parser('save-preset', help='Save project choices in the existing GUI/CLI registry')
     save.add_argument('name')
     save.add_argument('--project')
@@ -264,6 +270,13 @@ def execute(args, api):
         prepared = prepare(args.run, args.step)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity, warning=prepared.settings['warning'])
+    if command == 'retained-delivery':
+        if args.output.exists():
+            raise ValueError('Choose a new plan path; preserve existing evidence.')
+        prepared = api.prepare_retained_delivery(args.run_directory, args.destinations, project=args.project,
+            run_overrides=assignments(args.run_value) if args.run_value else None)
+        prepared.save(args.output)
+        return dict(plan=str(args.output.resolve()), identity=prepared.identity)
     if command == 'status':
         return read_status(args.output, full=args.full)
     if command == 'logs':

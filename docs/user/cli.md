@@ -346,6 +346,32 @@ In the GUI, **Continue ready delivery…** opens the same scoped review. Leave
 branches, or explicitly select it to retry them. Saved unknown external outcomes
 are never repeated automatically. Fresh run approval policy is unchanged.
 
+## Prepare a new delivery from saved inputs
+
+For a project advertising the optional `retained_delivery_plan` action in
+`capabilities`, use:
+
+```sh
+build-manager retained-delivery /path/to/saved-run --project PROJECT --destination DESTINATION --run-value 'RECIPIENT_FIELD=["saved-device-id"]' --output /path/to/new-plan.json
+build-manager show-plan /path/to/new-plan.json
+build-manager run /path/to/new-plan.json --output /path/to/new-run --confirm --expect-identity PLAN_SHA256
+```
+
+Use the destination and field IDs returned by `capabilities` and `inputs`; repeat
+`--destination` and `--run-value` as needed. This prepares a fresh plan without
+editing the original run or requiring the current checkout to equal its saved
+source. The project verifies the retained snapshot, selected platform's gates,
+archive and new recipients. Missing or expired inputs require a fresh build;
+unrelated failed platforms do not automatically invalidate a verified platform.
+Project policy determines which destinations support reuse and whether export or
+provisioning work is needed. Preparation never installs or signs an app.
+
+In the GUI, open the run in History, select **Prepare delivery from saved run…**,
+choose destinations and recipients, then **Prepare review plan**. Review the
+captured old source and new destination before Start. This optional workflow is
+separate from **Retry uncertain device install…**, which repeats the same
+uncertain installation and preserves its original unknown outcome.
+
 ## Scaffold and check a project
 
 For a local command workflow, create a single descriptor in an existing project:

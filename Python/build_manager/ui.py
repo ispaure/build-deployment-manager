@@ -249,6 +249,11 @@ class ManagerPanel(QWidget):
         self.retry_device = QPushButton('Retry uncertain device install…', self)
         self.retry_device.hide()
         self.retry_device.clicked.connect(self.retry_device_install)
+        self.retained_delivery = QPushButton('Prepare delivery from saved run…', self)
+        self.retained_delivery.setToolTip('Select a saved run, then choose new recipients and review a fresh plan using verified retained inputs.')
+        self.retained_delivery.setVisible(supports(self.project, 'retained_delivery_plan'))
+        self.retained_delivery.setEnabled(False)
+        self.retained_delivery.clicked.connect(self.request_retained_delivery)
         self.run_problems = QPushButton('View problems', self)
         self.run_problems.clicked.connect(self.run_view.show_problems)
         self.run_view.review_requested.connect(self.continue_run.click)
@@ -281,7 +286,7 @@ class ManagerPanel(QWidget):
         for left, right in (
                 ((), (self.prepare,)),
                 ((self.back,), (self.start,)),
-                ((self.cancel,), (self.open_results, self.run_problems, self.retry_device, self.continue_run)),
+                ((self.cancel,), (self.open_results, self.run_problems, self.retained_delivery, self.retry_device, self.continue_run)),
                 ((self.refresh_history_button, self.resume), (self.view_history_button,))):
             page = QWidget()
             actions = WrappingLayout(page)
@@ -576,6 +581,7 @@ class ManagerPanel(QWidget):
             {phase.id: 'Retry install' for phase in retry_phases} if not getattr(self, 'is_busy', False) else {})
         self.retry_device.setVisible(retryable)
         self.retry_device.setEnabled(retryable and not getattr(self, 'is_busy', False))
+        self.retained_delivery.setEnabled(bool(self.result) and not getattr(self, 'is_busy', False))
         self.run_problems.setVisible(problems)
         self.run_problems.setText(self.run_view.attention_problems.text())
         approval = review and (self.run_view.outcome == 'awaiting_review' or any(
@@ -669,6 +675,8 @@ class ManagerPanel(QWidget):
         self.preparation_timer.stop()
         device_retry = getattr(self, 'preparing_device_retry', False)
         self.preparing_device_retry = False
+        retained_delivery = getattr(self, 'preparing_retained_delivery', False)
+        self.preparing_retained_delivery = False
         self.preparing = False
         self.set_busy(False)
         if error is not None:
@@ -686,7 +694,7 @@ class ManagerPanel(QWidget):
             self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
             return
         from .workflows import apply_start_review_policy, require_build_only
-        if self.configuration.goal.currentData() == 'build':
+        if not retained_delivery and self.configuration.goal.currentData() == 'build':
             try:
                 require_build_only(plan)
             except ValueError as error:
@@ -707,7 +715,7 @@ class ManagerPanel(QWidget):
         self.stages.setCurrentIndex(1)
         self.start.setEnabled(True)
         effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
-        self.start.setText('Start reviewed workflow' if plan.journey and plan.journey['goal'] == 'deliver'
+        self.start.setText('Start reviewed workflow' if retained_delivery or plan.journey and plan.journey['goal'] == 'deliver'
                            else 'Start build' if self.configuration.goal.currentData() == 'build'
                            else 'Start validation' if self.configuration.goal.currentData() == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
@@ -789,6 +797,31 @@ class ManagerPanel(QWidget):
             self.preparation_timer.start()
         except (OSError, ValueError, RuntimeError, KeyError) as error:
             self.status.setText(self.redact(str(error)))
+
+    def request_retained_delivery(self):
+        from functools import partial
+        from .retained_delivery import prepare
+        from .retained_delivery_ui import RetainedDeliveryDialog
+        if getattr(self, 'is_busy', False) or not self.result:
+            return
+        if not supports(self.project, 'retained_delivery_plan'):
+            self.status.setText('This project does not offer delivery from a saved run.')
+            return
+        directory = self.result.parent
+        dialog = RetainedDeliveryDialog(self.project, directory, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            dialog.deleteLater()
+            return
+        choices = dialog.choices(); dialog.deleteLater()
+        self.preparing_retained_delivery = True
+        self.preparing_proposal = None
+        self.preparation_revision = self.selection_revision
+        self.preparing, self.preparing_verification = True, True
+        self.set_busy(True)
+        self.status.setText('Verifying saved inputs and preparing a new delivery plan…')
+        QThreadPool.globalInstance().start(PreparePlan(
+            partial(prepare, self.project, directory, **choices), self.prepared))
+        self.preparation_timer.start()
 
     def resume_workflow(self, retained=None):
         from pathlib import Path
