@@ -13,9 +13,12 @@ from uuid import uuid4
 
 
 class AndroidEmulator:
-    def __init__(self, sdk, workspace, *, environment=None, startup_timeout=240):
+    def __init__(self, sdk, workspace, *, environment=None, startup_timeout=240, gpu='auto'):
         if type(startup_timeout) is not int or not 1 <= startup_timeout <= 3600:
             raise ValueError('Emulator startup timeout must be 1 to 3600 seconds.')
+        if gpu not in {'auto', 'host', 'swiftshader'}:
+            raise ValueError('Choose auto, host or swiftshader emulator graphics.')
+        self.gpu = gpu
         self.startup_timeout = startup_timeout
         self.sdk, self.workspace = Path(sdk), Path(workspace)
         self.environment = dict(os.environ, **(environment or {}))
@@ -64,12 +67,13 @@ class AndroidEmulator:
         self.inspect(image)
         from .locking import workspace_lock
         from .registry import config_directory
-        # Console sockets cannot remain reserved while QEMU binds them. Keep
-        # competing manager launches out of that gap until readiness is verified.
-        with workspace_lock(config_directory() / 'locks/android-emulator-start.lock', timeout=600):
-            return self._start(image, model)
+        # Keep only port allocation/console binding atomic. Guest boots may
+        # overlap after the unique console name and bound port are verified.
+        with workspace_lock(config_directory() / 'locks/android-emulator-ports.lock', timeout=600):
+            record = self._launch(image, model)
+        return self._wait_ready(record)
 
-    def _start(self, image, model):
+    def _launch(self, image, model):
         if self.workspace.exists():
             raise ValueError('Select a fresh owned emulator workspace.')
         self.inspect(image)
@@ -80,7 +84,8 @@ class AndroidEmulator:
         # Reserve a free console/ADB pair until immediately before launch.
         selected = None
         advertised = set(re.findall(r'^emulator-(\d+)\s', self.invoke('devices'), re.MULTILINE))
-        for port in range(5580,5680,2):
+        # The SDK documents even console ports 5554–5584; ADB uses port + 1.
+        for port in range(5554,5586,2):
             if str(port) in advertised:
                 continue
             sockets = [socket.socket(),socket.socket()]
@@ -95,7 +100,7 @@ class AndroidEmulator:
             raise RuntimeError('No unused emulator console/ADB port pair is available.')
         port,sockets = selected
         record = dict(token=token,name=name,serial='emulator-'+str(port),image=image,model=model,
-                      workspace=str(self.workspace.resolve()),
+                      workspace=str(self.workspace.resolve()),gpu=self.gpu,startup_timeout=self.startup_timeout,
                       image_properties=(self.sdk/'system-images'/Path(*image.split(';')[1:])/'source.properties').read_text())
         self.marker.write_text(json.dumps(record))
         try:
@@ -110,7 +115,7 @@ class AndroidEmulator:
                     signal.signal(sig, lambda number, frame: received.append(number))
                 try:
                     child = subprocess.Popen([str(self.emulator),'-avd',name,'-port',str(port),
-                        '-no-window','-no-audio','-no-snapshot','-no-boot-anim','-gpu','auto','-accel','on'],
+                        '-no-window','-no-audio','-no-snapshot','-no-boot-anim','-gpu',self.gpu,'-accel','on'],
                         env=self.environment,stdout=log,stderr=subprocess.STDOUT,start_new_session=os.name!='nt')
                     self.child = child
                     from .process_identity import read_process_fingerprint
@@ -122,34 +127,48 @@ class AndroidEmulator:
                         signal.signal(sig,handler)
                 if received:
                     raise KeyboardInterrupt
-            deadline = time.monotonic()+self.startup_timeout
+            deadline = time.monotonic()+60
             while time.monotonic()<deadline:
                 if child.poll() is not None:
                     raise RuntimeError(self.startup_failure())
                 try:
-                    if self.invoke('-s',record['serial'],'shell','getprop','sys.boot_completed',timeout=10)=='1':
-                        self.verify(record)
-                        # The emulator launcher may exec its QEMU backend. Capture
-                        # the ready command only after checking the same creation
-                        # time and the unique AVD identity, never just its PID.
-                        ready_fingerprint = read_process_fingerprint(child.pid)
-                        initial_fingerprint = record['process_started']
-                        if os.name != 'nt':
-                            if (not ready_fingerprint or not initial_fingerprint
-                                    or ready_fingerprint.split()[:5] != initial_fingerprint.split()[:5]
-                                    or name not in ready_fingerprint):
-                                raise RuntimeError('Owned emulator creation identity changed during startup.')
-                        elif ready_fingerprint != initial_fingerprint:
-                            raise RuntimeError('Owned emulator creation identity changed during startup.')
-                        record['process_started'] = ready_fingerprint
-                        self.marker.write_text(json.dumps(record))
-                        return record
-                except (OSError,subprocess.SubprocessError,RuntimeError):
-                    pass
-                time.sleep(1)
-            raise RuntimeError(f'Owned Android emulator did not become ready within {self.startup_timeout} seconds.')
+                    self.verify(record)
+                    return record
+                except (OSError,subprocess.SubprocessError,RuntimeError,ValueError):
+                    time.sleep(.2)
+            raise RuntimeError('Owned emulator console did not register within 60 seconds.')
         finally:
             for channel in sockets:channel.close()
+
+    def _wait_ready(self, record):
+        from .process_identity import read_process_fingerprint
+        child, name = self.child, record['name']
+        deadline = time.monotonic()+self.startup_timeout
+        while time.monotonic()<deadline:
+            if child.poll() is not None:
+                raise RuntimeError(self.startup_failure())
+            try:
+                if self.invoke('-s',record['serial'],'shell','getprop','sys.boot_completed',timeout=10)=='1':
+                    self.verify(record)
+                    # The emulator launcher may exec its QEMU backend. Capture
+                    # the ready command only after checking the same creation
+                    # time and the unique AVD identity, never just its PID.
+                    ready_fingerprint = read_process_fingerprint(child.pid)
+                    initial_fingerprint = record['process_started']
+                    if os.name != 'nt':
+                        if (not ready_fingerprint or not initial_fingerprint
+                                or ready_fingerprint.split()[:5] != initial_fingerprint.split()[:5]
+                                or name not in ready_fingerprint):
+                            raise RuntimeError('Owned emulator creation identity changed during startup.')
+                    elif ready_fingerprint != initial_fingerprint:
+                        raise RuntimeError('Owned emulator creation identity changed during startup.')
+                    record['process_started'] = ready_fingerprint
+                    self.marker.write_text(json.dumps(record))
+                    return record
+            except (OSError,subprocess.SubprocessError,RuntimeError):
+                pass
+            time.sleep(1)
+        raise RuntimeError(f'Owned Android emulator did not become ready within {self.startup_timeout} seconds.')
 
     def startup_failure(self):
         """Carry the native startup cause into CLI results before scratch cleanup."""
