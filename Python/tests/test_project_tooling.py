@@ -39,13 +39,16 @@ class ProjectToolingTests(unittest.TestCase):
         (self.root / 'bridge.py').write_text('''import importlib.util,json,sys
 from pathlib import Path
 request=json.load(sys.stdin)
-assert importlib.util.find_spec('build_manager') is None
+if Path('.venv').exists():
+    assert importlib.util.find_spec('build_manager') is None
+assert 'build_manager' not in sys.modules
 action=request['action']
 if action in ('tooling_status','tooling_update'):
     assert 'manager_checkout' not in request
     if Path('bootstrap-error').exists():
         raise ValueError('Mock bootstrap error before any SDK import')
     response=json.loads(Path('response.json').read_text())
+    response['bootstrap_runtime']=dict(interpreter=sys.executable,isolated=sys.flags.isolated,loaded_sdk='build_manager' in sys.modules)
     if Path('active-lease').exists():
         response.update(status='blocked',ready=False,message='Active project interpreter lease; retry after the run.')
     if action=='tooling_update':
@@ -139,6 +142,79 @@ else:
                 self.assertEqual(main(['tooling']), 0)
                 self.assertEqual(main(['tooling', '--confirm']), 2)
             api.return_value.update_tooling.assert_not_called()
+
+    def remove_project_interpreter(self):
+        (self.root / '.venv').rename(self.root / 'preserved-venv')
+
+    def test_missing_venv_status_and_preflight_use_only_current_isolated_host_python(self):
+        self.remove_project_interpreter()
+        value = self.api.tooling_status(self.key)
+        self.assertEqual(value['bootstrap_runtime']['interpreter'], sys.executable)
+        self.assertEqual(value['bootstrap_runtime']['isolated'], 1)
+        self.assertFalse(value['bootstrap_runtime']['loaded_sdk'])
+        self.assertFalse((self.root / '.venv').exists())
+        self.assertFalse((self.root / 'repair-request.json').exists())
+        from build_manager.onboarding import probe_adapter
+        report = probe_adapter(self.api.registry, self.key)
+        self.assertEqual(report['stage'], 'project_tooling')
+        self.assertIn('tooling-update', [row['id'] for row in report['next_actions']])
+        bridge = ProjectBridge(self.api.registry, self.key)
+        with self.assertRaisesRegex(ValueError, 'Project interpreter is missing'):
+            bridge.call('settings')
+        self.assertFalse((self.root / 'ordinary-import-attempted').exists())
+
+    def test_missing_venv_explicit_update_dispatches_without_creating_or_installing_it(self):
+        self.remove_project_interpreter()
+        with self.assertRaisesRegex(ValueError, 'confirmation'):
+            self.api.update_tooling(self.key)
+        value = self.api.update_tooling(self.key, confirmed=True)
+        self.assertEqual(value['bootstrap_runtime']['interpreter'], sys.executable)
+        self.assertEqual(json.loads((self.root / 'repair-request.json').read_text()), {'confirmed': True})
+        self.assertFalse((self.root / '.venv').exists())
+        self.assertFalse(value['ready'])  # The fixture never invokes an installer.
+
+    def test_missing_venv_bootstrap_error_handler_needs_no_sdk(self):
+        self.remove_project_interpreter()
+        (self.root / 'bootstrap-error').touch()
+        with self.assertRaisesRegex(ValueError, 'Mock bootstrap error before any SDK import'):
+            self.api.tooling_status(self.key)
+        self.assertFalse((self.root / '.venv').exists())
+        self.assertFalse((self.root / 'ordinary-import-attempted').exists())
+
+    def test_missing_venv_undeclared_actions_cannot_select_host_fallback(self):
+        self.remove_project_interpreter()
+        path = self.root / 'build-project.json'
+        descriptor = json.loads(path.read_text()); descriptor['adapter_actions'] = []
+        path.write_text(json.dumps(descriptor))
+        bridge = ProjectBridge(self.api.registry, self.key)
+        with patch('build_manager.bridge.subprocess.Popen') as launch:
+            for action in ('tooling_status', 'tooling_update', 'settings', 'unknown-action'):
+                with self.assertRaisesRegex(ValueError, 'Project interpreter is missing'):
+                    bridge.call(action)
+            launch.assert_not_called()
+
+    def test_missing_venv_unavailable_or_frozen_host_is_not_replaced_from_path(self):
+        self.remove_project_interpreter()
+        bridge = ProjectBridge(self.api.registry, self.key)
+        with patch('build_manager.bridge.subprocess.Popen') as launch:
+            for executable in (None, '', 'python', str(self.root / 'missing-host-python')):
+                with patch.object(sys, 'executable', executable), self.assertRaisesRegex(ValueError, 'running Python interpreter'):
+                    bridge.tooling_status()
+            with patch.object(sys, 'frozen', True, create=True), self.assertRaisesRegex(ValueError, 'running Python interpreter'):
+                bridge.tooling_status()
+            launch.assert_not_called()
+
+    def test_missing_bridge_preserves_setup_diagnostic_without_launching_host(self):
+        self.remove_project_interpreter()
+        (self.root / 'bridge.py').unlink()
+        from build_manager.onboarding import probe_adapter
+        with patch('build_manager.bridge.subprocess.Popen') as launch:
+            with self.assertRaisesRegex(ValueError, 'Adapter bridge is missing'):
+                self.api.tooling_status(self.key)
+            report = probe_adapter(self.api.registry, self.key)
+            self.assertEqual(report['stage'], 'prerequisites_missing')
+            self.assertTrue(any(path.endswith('bridge.py') for path in report['missing']))
+            launch.assert_not_called()
 
 
 class ToolingShapeTests(unittest.TestCase):

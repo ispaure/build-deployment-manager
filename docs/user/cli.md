@@ -392,6 +392,9 @@ No installer is guessed for unsupported projects. The project owns lockfile
 synchronization, explicit tooling enrollment, both-environment installation and
 in-flight lease protection. The GUI checkout is never supplied as bootstrap
 installation authority. See [setup](setup.md#check-or-repair-project-tooling).
+If the project's interpreter is missing, only declared tooling bootstrap actions
+can use the existing host Python in isolated mode. This does not create an
+environment during status or change the interpreter used for normal project work.
 
 ## Scaffold and check a project
 

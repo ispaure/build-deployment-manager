@@ -84,8 +84,17 @@ class ProjectBridge:
             interpreter = interpreter[sys.platform]
         python = self.root / interpreter
         script = self.root / descriptor['bridge']
+        interpreter_options = []
         if not python.is_file():
-            raise ValueError('Project interpreter is missing; set up its own environment before running.')
+            bootstrap = action in {'tooling_status', 'tooling_update'} and self.supports_action(action)
+            if not bootstrap:
+                raise ValueError('Project interpreter is missing; set up its own environment before running.')
+            # A declared stdlib bootstrap can inspect/create its own missing venv.
+            # Never search PATH or use this host environment as an install target.
+            python = Path(sys.executable or '')
+            if getattr(sys, 'frozen', False) or not python.is_absolute() or not python.is_file():
+                raise ValueError('A running Python interpreter is unavailable for project bootstrap. Follow the project setup guide.')
+            interpreter_options = ['-I', '-B']
         if not script.is_file():
             raise ValueError('Adapter bridge is missing; initialize the project dependencies.')
         environment = dict(os.environ)
@@ -106,7 +115,7 @@ class ProjectBridge:
         reject_secrets(values)
         if cancelled():
             raise ValueError('Project request cancelled.')
-        with subprocess.Popen([str(python), str(script)], cwd=self.root, stdin=subprocess.PIPE,
+        with subprocess.Popen([str(python), *interpreter_options, str(script)], cwd=self.root, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment) as process:
             deadline = time.monotonic() + timeout
             try:

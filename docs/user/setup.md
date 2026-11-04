@@ -101,8 +101,12 @@ The project owns any post-`uv sync --locked` repair, must explicitly enroll tool
 environments, and must protect in-flight interpreter leases. Ordinary app launches
 are not permission to install manager tooling. No manager interpreter or sibling
 checkout is substituted for the project's environment. Projects without these
-optional actions continue to use their own setup guide; a missing bootstrap
-interpreter also requires initial project setup.
+optional actions continue to use their own setup guide. If the configured project
+interpreter is missing, only declared tooling actions may run their standard-library
+bridge using the manager's existing Python in isolated mode. The project still
+creates or repairs its own target environments; the host interpreter is never an
+installation target. Normal project actions continue to require their configured
+interpreter.
 
 ### CLI and development entry points
 
