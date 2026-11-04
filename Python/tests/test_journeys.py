@@ -35,8 +35,8 @@ def integrated(root, *, fail_gate=False, fail_delivery=False):
         dependencies=('android', 'ios'), artifacts=(str(artifact),), kind='build', effect='build'))
     for name in ('firebase', 'testflight'):
         target = root / (name + '.json')
-        code = (f'import time,json;from pathlib import Path;a=time.time();time.sleep(.2);'
-                f'Path({str(target)!r}).write_text(json.dumps([a,time.time()]))')
+        code = (f'import time,json;from pathlib import Path;a=time.perf_counter_ns();time.sleep(.2);'
+                f'Path({str(target)!r}).write_text(json.dumps([a,time.perf_counter_ns()]))')
         if fail_delivery and name == 'firebase':
             code += ';raise SystemExit(1)'
         phases.append(Phase(name, (sys.executable, '-c', code), str(root), dependencies=('prepare',), effect='upload'))
