@@ -3,7 +3,7 @@ import shlex
 import json
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QLabel, QPlainTextEdit,
+from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QHBoxLayout, QLabel, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .grouped_workflow_ui import GroupedFlowView
@@ -168,12 +168,17 @@ class ReviewPlanView(QWidget):
         self.selection_heading.setWordWrap(True)
         self.selection_heading.setTextFormat(Qt.TextFormat.PlainText)
         self.selection_heading.setStyleSheet('font-weight: 600;')
-        side.addWidget(self.selection_heading)
         self.scope_label = QLabel('Scope: whole workflow')
         self.scope_label.setWordWrap(True)
         self.scope_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.scope_label.setAccessibleName('Evidence scope')
-        side.addWidget(self.scope_label)
+        # These captions share the bounded inspector header. Stacking them
+        # consumes another text line before the scrollable repair/details body.
+        heading = QHBoxLayout()
+        heading.setSpacing(8)
+        heading.addWidget(self.selection_heading, 1)
+        heading.addWidget(self.scope_label, 2)
+        side.addLayout(heading)
         self.inspector_tabs = EvidenceNavigator()
         self.inspector_tabs.setAccessibleName('Selected task details, command and complete plan')
         side.addWidget(self.inspector_tabs, 3)
