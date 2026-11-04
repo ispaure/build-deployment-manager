@@ -403,3 +403,13 @@ For the command descriptor, additive adapter facade and shared guest lifecycle,
 see [project integration](project-integration.md). Existing API-1 bridges remain
 supported. Command projects derive capabilities from their operation catalog;
 custom adapters can use the same capability resolver as the manager.
+
+## Windows completion observations
+
+Lost guest-tools job handles are reconciled against the same invocation's
+durable completion receipt and live worker identity. A transient status-query
+failure or an empty reply is an unknown observation; it resets the continuous
+confirmed-absence interval rather than admitting a replay. Five seconds of
+confirmed absence can end reconciliation. The original operation deadline and
+owned cancellation still bound unknown observations, and success requires the
+matching receipt with an actual integer exit code.
