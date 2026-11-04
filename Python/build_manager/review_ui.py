@@ -371,7 +371,12 @@ class ReviewPlanView(QWidget):
 
     def size_task_list(self, error_visible):
         # The vertical splitter owns space allocation; the tree scrolls itself.
-        self.tasks.setMinimumHeight(90)
+        # A fixed tree minimum can squeeze the details headers and repair
+        # action outside their pane at large fonts. Keep one native row usable;
+        # the preferred split below still reserves more rows when space permits.
+        row_height = max(self.tasks.fontMetrics().height(), self.tasks.sizeHintForRow(0))
+        self.tasks.setMinimumHeight(self.tasks.header().sizeHint().height() + row_height
+                                    + 2 * self.tasks.frameWidth())
         identity = (self.flow.selected, tuple(self.rows))
         if not self.manual_task_split and identity != getattr(self, '_sized_scope', None) and self.sidebar_splitter.height() > 0:
             rows = len(self.rows) + len(getattr(self, 'card_rows', {}))
