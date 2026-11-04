@@ -157,3 +157,20 @@ Raw per-pass evidence remains under ignored `test-results/`.
 The import-order and UI ownership findings are addressed by these changes. Future
 extractions should follow measured responsibilities rather than a line-count
 target. The dormant nested workflow browser remains disconnected.
+
+## Shared layout integration and final checks — November 4, 2026
+
+The shared Balanced workspace now includes these extracted views. Its font
+refresh has one application observer, avoiding cumulative per-heading event
+filters. Review fixtures follow the instance-based engine-change dialog and the
+visible source hint. Real child-process rendezvous replaces startup-sensitive
+short sleeps in concurrency fixtures while retaining measured overlap and
+prerequisite assertions. No execution or approval policy was relaxed.
+
+The reviewed dependency merge preserves the release privacy fix and the newer
+shared APIs. Standalone manager and Logistics checks continue to use separate
+interpreters and their own real commonUtils pins. The complete manager module
+coverage, fresh Logistics compatibility and native fixture scope are recorded in
+[integrated validation](validation.md#november-4-documentation-audit-and-integrated-validation).
+The release pause and later continuation are explicit in that record; the dormant
+nested workflow browser remains disconnected.

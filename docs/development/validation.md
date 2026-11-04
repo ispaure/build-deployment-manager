@@ -7,7 +7,7 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
-## November 4 documentation audit and pending candidate validation
+## November 4 documentation audit and integrated validation
 
 The documentation audit reviewed manager source and test definitions at
 `3e4cafb38b44a7c8b2e525798592256d8b60362e`. H1 titles, local file links and
@@ -17,17 +17,29 @@ quiet hold.
 
 Candidate `428b3ca6fd260a1777b1028fae1eea62e9e506c1` adds reviewed dependency
 ancestry and pins real commonUtils `6c2d5dc93777e1cd79b3e6da1585efbd38d5a2e1`.
-The root `3e4cafb` checkout retains its earlier commonUtils pin; that candidate
-integration has not landed there. Before the quiet interruption, 91 manager
-modules reported 643 passing cases with zero failures. Ten modules remain pending
-after the hold: this is **not a completed full-suite pass**.
+Merge `59f92126088e996e0f19cef15318f4f76495046d` integrates that candidate while
+preserving documentation audit `fa73a2f`. Its Python sources and commonUtils
+gitlink are identical to the tested candidate.
 
-Candidate-bound Logistics compatibility passed 98 cases across eight modules on
-consumer `6f5907a39f8a8f49e7499c31ffa1152207f9c7b6`, using its own interpreter
-and commonUtils with stable source inputs. Synthetic native macOS Cocoa
+All 101 manager modules complete with 761 reported tests, five platform skips
+and zero failures. The release quiet window separates two batches: 91 modules
+reported 643 cases before interruption; the remaining ten reported 118 after an
+explicit local test slot was granted. The continuation verified unchanged engine
+fingerprints, the original driver hash and every retained module log hash before
+using those earlier results. This is complete module coverage across two batches,
+not an uninterrupted full-suite run.
+
+Fresh candidate-bound Logistics compatibility passed 98 cases across eight
+modules on current development consumer
+`bcc358f6d69f1b21acf46af6e5d9a8f53bbaeb8b`, using its own `.venv` interpreter
+and real commonUtils `76c15b3bdd209978a49052add3048071831c2687`. Captured adapter,
+suite and dependency input hashes stayed identical before and after the checks.
+The earlier 98-case pass on consumer `6f5907a` remains historical evidence.
+Synthetic native macOS Cocoa
 layout/review/help checks passed 20 cases; shared privacy regressions passed
-three. These are earlier candidate checks, not tests rerun by this documentation
-audit. No new mobile build, live provider, VM/device, Windows/Linux GUI or
+three on the frozen candidate. These native and privacy checks were completed
+before the quiet window and were not replayed by the documentation audit or
+continuation. No new mobile build, live provider, VM/device, Windows/Linux GUI or
 screen-reader acceptance is established.
 
 Earlier dated results below remain historical acceptance for their recorded
