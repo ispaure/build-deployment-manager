@@ -36,10 +36,14 @@ destinations, fresh workspaces, actionable project errors and unchanged original
 evidence despite an unrelated failed leg. Project archive, gate and provisioning
 policy is deliberately mocked here and requires its own adapter validation.
 
-The three new offscreen GUI regressions are written but have not run during the
-exclusive timing window. Their acceptance is pending; the earlier 15-case UI
-pass covers the preceding continuation change, not this subsequent UI source.
-No new native, signing, device or provider acceptance is established.
+After the exclusive timing window ended, a granted bounded offscreen run passed
+all 18 GUI cases: the three new retained-input cases and 15 existing review /
+approval-card cases. These verify explicit destination/recipient choices,
+asynchronous preparation of the old source into Review plan without automatic
+Start, unchanged original evidence and hidden controls for unsupported projects.
+Together this is 69 focused passing checks for this source. The earlier full
+suite was not replayed. No new native, signing, device or provider acceptance is
+established.
 
 ## November 4 documentation audit and integrated validation
 
