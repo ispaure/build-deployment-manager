@@ -1,5 +1,9 @@
 # Refactoring audit — October 25, 2026
 
+For the current integration assessment and remaining work, read the
+[November developer audit and action plan](developer-audit.md). The source counts
+and validation results below describe the earlier checkpoint.
+
 Reviewed source: manager `6b727bc8`, with its own commonUtils pin `f2a0cf1`.
 This is a source/contract audit and documentation pass. Existing native acceptance
 is recorded in [validation](validation.md); this review does not claim a new

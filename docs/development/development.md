@@ -149,7 +149,9 @@ reference and architectural explanation distinct and linked. This follows
 [Google's writing guidance](https://developers.google.com/tech-writing/one/clear-sentences)
 provides useful sentence-level checks.
 
-- [Current refactoring audit](refactoring.md)
+- [Current developer audit and action plan](developer-audit.md)
+- [Trace a Logistics workflow](logistics-integration.md)
+- [Earlier refactoring audit](refactoring.md)
 - [Documentation home](../docs.md)
 
 ## Further reading

@@ -1,0 +1,110 @@
+# Developer experience audit and action plan — November 3, 2026
+
+## Scope and conclusion
+
+Reviewed manager `6be191b` plus the existing Android emulator working edits,
+its real commonUtils submodule `7b17e5c`, and the selected Logistics checkout at
+`aedaa595` with its existing application edits and commonUtils `93990e8`.
+Inspected local registrations, descriptors, bridge source, dependency selection,
+and the eight most recently modified retained run reports. This is a local
+source and portable-contract audit, not new native or release acceptance.
+Raw inventories and verification logs live under ignored `test-results/`.
+
+Keep the three owners: the manager supervises generic work, Logistics supplies
+application policy, and commonUtils supplies reusable primitives. The best next
+improvements make those boundaries easier to discover and diagnose. Another
+package-wide move would obscure the more immediate problems below.
+
+## How Logistics is used now
+
+There are four registered Logistics checkouts sharing one project identity.
+The selected registration has both full validation/delivery presets and focused
+development-device presets, including delivery without optional validation.
+Therefore a project identity alone can be ambiguous; a registration name or exact
+checkout identifies the intended environment. Registration settings and results
+are checkout-specific. Saved choices do not authorize a new execution.
+
+The current descriptor declares five platforms, seven named test suites, fourteen
+run fields and twelve adapter actions. Host-specific operation maps distinguish
+desktop checks, native mobile validation, builds, tester preparation and source
+releases. Journeys combine selected checks, packages and destinations. Logistics
+owns source capture, signing, required gates, device compatibility and retention.
+See [tracing Logistics](logistics-integration.md) for the source path.
+
+The declared manager dependency is `f72ca1e`; the project interpreter currently
+resolves the editable manager checkout reviewed here. Retained reports also name
+older engines, including `b78f1bf` and `2090c80`. These are separate observations:
+a declared pin, an installed import location and a run's captured engine identity
+answer different questions. Do not assume a new manager checkout retroactively
+validated old artifacts or updated the consumer's declared dependency.
+
+The eight-report sample contains four passed, two failed, one cancelled and one
+unknown outcome. One failed run stopped at a DNS prerequisite; another contains
+six failed JUnit validation phases. The unknown outcome records a device install
+attempt against a locked device. This sample establishes use of both focused
+device and combined delivery plans; it is not an overall success-rate measurement.
+Nothing was replayed, approved or reconciled as part of this audit.
+
+## Findings and ordered actions
+
+| Priority | Evidence and developer cost | Action and acceptance | Status |
+| --- | --- | --- | --- |
+| P1 | `registry.read_project_descriptor` checked platform/operation lists, but nested backend and operation maps could reach discovery as strings or invalid shapes. Errors then occurred away from their source. | Validate discovery metadata before registration or adapter execution. Name the exact field; preserve API-1 fallback rules and explicit empty choices. Verify malformed and real consumer descriptors. | Implemented in this pass |
+| P1 | `ProjectBridge.call` used `.get` on arbitrary decoded JSON. A JSON list/null raised an uncaught type error; invalid JSON and child exits lacked project/action context. | Report the project, action, bridge path and protocol expectation or exit code. Do not echo private stdout. Preserve redaction and valid result types. Test real isolated subprocesses. | Implemented in this pass |
+| P2 | CLI `inspect` passed its selector directly to `Registry.resolve`, which accepts registration keys. Names/paths failed despite other discovery commands supporting them. Multiple Logistics checkouts expose the inconsistency. | Use the existing unique-selector resolver. Exercise names, paths, IDs and ambiguous worktrees without invoking the adapter. | Implemented in this pass |
+| P2 | Broad validation exposed two timing-sensitive UI fixtures: the responsiveness test raced a 150 ms worker sleep, and the workflow test shared one 15-second deadline across preparation, artifact rejection, review and two executions. Both failed again on separate reruns. | Hold the planning worker with an event until the main loop delivers timer ticks; retain stale-selection rejection. Give each asynchronous workflow operation its own bounded 15-second wait. Preserve assertions for artifact rejection, approval and exactly one effect. | Implemented in this pass |
+| P1 | `build_manager.__init__` prepends its source root. A Logistics interpreter probe with Logistics first on `PYTHONPATH` still selected manager commonUtils after manager import. Preloading Logistics commonUtils selected the consumer copy instead. The pins differ. | Decide and document the dependency contract for adapters running in consumer processes. Add subprocess acceptance for both import orders and report the actual loaded dependency. Keep standalone manager tied to its real submodule; do not silently redirect it to Logistics. | Follow-up; compatibility checked with explicit consumer preload, bootstrap behavior unchanged |
+| P2 | `ui.py` has 1,314 lines and a 263-line constructor; `run_ui.py` has 1,031 lines and a 262-line constructor; `configuration_ui.py` has a 317-line constructor. Existing session/state/inspector owners already provide seams, but construction and coordination remain hard to follow. | Extract one Qt view at a time using explicit inputs/signals: configuration section construction first, then run-summary/test presentation. Retain parent ownership, stale-worker guards, selection and approval rules. Use current lifecycle/accessibility/selection tests as acceptance; require native Qt acceptance for lifecycle changes. | Ordered follow-up; no unreviewed UI architecture rewrite |
+| P2 | Historical audits contain old line counts, backend availability and acceptance totals alongside current guides. New developers must distinguish history from instructions. | Add a current Logistics trace and link this dated assessment from the developer landing and earlier audit. Keep current behavior in task/reference guides and raw evidence outside the wiki. | Implemented in this pass |
+
+## Delivery sequence
+
+1. Ship the descriptor, bridge and selector corrections with their focused tests
+   and the current integration trace. Preserve Plan/Phase serialization, saved
+   selections, dependency pins and the dormant nested card browser.
+2. Resolve the adapter-process dependency contract before either shared API
+   changes or a coordinated pin update. Test both import orders in fresh
+   subprocesses with the two explicit checkouts and their own interpreters.
+   A manager-only pass is insufficient.
+3. Extract the configuration sections using explicit values/events, then run the
+   preset restoration, recipient focus, source choice, accessibility and worker
+   shutdown checks. Compare native desktop behavior before adopting the change.
+4. Extract the results summary/test presentation using `RunState` facts. Preserve
+   stable selection, bounded output, retained-run navigation and pending-review
+   behavior. Keep `ReviewPlanView(nested_navigation=False)` in both stages.
+
+Each follow-up should be a bounded review with behavior-based acceptance, rather
+than a file-length target. No VM/device access, pin updates, publication or
+dispatch is implied by this plan.
+
+## Validation of the implemented changes
+
+Focused coverage exercises capability shapes and fallbacks, rejection before
+adapter execution, malformed subprocess responses, redacted child failures and
+unique CLI selectors. All four registered Logistics descriptors pass static
+validation. A selected-checkout check covers all three host maps, and a focused
+consumer suite-routing fixture passes in Logistics' interpreter
+with its commonUtils explicitly preloaded and this candidate manager.
+
+The full portable/offscreen runner exercised all 100 manager modules. Its initial
+run passed 97 modules and failed the CLI, general UI and workflow UI modules.
+The CLI run exposed the new test's canonical-path assumption and a recovery test
+failure while the shared checkout changed. All 23 CLI cases passed after the path
+correction on a stable rerun. The UI reruns exposed the timing dependencies
+described above; all 15 general UI cases passed after the event handshake change,
+and the real pause/reject/review/resume workflow passed with operation-specific
+deadlines. Thus all 100 modules have passing results, with three focused reruns.
+The initial nonzero suite result and subsequent focused logs are retained; this
+is not a claim of one uninterrupted green full-suite run. All 30 wiki pages pass
+H1, relative-file-link and landing-page coverage checks.
+
+Concurrent Android work was committed as `039f9ac` during this audit and received
+further working edits. It remains a separate change; these fixes do not stage or
+rewrite its emulator, test or host-guide files.
+
+These checks do not establish native Windows/Linux GUI behavior, mobile readiness,
+signing, provider state or release acceptance. Existing unrelated manager and
+Logistics edits remain in place. No consumer files or private configuration were
+edited.
+
+[Developer guide](development.md) · [Earlier refactoring audit](refactoring.md)

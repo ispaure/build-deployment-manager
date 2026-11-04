@@ -54,11 +54,9 @@ def read_project_descriptor(root):
         candidate = Path(value)
         if candidate.is_absolute() or '..' in candidate.parts or '\\' in value or ':' in value:
             raise ValueError('Descriptor paths must be checkout-relative.')
-    capabilities=data.get('capabilities')
-    if not isinstance(capabilities,dict):raise ValueError('Project capabilities must be declared.')
-    for key in ('platforms','operations'):
-        if not isinstance(capabilities.get(key),list) or not capabilities[key] or any(not isinstance(v,str) or not v for v in capabilities[key]):
-            raise ValueError('Declare a nonempty list of project '+key+'.')
+    capabilities = data.get('capabilities')
+    from .adapter_sdk import validate_capabilities
+    validate_capabilities(capabilities)
     from .test_results import validate_suites
     validate_suites(data.get('test_suites', []), capabilities)
     from .journeys import validate_capability
@@ -256,6 +254,11 @@ class Registry:
             return selector
         matches = [key for key, row in data['projects'].items()
                    if selector in (row['project_id'], row['name'], row['root'])]
+        if not matches and isinstance(selector, str) and selector:
+            # Registration canonicalizes paths. Resolve user-supplied aliases
+            # (including macOS /var -> /private/var) the same way on lookup.
+            root = str(Path(selector).expanduser().resolve())
+            matches = [key for key, row in data['projects'].items() if row['root'] == root]
         if len(matches) != 1:
             raise ValueError('Select a unique registered project ID, name or checkout path.')
         return matches[0]

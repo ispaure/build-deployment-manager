@@ -34,6 +34,15 @@ descriptor → registration → isolated planning request → validated Plan →
 Use temporary harmless commands while developing that path, before adding native
 builders or delivery effects.
 
+Descriptor discovery validates `platforms`, `operations`, `operations_by_target`,
+`backends` and `host_backends` before executing project code. Lists contain unique
+nonempty labels; mappings reference declared platforms and supported operations.
+An explicit empty list disables a choice. Missing mappings retain API-1 defaults;
+host maps retain their existing whole-map override semantics. A malformed field
+is reported by its descriptor path. Bridge stdout must contain one JSON object
+with `schema: 1` and `result`; write diagnostics to stderr. Invalid responses name
+the project/action without echoing private stdout.
+
 Inspection phases may declare `retry_exit_codes` and `retry_delay` (seconds,
 default 30). Only those explicitly temporary command failures retry, without a
 retry limit; each command retains its bounded timeout. The scheduler releases

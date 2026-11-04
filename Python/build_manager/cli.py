@@ -187,7 +187,7 @@ def execute(args, api):
         registry.locate(args.project, args.path)
         return dict(status='located')
     if command == 'inspect':
-        row, descriptor = registry.resolve(args.project)
+        row, descriptor = registry.resolve(registry.project_key(args.project))
         return dict(registration=row, descriptor=descriptor)
     if command in ('select', 'remove', 'trust'):
         getattr(registry, command)(args.project)

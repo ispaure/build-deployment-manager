@@ -241,28 +241,42 @@ with TemporaryDirectory() as folder:
 
     def test_plan_preparation_keeps_event_loop_responsive_and_rejects_stale_selection(self):
         from PySide6.QtCore import QTimer
+        from threading import Event
         project=OtherProject(self.root)
         original=project.make_plan
+        release = Event()
         def slow(*args,**kwargs):
-            time.sleep(.15)
+            if not release.wait(5):
+                raise RuntimeError('Test did not release the planning worker.')
             return original(*args,**kwargs)
         project.make_plan=slow
         panel=ManagerPanel(project)
         ticks=[]
         timer=QTimer();timer.setInterval(10);timer.timeout.connect(lambda:ticks.append(True));timer.start()
-        panel.request_plan_preparation()
-        self.assertTrue(panel.preparing)
-        # Programmatic changes cannot install a plan for the previous selection.
-        panel.revision.setText('different revision')
-        deadline=time.monotonic()+3
-        while panel.preparing:
-            self.app.processEvents();self.assertLess(time.monotonic(),deadline);time.sleep(.005)
-        timer.stop()
-        self.assertGreater(len(ticks),3)
-        self.assertIsNone(panel.plan)
-        self.assertFalse(panel.start.isEnabled())
-        self.assertIn('Selection changed',panel.status.text())
-        panel.close()
+        try:
+            panel.request_plan_preparation()
+            self.assertTrue(panel.preparing)
+            # Programmatic changes cannot install a plan for the previous selection.
+            panel.revision.setText('different revision')
+            deadline=time.monotonic()+3
+            # Hold the worker until the UI proves responsive, rather than race
+            # a short sleep against layout/font initialization on a busy host.
+            while len(ticks) <= 3:
+                self.app.processEvents()
+                self.assertTrue(panel.preparing)
+                self.assertLess(time.monotonic(),deadline)
+                time.sleep(.005)
+            release.set()
+            while panel.preparing:
+                self.app.processEvents();self.assertLess(time.monotonic(),deadline);time.sleep(.005)
+            self.assertGreater(len(ticks),3)
+            self.assertIsNone(panel.plan)
+            self.assertFalse(panel.start.isEnabled())
+            self.assertIn('Selection changed',panel.status.text())
+        finally:
+            release.set()
+            timer.stop()
+            panel.close()
 
     def test_invalid_or_missing_result_and_nonzero_exit_cannot_show_success(self):
         cases=[None, '{broken', '[]', '{"status":"passed","phases":[]}', '{"status":"passed","phases":[null]}']

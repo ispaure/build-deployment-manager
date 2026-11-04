@@ -91,6 +91,48 @@ class RegistryTests(unittest.TestCase):
         (root/'build-project.json').write_text('[]')
         with self.assertRaisesRegex(ValueError,'object'):read_project_descriptor(root)
 
+    def test_invalid_backend_mapping_stops_before_registration_or_execution(self):
+        root = self.fixture('bad-backends')
+        path = root / 'build-project.json'
+        descriptor = json.loads(path.read_text())
+        descriptor['capabilities']['host_backends'] = {'darwin': {'native': 'Local'}}
+        path.write_text(json.dumps(descriptor))
+        marker = root / 'executed'
+        (root / 'bridge.py').write_text('from pathlib import Path; Path("executed").touch()')
+        with self.assertRaisesRegex(ValueError, 'host_backends.darwin.native'):
+            self.registry.add(root)
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.registry.path.exists())
+
+    def test_bridge_protocol_errors_explain_project_action_without_echoing_values(self):
+        root = self.fixture('protocol')
+        key = self.registry.add(root)
+        bridge = ProjectBridge(self.registry, key)
+        for output in ('[]', 'null', '42', '{}', '{"schema": 2, "result": {}}',
+                       'private-setting-value', 'diagnostic\n{"schema": 1, "result": {}}'):
+            with self.subTest(output=output):
+                (root / 'bridge.py').write_text(f'print({output!r})')
+                with self.assertRaises(ValueError) as failure:
+                    bridge.call('settings')
+                message = str(failure.exception)
+                self.assertIn("protocol adapter action 'settings'", message)
+                self.assertIn(str(root / 'bridge.py'), message)
+                self.assertNotIn('private-setting-value', message)
+        (root / 'bridge.py').write_text('import json; print(json.dumps(dict(schema=1, result=None)))')
+        self.assertIsNone(bridge.call('settings'))
+
+    def test_bridge_process_failure_keeps_redacted_diagnostic_and_exit_code(self):
+        from unittest.mock import patch
+        root = self.fixture('failure-context')
+        key = self.registry.add(root)
+        (root / 'bridge.py').write_text(
+            'import os,sys; print(os.environ["GH_TOKEN"], file=sys.stderr); sys.exit(7)')
+        with patch.dict(os.environ, {'GH_TOKEN': 'synthetic-secret-value'}):
+            with self.assertRaises(ValueError) as failure:
+                ProjectBridge(self.registry, key).call('settings')
+        self.assertIn('exited with code 7', str(failure.exception))
+        self.assertNotIn('synthetic-secret-value', str(failure.exception))
+
     def test_suite_metadata_is_validated_before_trust_and_selection_is_recorded(self):
         root = self.fixture('suites')
         path = root / 'build-project.json'
