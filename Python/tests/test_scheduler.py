@@ -18,7 +18,7 @@ class SchedulerTests(unittest.TestCase):
 
     def phase(self,name,*,dependencies=(),resources=None,code=None,always=False):
         target=self.root/(name+'.json')
-        body=code or f'import time,json;from pathlib import Path;a=time.time();time.sleep(.3);Path({str(target)!r}).write_text(json.dumps([a,time.time()]))'
+        body=code or f'import time,json;from pathlib import Path;a=time.perf_counter_ns();time.sleep(.3);Path({str(target)!r}).write_text(json.dumps([a,time.perf_counter_ns()]))'
         return Phase(name,(sys.executable,'-c',body),str(self.root),dependencies=dependencies,resources=resources or {},always=always)
 
     def run_plan(self,phases,workers=2,event=lambda value:None):
