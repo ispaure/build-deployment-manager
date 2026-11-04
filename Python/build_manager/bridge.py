@@ -106,11 +106,20 @@ class ProjectBridge:
                     process.kill()
                     process.communicate()
         redact = Redactor(environment.get(name) for name in ('GH_TOKEN','GITHUB_TOKEN','FIREBASE_TOKEN'))
+        context = f"{descriptor['name']} adapter action {action!r} ({script})"
         if process.returncode:
-            raise ValueError(redact(stderr[-3000:] or 'Project bridge failed.'))
-        data = json.loads(stdout)
-        if data.get('schema') != 1 or 'result' not in data:
-            raise ValueError('Unsupported adapter response.')
+            raise ValueError(redact(f'{context} exited with code {process.returncode}: '
+                                    + (stderr[-3000:] or 'No diagnostic output.')))
+        try:
+            data = json.loads(stdout)
+        except ValueError as error:
+            # Do not echo stdout: it can contain private settings. Diagnostics
+            # belong on stderr; stdout must contain one protocol object.
+            raise ValueError(f'{context} returned invalid JSON. '
+                             'Write diagnostics to stderr and one schema-1 response to stdout.') from error
+        if not isinstance(data, dict) or data.get('schema') != 1 or 'result' not in data:
+            raise ValueError(f'{context} returned an unsupported adapter response. '
+                             'Expected an object with schema=1 and result.')
         return data['result']
 
     def make_plan(self, operation, target, backend, **values):

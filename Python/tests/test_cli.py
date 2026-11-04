@@ -100,6 +100,21 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('set-version', 'unsupported', '--project', key, code=1)
         self.assertEqual((root / 'version.txt').read_text(), '0.1.16')
 
+    def test_inspect_resolves_registration_name_identity_path_and_key_without_execution(self):
+        root, key = self.fixture_project()
+        for selector in (key, 'Fixture', 'fixture.cli', str(root)):
+            with self.subTest(selector=selector):
+                result = self.invoke('inspect', selector)
+                self.assertEqual(result['registration']['root'], str(root.resolve()))
+        self.assertFalse((root / 'adapter-called').exists())
+        second = self.root / 'worktree'
+        second.mkdir()
+        (second / 'build-project.json').write_bytes((root / 'build-project.json').read_bytes())
+        self.invoke('add', second, '--name', 'Fixture worktree')
+        failure = self.invoke('inspect', 'fixture.cli', code=1)
+        self.assertIn('unique registered', failure['error']['message'])
+        self.assertEqual(self.invoke('inspect', 'Fixture worktree')['registration']['root'], str(second.resolve()))
+
     def test_discover_prepare_execute_and_read_project_history(self):
         root, key = self.fixture_project()
         choices = self.invoke('capabilities', '--project', key)
