@@ -1,29 +1,14 @@
 """Qt-only workflow board shared by live execution and retained results."""
 from .run_state import RunState
+from .run_test_results_ui import TimingBarDelegate  # Compatibility export.
 from .workflow_presentation import format_elapsed_time, plan_overview
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QPlainTextEdit, QProgressBar, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QStackedWidget, QVBoxLayout, QWidget, QFrame, QSizePolicy, QStyle,
-    QStyledItemDelegate, QStyleOptionProgressBar)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
+    QStackedWidget, QVBoxLayout, QWidget, QFrame, QSizePolicy, QStyle)
 from .test_results import stage_label
-from .ui_components import style_button, ActionStrip, search_shortcut
-
-
-class TimingBarDelegate(QStyledItemDelegate):
-    """Paint visible duration cells without allocating one QWidget per test."""
-    def paint(self, painter, option, index):
-        progress = index.data(Qt.ItemDataRole.UserRole)
-        if progress is None:
-            return super().paint(painter, option, index)
-        bar = QStyleOptionProgressBar()
-        bar.rect = option.rect.adjusted(3, 3, -3, -3)
-        bar.palette = option.palette
-        bar.state = option.state
-        bar.minimum, bar.maximum, bar.progress = 0, 1000, progress
-        bar.textVisible = False
-        option.widget.style().drawControl(QStyle.ControlElement.CE_ProgressBar, bar, painter, option.widget)
+from .ui_components import style_button, EvidenceGroup
 
 
 class RunView(QWidget):
@@ -42,20 +27,27 @@ class RunView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        heading = QLabel('Run progress & results')
-        heading.setStyleSheet('font-size: 18pt; font-weight: 600;')
-        layout.addWidget(heading)
+        self.saved_context = QLabel()
+        self.saved_context.setWordWrap(True)
+        self.saved_context.setTextFormat(Qt.TextFormat.PlainText)
+        self.saved_context.setAccessibleName('Saved run identity')
+        self.saved_context.hide()
+        layout.addWidget(self.saved_context)
+        from .run_summary_ui import RunSummaryView
+        self.summary_view = RunSummaryView(self)
+        self.summary_view.activity_selected.connect(self.inspect_activity)
+        layout.addWidget(self.summary_view)
+        self.summary = self.summary_view.summary
+        self.workflow_action = self.summary_view.workflow_action
+        self.destinations = self.summary_view.destinations
+        self.progress = self.summary_view.progress
+        self.activity = self.summary_view.activity
+        self.activity_buttons = self.summary_view.activity_buttons
+        self.overall_tests = self.summary_view.overall_tests
         self.context = QLabel('Run source and destination will appear here.')
         self.context.setWordWrap(True)
         self.context.setAccessibleName('Source and destination of the displayed run')
         self.context.hide()  # Captured identity remains in the shared workspace.
-        self.summary = QLabel('No run yet. Configure your goal and inspect the plan.')
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
-        self.workflow_action = QLabel('Tests and delivery progress will appear here.')
-        self.workflow_action.setWordWrap(True)
-        self.workflow_action.setTextFormat(Qt.TextFormat.PlainText)
-        self.workflow_action.setAccessibleName('Run outcome and next action')
         self.attention = QFrame()
         self.attention.setObjectName('runAttention')
         self.attention.setAccessibleName('Run needs attention')
@@ -76,26 +68,7 @@ class RunView(QWidget):
         attention_layout.addLayout(attention_actions)
         layout.addWidget(self.attention)
         self.attention.hide()
-        self.destinations = QLabel()
-        self.destinations.setWordWrap(True)
-        self.destinations.setAccessibleName('Platform and destination outcomes')
-        self.destinations.hide()
         self.plan = None
-        self.progress = QProgressBar()
-        self.progress.setAccessibleName('Completed workflow steps')
-        self.progress.setRange(0, 1)
-        self.progress.setValue(0)
-        self.activity = ActionStrip()
-        self.activity_buttons = {}
-        for state, color in (('running', '#245db5'), ('queued', '#727272'),
-                             ('waiting_resource', '#727272'), ('retrying', '#727272'), ('awaiting_review', '#b37c12')):
-            button = style_button(QPushButton())
-            button.setAutoDefault(False)
-            button.setStyleSheet(button.styleSheet() + f' QPushButton {{ border-left: 4px solid {color}; }}')
-            button.clicked.connect(lambda checked=False, state=state: self.inspect_activity(state))
-            self.activity_buttons[state] = button
-        self.overall_tests = QLabel('No individual case reports available yet.')
-        self.overall_tests.setWordWrap(True)
         from .workflow_ui import WorkflowGraphView
         self.flow = WorkflowGraphView(self, graph_only=True)
         self.flow.hide()
@@ -138,10 +111,11 @@ class RunView(QWidget):
             self.inspect_blocking_phase(self.external_prerequisites.itemData(index)) if index else None)
         self.external_prerequisites.hide()
         inspector_layout.addWidget(self.external_prerequisites)
-        self.tabs = QTabWidget()
-        inspector_layout.addWidget(self.tabs, 1)
         from .review_ui import ReviewPlanView
         self.results_workspace = ReviewPlanView()
+        self.results_workspace.show_global_problems = False
+        self.actions_in_footer = False
+        self.tabs = EvidenceGroup(self.results_workspace.inspector_tabs)
         self.results_workspace.phase_selected.connect(self.select_phase)
         self.pages = QStackedWidget()
         self.pages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
@@ -167,34 +141,29 @@ class RunView(QWidget):
         results_layout = QVBoxLayout(results)
         for control in (self.workflow_action, self.progress, self.activity, self.overall_tests):
             results_layout.addWidget(control)
-        self.result_counts = QLabel('No test reports yet. Counts appear as tests finish.')
-        self.result_counts.setWordWrap(True)
-        self.result_counts.setAccessibleName('Reported test totals')
-        totals = QHBoxLayout()
-        self.count_cards = {}
-        for state, label in (('passed', 'Passed'), ('failed', 'Failed'), ('error', 'Errors'), ('skipped', 'Skipped')):
-            card = QLabel(f'<span style="font-size:24pt">0</span><br>{label}')
-            card.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            card.setMargin(18)
-            card.setFrameStyle(QLabel.Shape.StyledPanel)
-            self.count_cards[state] = (card, label)
-            totals.addWidget(card)
-        results_layout.addLayout(totals)
-        results_layout.addWidget(self.result_counts)
+        from .run_test_results_ui import TestResultsView
+        self.test_results = TestResultsView(self)
+        self.test_results.problems_requested.connect(self.show_problem_tests)
+        self.test_results.timings_requested.connect(self.show_timings)
+        self.result_counts = self.test_results.result_counts
+        self.count_cards = self.test_results.count_cards
+        self.problems_button = self.test_results.problems_button
+        self.search = self.test_results.search
+        self.find_tests = self.test_results.find_tests
+        self.filter = self.test_results.filter
+        self.stage_filter = self.test_results.stage_filter
+        self.test_matches = self.test_results.test_matches
+        self.test_summary = self.test_results.test_summary
+        self.tests = self.test_results.tests
+        self.test_detail = self.test_results.test_detail
+        self.timing_summary = self.test_results.timing_summary
+        self.timings = self.test_results.timings
+        results_layout.addWidget(self.test_results.totals_widget)
         self.next_action = self.step_inspector.next_action
         results_layout.addWidget(self.next_action)
-        result_actions = QHBoxLayout()
-        problems = self.problems_button = QPushButton('Show failed tests')
-        problems.setEnabled(False)
-        problems.clicked.connect(self.show_problem_tests)
-        timing_button = QPushButton('See slowest tests')
-        timing_button.clicked.connect(self.show_timings)
-        result_actions.addWidget(problems)
-        result_actions.addWidget(timing_button)
-        result_actions.addStretch()
-        results_layout.addLayout(result_actions)
+        results_layout.addWidget(self.test_results.actions_widget)
         results_layout.addStretch()
-        self.tabs.addTab(results, 'Summary')
+        self.tabs.addTab(results, 'Run summary')
         steps = QWidget()
         step_layout = QVBoxLayout(steps)
         self.steps = QTreeWidget()
@@ -209,80 +178,9 @@ class RunView(QWidget):
         self.steps.hide()
         self.detail = self.step_inspector.detail
         step_layout.addWidget(self.detail, 1)
-        self.tabs.addTab(steps, 'Details')
-        tests = QWidget()
-        test_layout = QVBoxLayout(tests)
-        filters = QHBoxLayout()
-        self.search = QLineEdit()
-        self.search.setPlaceholderText('Find a test, suite or failure message…')
-        self.search.setAccessibleName('Search individual tests')
-        self.find_tests = search_shortcut(tests, self.search)
-        self.search.setClearButtonEnabled(True)
-        self.filter = QComboBox()
-        self.filter.addItems(['All tests', 'Problems', 'Passed', 'Skipped'])
-        self.filter.setAccessibleName('Test outcome filter')
-        self.search.textChanged.connect(self.filter_tests)
-        self.filter.currentTextChanged.connect(self.filter_tests)
-        filters.addWidget(self.search, 1)
-        filters.addWidget(self.filter)
-        self.stage_filter = QComboBox()
-        self.stage_filter.addItems(['All stages', 'Smoke', 'Regression', 'Extended', 'Unspecified'])
-        self.stage_filter.setAccessibleName('Test execution stage filter')
-        self.stage_filter.setToolTip('Execution scope reported by the runner. Unspecified means no stage was supplied.')
-        self.stage_filter.currentTextChanged.connect(self.filter_tests)
-        self.stage_filter.hide()
-        filters.addWidget(self.stage_filter)
-        self.test_matches = QLabel()
-        self.test_matches.setAccessibleName('Visible test count')
-        filters.addWidget(self.test_matches)
-        test_layout.addLayout(filters)
-        self.test_summary = QLabel('Individual cases appear when a declared JUnit report is captured.')
-        self.test_summary.setWordWrap(True)
-        test_layout.addWidget(self.test_summary)
-        self.tests = QTreeWidget()
-        self.tests.setHeaderLabels(['Test', 'Outcome', 'Duration', 'Suite / class', 'Step', 'Stage'])
-        self.tests.setAccessibleName('Individual test outcomes and timings')
-        self.tests.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.tests.setColumnWidth(0, 240)
-        self.tests.setColumnWidth(1, 80)
-        self.tests.header().moveSection(5, 2)
-        self.tests.headerItem().setToolTip(5, 'Execution scope: Smoke, Regression or Extended. Unspecified means the report has no stage.')
-        self.tests.setColumnWidth(5, 95)
-        self.tests.setColumnHidden(5, True)
-        self.tests.setColumnWidth(2, 80)
-        self.tests.setColumnWidth(3, 130)
-        self.tests.setAlternatingRowColors(True)
-        self.tests.currentItemChanged.connect(self.show_test)
-        test_layout.addWidget(self.tests, 2)
-        self.test_detail = QPlainTextEdit()
-        self.test_detail.setReadOnly(True)
-        self.test_detail.setAccessibleName('Selected test failure or skip details')
-        test_layout.addWidget(self.test_detail, 1)
-        self.tabs.addTab(tests, 'Tests')
-        timing = QWidget()
-        timing_layout = QVBoxLayout(timing)
-        self.timing_summary = QLabel('Timing appears when individual test reports include durations.')
-        self.timing_summary.setWordWrap(True)
-        timing_layout.addWidget(self.timing_summary)
-        self.timings = QTreeWidget()
-        self.timings.setHeaderLabels(['Test (slowest first)', 'Duration', 'Suite / class', 'Step', 'Relative duration', 'Stage'])
-        self.timings.setAccessibleName('Individual test timing profile')
-        self.timings.header().setMinimumSectionSize(65)
-        self.timings.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-        self.timings.setColumnWidth(0, 240)
-        self.timings.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.timings.header().moveSection(5, 2)
-        self.timings.setColumnWidth(5, 95)
-        self.timings.setColumnHidden(5, True)
-        self.timings.setColumnWidth(2, 110)
-        self.timings.setColumnWidth(3, 95)
-        self.timings.header().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.timings.setItemDelegateForColumn(4, TimingBarDelegate(self.timings))
-        timing_layout.addWidget(self.timings)
-        note = QLabel('Reported test time is the sum of case durations. Parallel tests can overlap; this differs from active run time. Missing durations are excluded from averages.')
-        note.setWordWrap(True)
-        timing_layout.addWidget(note)
-        self.tabs.addTab(timing, 'Timing')
+        self.tabs.addTab(steps, 'Technical · Step record')
+        self.tabs.addTab(self.test_results, 'Tests')
+        self.tabs.addTab(self.test_results.timing_page, 'Timing')
         from .run_output_ui import RunOutputView
         self.output = RunOutputView(self)
         self.log, self.log_notice = self.output.log, self.output.notice
@@ -291,7 +189,6 @@ class RunView(QWidget):
         self.tabs.addTab(self.delivery_page, 'Files and deliveries')
         # The same persistent overview/task/detail workspace owns review and run.
         # Run-only evidence supplements its inspector instead of replacing it.
-        self.results_workspace.inspector_tabs.addTab(self.tabs, 'Results')
 
     def show_results_tab(self):
         self.results_workspace.inspector_tabs.setCurrentWidget(self.tabs)
@@ -369,17 +266,18 @@ class RunView(QWidget):
         self.step_inspector.set_detail_text(text, key)
 
     def inspect_summary_phase(self, key):
-        tab = self.tabs.currentWidget()
+        tab = self.results_workspace.inspector_tabs.currentWidget()
         self.open_step_group(key)
         self.flow.select(key)
         self.restore_inspector_tab(tab)
         self.results_workspace.tasks.setFocus()
 
     def restore_inspector_tab(self, tab):
-        if self.tabs.isTabVisible(self.tabs.indexOf(tab)):
-            self.tabs.setCurrentWidget(tab)
+        navigator = self.results_workspace.inspector_tabs
+        if navigator.isTabVisible(navigator.indexOf(tab)):
+            navigator.setCurrentWidget(tab)
         else:
-            self.tabs.setCurrentWidget(self.steps.parentWidget())
+            navigator.setCurrentWidget(self.results_workspace.details_scroll)
 
     def inspect_blocking_phase(self, key):
         self.inspect_summary_phase(key)
@@ -419,7 +317,7 @@ class RunView(QWidget):
 
     def select_phase(self, key):
         if key:
-            tab = self.tabs.currentWidget()
+            tab = self.results_workspace.inspector_tabs.currentWidget()
             self.open_step_group(key)
             self.restore_inspector_tab(tab)
             self.flow.selected = key
@@ -599,9 +497,9 @@ class RunView(QWidget):
             labels.append(f'{approvals} action' + ('s' if approvals != 1 else '') + ' waiting for approval'
                           if approvals else 'Actions waiting for approval')
         self.attention_title.setText('Attention: ' + ' · '.join(labels))
-        self.attention_problems.setVisible(problems)
+        self.attention_problems.setVisible(problems and not self.actions_in_footer)
         self.attention_problems.setText('Inspect unknown outcome' if unknown else 'View problems')
-        self.attention_review.setVisible(needs_review)
+        self.attention_review.setVisible(needs_review and not self.actions_in_footer)
         dispatch = any(row['status'] == 'awaiting_review' and key in self.phases and
             (row.get('effect') or (self.phases[key].effect if self.phases[key].effect != 'inherit' else self.plan.effect)) == 'dispatch'
             for key, row in self.facts.items())
@@ -618,8 +516,8 @@ class RunView(QWidget):
         self.show_results_tab()
 
     def reset(self, plan, previous=(), *, fields=(), capability=None, proposal=None):
+        self.saved_context.hide()
         self.pending_refresh = self.pending_tests = False
-        self.final_tests_signature = None
         self.plan = plan
         self.selected = ''
         self.results_workspace.blockSignals(True)
@@ -648,13 +546,9 @@ class RunView(QWidget):
         self.run_timing = ''
         self.set_review_available(False)
         self.steps.clear()
-        self.tests.clear()
+        self.test_results.reset()
         self.detail.clear()
-        self.test_detail.clear()
         self.log.clear()
-        self.search.clear()
-        self.filter.setCurrentIndex(0)
-        self.stage_filter.setCurrentIndex(0)
         for phase in plan.phases:
             row = QTreeWidgetItem([phase.id, 'queued', '—', phase.kind, ', '.join(phase.dependencies) or '—'])
             self.steps.addTopLevelItem(row)
@@ -712,81 +606,10 @@ class RunView(QWidget):
 
     def refresh_summary(self):
         self.results_workspace.log_reader = self.phase_log_reader
-        terminal = {'passed', 'failed', 'error', 'skipped', 'cancelled', 'timeout', 'interrupted', 'unknown'}
-        counts = {}
-        for fact in self.facts.values():
-            state = fact['status']
-            counts[state] = counts.get(state, 0) + 1
-        done = sum(value for key, value in counts.items() if key in terminal)
-        self.progress.setRange(0, max(1, len(self.rows)))
-        self.progress.setValue(done)
-        self.progress.setFormat(f'{done} / {len(self.rows)} steps finished')
-        from .workflow_presentation import display_states
-        visible_counts = {}
-        for state, _ in display_states(self.plan, self.facts).values() if self.plan else ():
-            visible_counts[state] = visible_counts.get(state, 0) + 1
-        text = ' · '.join(f'{value} {key.replace("_", " ")}' for key, value in visible_counts.items()) or 'No steps'
-        prefix = ('Workflow: ' + self.outcome.replace('_', ' ') + ' · ') if self.outcome else ''
-        self.summary.setText(prefix + f'{done} / {len(self.rows)} steps finished · ' + text + self.run_timing)
-        activity_names = {'running': 'Running', 'queued': 'Queued',
-            'waiting_resource': 'Waiting for capacity', 'retrying': 'Waiting to reconnect', 'awaiting_review': 'Needs approval'}
-        for button in self.activity_buttons.values():
-            self.activity.grid.removeWidget(button)
-        active = []
-        for state, button in self.activity_buttons.items():
-            count = visible_counts.get(state, 0)
-            button.setText(activity_names[state] + ' · ' + str(count))
-            button.setVisible(bool(count) and not self.outcome)
-            button.setEnabled(not self.cancelling)
-            if count and not self.outcome:
-                active.append(button)
-        self.activity.buttons, self.activity.columns = active, 0
-        self.activity.reflow()
-        self.activity.setVisible(not self.outcome and any(visible_counts.get(state) for state in activity_names))
-        if self.cancelling:
-            self.summary.setText('Stopping… · ' + text + self.run_timing)
-        self.progress.setAccessibleDescription(self.summary.text())
+        self.summary_view.present(self.plan, self.facts, outcome=self.outcome,
+            cancelling=self.cancelling, run_timing=self.run_timing, total_steps=len(self.rows))
         self.results_workspace.set_facts(self.live_facts())
-        cases = [case for fact in self.facts.values() for case in fact.get('tests', ())]
-        problems = sum(case['status'] in {'failed', 'error'} for case in cases)
-        self.overall_tests.setText(f'{len(cases)} reported test cases · {problems} problems' if cases
-            else 'No individual case reports available yet. Step outcomes remain available.')
-        interim = sum(len(fact.get('live_tests', ())) for fact in self.facts.values())
-        if interim:
-            self.overall_tests.setText(f'{interim} interim test results · suites still running' +
-                (f' · {len(cases)} final results' if cases else ''))
-        self.overall_tests.setVisible(bool(cases or interim))
-        if self.outcome == 'unknown' or counts.get('unknown'):
-            action = 'An external action has an unknown outcome. Check its provider status before retrying; the manager will not repeat it automatically.'
-        elif self.outcome == 'awaiting_review' or counts.get('awaiting_review'):
-            action = ('GitHub checks are waiting for approval to start. Review the workflow and exact source before continuing.'
-                if any(fact['status']=='awaiting_review' and (fact.get('effect') or
-                    (self.phases[key].effect if self.phases[key].effect != 'inherit' else self.plan.effect)) == 'dispatch'
-                    for key, fact in self.facts.items() if key in self.phases)
-                else 'Eligible actions need approval. Use the review action below to inspect prepared files, exact source and destinations. Independent blocked branches remain separate.')
-        elif self.outcome in {'failed', 'error', 'cancelled', 'interrupted'}:
-            action = 'This run did not finish successfully. Use View problems, or open a workflow card and select a step to inspect the reason.'
-        elif self.outcome == 'passed':
-            destinations = getattr(self.plan, 'journey', {}).get('destinations', {}) if self.plan else {}
-            delivered = sum(all(self.facts.get(key, {}).get('status') == 'passed' for key in row['steps'])
-                for row in destinations.values())
-            files = len({(a['path'], a.get('sha256', '')) for fact in self.facts.values()
-                         for a in fact.get('artifacts', ())})
-            action = f'{delivered} of {len(destinations)} destinations delivered' if destinations else 'Completed'
-            if files:
-                action += f' · {files} retained file' + ('s' if files != 1 else '')
-        elif self.outcome:
-            action = 'Run finished. Check Tests for individual outcomes and Timing for the slowest tests. Open another run with the + tab button.'
-        else:
-            action = 'Work is in progress. Test totals update as reports arrive. Delivery requires a separate approval.'
-        self.workflow_action.setText(action)
-        self.next_action.setText(action)
-        if self.plan and getattr(self.plan, 'journey', {}):
-            from .journeys import outcomes
-            self.destinations.setText('\n'.join(label + ': ' + state.replace('_', ' ')
-                for label, state in outcomes(self.plan, self.facts.values())))
-        else:
-            self.destinations.clear()
+        self.next_action.setText(self.workflow_action.text())
         self.refresh_attention()
         self.refresh_delivered()
 
@@ -923,109 +746,14 @@ class RunView(QWidget):
         self.set_detail_text('\n'.join(lines), key)
 
     def refresh_tests(self):
-        scope = self.scoped_facts()
-        signature = tuple((key, tuple((case.get('name'), case.get('status'),
-                                      case.get('seconds'), case.get('message'),
-                                      case.get('suite'), case.get('classname'), case.get('stage'))
-                                     for case in fact.get('tests', ())))
-                          for key, fact in scope.items())
-        interim = sum(len(fact.get('live_tests', ())) for fact in scope.values())
-        if getattr(self, 'final_tests_signature', None) == signature:
-            # Interim case snapshots do not change final rows or timing bars.
-            # Rebuilding thousands of native items here stalls resize/input.
-            if interim:
-                final = sum(len(fact.get('tests', ())) for fact in scope.values())
-                self.result_counts.setText(f'{final} final test results · {interim} interim results\n'
-                    'Expand the execution step above to inspect live reports.')
+        if not self.test_results.present(self.scoped_facts(), selected=bool(self.selected)):
             return
-        self.final_tests_signature = signature
-        current = self.tests.currentItem()
-        previous = (current.text(4), current.data(0, Qt.ItemDataRole.UserRole)) if current else None
-        self.test_detail.clear()
-        self.tests.clear()
-        counts = {}
-        measured = []
-        missing = 0
-        for key, fact in self.scoped_facts().items():
-            for case in fact.get('tests', []):
-                if case.get('seconds') is None:
-                    missing += 1
-                else:
-                    measured.append((case['seconds'], case, key))
-                status = case['status']
-                counts[status] = counts.get(status, 0) + 1
-                item = QTreeWidgetItem([case['name'], status, format_elapsed_time(case['seconds']),
-                                       ' / '.join(filter(None, [case['suite'], case['classname']])), key, stage_label(case)])
-                item.setData(0, Qt.ItemDataRole.UserRole, case)
-                self.tests.addTopLevelItem(item)
-                if previous == (key, case):
-                    self.tests.setCurrentItem(item)
-        self.test_summary.setText(' · '.join(f'{value} {key}' for key, value in counts.items())
-                                 if counts else 'No individual case report supplied. Step results remain available.')
-        self.result_counts.setText(f'{sum(counts.values())} reported tests\n' + self.test_summary.text())
-        interim = sum(len(fact.get('live_tests', ())) for fact in self.scoped_facts().values())
-        if interim:
-            self.result_counts.setText(f'{sum(counts.values())} final test results · {interim} interim results\n'
-                'Expand the execution step above to inspect live reports.')
-            self.test_summary.setText('Interim reports are shown under the execution step; final outcomes appear here when the suite finishes.')
-        for state, (card, label) in self.count_cards.items():
-            value = counts.get(state, 0) if counts else '—'
-            card.setText(f'<span style="font-size:24pt">{value}</span><br>{label}')
-            card.setAccessibleName(f'{value} {label.lower()} tests' if counts else label + ' count not reported yet')
-        self.problems_button.setEnabled(bool(counts.get('failed') or counts.get('error')))
-        self.timings.clear()
-        longest = max((row[0] for row in measured), default=0)
-        for seconds, case, key in sorted(measured, key=lambda row: row[0], reverse=True):
-            item = QTreeWidgetItem([case['name'], format_elapsed_time(seconds),
-                ' / '.join(filter(None, [case['suite'], case['classname']])), key, '', stage_label(case)])
-            self.timings.addTopLevelItem(item)
-            item.setData(4, Qt.ItemDataRole.UserRole, round(1000 * seconds / longest) if longest else 0)
-            item.setData(4, Qt.ItemDataRole.AccessibleTextRole, case['name'] + ': ' + format_elapsed_time(seconds))
-            item.setToolTip(4, 'Relative to the slowest reported test: ' + format_elapsed_time(longest))
-        if measured:
-            from statistics import median
-            values = [row[0] for row in measured]
-            self.timing_summary.setText(f'{len(values)} timed tests · {missing} without duration\n'
-                f'Total reported test time: {format_elapsed_time(sum(values))} · Average: {format_elapsed_time(sum(values)/len(values))} · Median: {format_elapsed_time(median(values))}')
-        else:
-            self.timing_summary.setText(f'No individual test durations reported. {missing} tests without duration. Step durations are available in Details.')
-        classified = any(case.get('stage') for fact in scope.values() for case in fact.get('tests', ()))
-        self.tests.setColumnHidden(5, not classified)
-        self.timings.setColumnHidden(5, not classified)
-        self.stage_filter.setVisible(classified)
-        if not classified:
-            self.stage_filter.setCurrentIndex(0)
-        self.tests.setColumnHidden(4, bool(self.selected))
-        self.timings.setColumnHidden(3, bool(self.selected))
-        self.filter_tests()
         current = self.substeps.currentItem()
         if current is not None and current.parent() is not None and self.tabs.currentWidget() == self.tests.parentWidget():
             self.inspect_subtest(current)
 
     def filter_tests(self, *_):
-        query, choice = self.search.text().casefold(), self.filter.currentText()
-        shown = 0
-        stage = self.stage_filter.currentText()
-        for index in range(self.tests.topLevelItemCount()):
-            item = self.tests.topLevelItem(index)
-            case = item.data(0, Qt.ItemDataRole.UserRole)
-            text = ' '.join(str(value) for value in case.values()).casefold()
-            visible = (not query or query in text) and (
-                choice == 'All tests' or choice == 'Problems' and case['status'] in {'failed', 'error'}
-                or choice == 'Passed' and case['status'] == 'passed'
-                or choice == 'Skipped' and case['status'] == 'skipped')
-            visible = visible and (stage == 'All stages' or stage_label(case) == stage)
-            item.setHidden(not visible)
-            shown += int(visible)
-        active = query or choice != 'All tests' or stage != 'All stages'
-        self.test_matches.setText(f'{shown} / {self.tests.topLevelItemCount()} shown' if active else '')
-        current = self.tests.currentItem()
-        if current is not None and current.isHidden():
-            self.tests.setCurrentItem(None)
-            self.test_detail.clear()
+        self.test_results.filter_tests()
 
     def show_test(self, item, previous=None):
-        if item:
-            case = item.data(0, Qt.ItemDataRole.UserRole)
-            self.test_detail.setPlainText(f'{case["classname"]}.{case["name"]}\n'
-                                          f'{case["status"]} · {format_elapsed_time(case["seconds"])} · Stage: {stage_label(case)}\n\n{case["message"]}')
+        self.test_results.show_test(item, previous)

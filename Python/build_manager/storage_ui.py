@@ -47,10 +47,13 @@ class StorageDialog(QDialog):
         self.setWindowTitle('Project storage and cleanup')
         self.resize(1100, 680)
         layout = QVBoxLayout(self)
-        note = QLabel('Only manager-owned build outputs, source snapshots and disposable scratch are listed. '
-                      'Deleting builds removes their local artifacts; it does not remove published releases. '
-                      'Pins (.keep), workflow review/reconciliation holds and active outputs are protected. Tools, signing files, credentials, '
-                      'build counters and installed apps are kept.')
+        scope = QLabel('Storage for: ' + str(getattr(project, 'root', 'selected checkout')))
+        scope.setWordWrap(True)
+        layout.addWidget(scope)
+        note = QLabel('Manager-owned outputs only. Active, pinned and review-held data is protected. '
+                      'Deleting local files does not remove published releases.')
+        note.setToolTip('Tools, signing files, credentials, build counters and installed apps are kept. '
+                        'Retention and ownership rules are supplied by the project.')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.tabs = QTabWidget()
@@ -70,7 +73,7 @@ class StorageDialog(QDialog):
         output_layout.addWidget(self.table, 1)
         self.totals = QLabel()
         self.totals.setWordWrap(True)
-        output_layout.addWidget(self.totals)
+        output_layout.insertWidget(0, self.totals)
         buttons = QHBoxLayout()
         self.refresh = QPushButton('Refresh')
         self.selected = QPushButton('Delete selected…')
@@ -78,12 +81,23 @@ class StorageDialog(QDialog):
         self.refresh.clicked.connect(self.reload)
         self.selected.clicked.connect(lambda: self.remove(False))
         self.all.clicked.connect(lambda: self.remove(True))
-        for button in (self.refresh, self.selected, self.all):
+        for button in (self.selected,):
             buttons.addWidget(style_button(button))
+        buttons.addStretch()
+        buttons.addWidget(QLabel('Bulk cleanup'))
+        buttons.addWidget(style_button(self.all))
+        toolbar = QHBoxLayout()
+        output_layout.removeWidget(self.group)
+        toolbar.addWidget(self.group, 1)
+        toolbar.addWidget(style_button(self.refresh))
+        output_layout.insertLayout(1, toolbar)
         output_layout.addLayout(buttons)
         from .adapter_sdk import supports
         if supports(project, 'enroll_storage'):
-            adoption = QHBoxLayout()
+            from .ui_components import WrappingLayout
+            from .review_ui import Disclosure
+            adoption_content = QWidget()
+            adoption = WrappingLayout(adoption_content)
             self.adopt_directory = QPushButton('Adopt disposable build folder…')
             self.adopt_simulator = QPushButton('Adopt disposable simulator…')
             self.adopt_legacy = QPushButton('Adopt legacy build folder…')
@@ -93,7 +107,7 @@ class StorageDialog(QDialog):
             adoption.addWidget(self.adopt_directory)
             adoption.addWidget(self.adopt_simulator)
             adoption.addWidget(self.adopt_legacy)
-            output_layout.addLayout(adoption)
+            output_layout.addWidget(Disclosure('Advanced storage ownership', adoption_content))
         workflows = QWidget()
         workflow_layout = QVBoxLayout(workflows)
         self.tabs.addTab(workflows, 'Retained workflows')
@@ -203,8 +217,6 @@ class StorageDialog(QDialog):
             item = QTreeWidgetItem([row.get('category', row['group']), row.get('label', row['name']), size_text(row.get('allocated_bytes')),
                                    row['protected'] or 'Can delete', row['path']])
             item.setData(0, Qt.ItemDataRole.UserRole, row)
-            if row['protected']:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             item.setToolTip(4, row['path'])
             item.setToolTip(3, row['protected'] or 'Can delete')
             self.table.addTopLevelItem(item)
@@ -237,7 +249,14 @@ class StorageDialog(QDialog):
             self.adopt_directory.setEnabled(not self.busy)
             self.adopt_simulator.setEnabled(not self.busy)
             self.adopt_legacy.setEnabled(not self.busy)
-        self.selected.setEnabled(not self.busy and bool(self.table.selectedItems()))
+        selected = [item.data(0, Qt.ItemDataRole.UserRole) for item in self.table.selectedItems()]
+        deletable = [row for row in selected if not row['protected']]
+        self.selected.setText(f'Delete {len(deletable)} selected output' + ('s…' if len(deletable) != 1 else '…'))
+        self.retire.setText(f'Retire {len(self.workflows.selectedItems())} selected workflow' +
+                            ('s…' if len(self.workflows.selectedItems()) != 1 else '…'))
+        category = self.group.currentText() if self.group.currentIndex() > 0 else 'all categories'
+        self.all.setText('Delete unprotected in ' + category + '…')
+        self.selected.setEnabled(not self.busy and bool(deletable))
         self.all.setEnabled(not self.busy and any(not row['protected'] for row in self.visible_rows()))
         self.close_buttons.setEnabled(not self.busy)
 

@@ -57,8 +57,9 @@ class RecipientUITests(unittest.TestCase):
             view.goal.setCurrentIndex(view.goal.findData('deliver'))
             view.destination_checks['firebase'].setChecked(True)
             view.destination_checks['testflight'].setChecked(True)
-            self.assertEqual([view.delivery_tabs.tabText(i) for i in range(view.delivery_tabs.count())],
-                             ['Tester (2)', 'Development (0)', 'Store (0)', 'Source (0)'])
+            self.assertEqual([group.title() for group, _ in view.delivery_categories.values()],
+                ['Tester delivery · 2 destinations selected', 'Development devices · 0 devices selected',
+                 'Stores · 0 destinations selected', 'Source releases · 0 destinations selected'])
             before = view.choices()
             for destination, category, platform in (
                     ('firebase', 'Mobile tester platforms', 'android'),
@@ -66,12 +67,9 @@ class RecipientUITests(unittest.TestCase):
                     ('phones', 'Mobile dev devices', 'android'),
                     ('ios-device', 'Mobile dev devices', 'ios')):
                 view.open_section('delivery', destination)
-                tabs = view.delivery_platform_tabs[category]
                 page = view.delivery_platform_pages[category][platform][0]
-                self.assertIs(tabs.currentWidget(), page)
                 self.assertTrue(page.isAncestorOf(view.destination_checks[destination]))
-                self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
-                                 ['Android (0)', 'iOS (0)'] if category == 'Mobile dev devices' else ['Android', 'iOS'])
+                self.assertTrue(view.delivery_categories[category][0].isAncestorOf(page))
             self.assertEqual(view.choices(), before)
 
     def test_development_counts_selected_devices_per_platform_and_total(self):
@@ -92,20 +90,20 @@ class RecipientUITests(unittest.TestCase):
                 for i in range(2):
                     picker.items.item(i).setCheckState(Qt.CheckState.Checked)
             category = 'Mobile dev devices'
-            index = view.delivery_tabs.indexOf(view.delivery_categories[category][0])
-            tabs = view.delivery_platform_tabs[category]
-            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (4)')
-            self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Android (2)', 'iOS (2)'])
+            group = view.delivery_categories[category][0]
+            self.assertIn('4 devices selected', group.title())
+            self.assertEqual([view.delivery_options.platform_headings[category, platform].text() for platform in ('android', 'ios')],
+                             ['Android · 2 devices selected', 'iOS · 2 devices selected'])
             view.destination_checks['ios-devices'].setChecked(False)
-            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (2)')
-            self.assertEqual(tabs.tabText(1), 'iOS (0)')
+            self.assertIn('2 devices selected', group.title())
+            self.assertEqual(view.delivery_options.platform_headings[category, 'ios'].text(), 'iOS · 0 devices selected')
             view.destination_checks['ios-devices'].setChecked(True)
-            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (4)')
+            self.assertIn('4 devices selected', group.title())
             view.run_fields.controls['phones'].items.item(1).setCheckState(Qt.CheckState.Unchecked)
-            self.assertEqual(tabs.tabText(0), 'Android (1)')
-            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (3)')
+            self.assertEqual(view.delivery_options.platform_headings[category, 'android'].text(), 'Android · 1 devices selected')
+            self.assertIn('3 devices selected', group.title())
             view.goal.setCurrentIndex(view.goal.findData('validate'))
-            self.assertEqual(view.delivery_tabs.tabText(index), 'Development (0)')
+            self.assertIn('0 devices selected', group.title())
 
     def test_recipient_controls_live_under_delivery_category_and_map_tracks_selected_names(self):
         with TemporaryDirectory() as directory:
@@ -124,7 +122,7 @@ class RecipientUITests(unittest.TestCase):
                 self.assertEqual(nodes['deliver.phones.0'].label, 'Phone')
                 view.proposed_flow.select('deliver.phones.0')
                 self.assertIs(view.config_tabs.currentWidget(), view.config_pages['delivery'])
-                self.assertIs(view.delivery_tabs.currentWidget(), view.delivery_categories['Mobile dev devices'][0])
+                self.assertTrue(view.delivery_categories['Mobile dev devices'][0].isAncestorOf(view.destination_checks['phones']))
                 view.destination_checks['phones'].setChecked(False)
                 self.assertNotIn('phones', view.run_fields.values())
                 self.assertEqual(picker.text(), '["phone-1"]')

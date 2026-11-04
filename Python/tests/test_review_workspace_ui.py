@@ -244,7 +244,7 @@ class ReviewWorkspaceTests(unittest.TestCase):
     def test_one_persistent_inspector_syncs_keyboard_card_task_and_dependency_selection(self):
         view = self.view
         self.assertEqual([view.inspector_tabs.tabText(i) for i in range(view.inspector_tabs.count())],
-                         ['Details', 'Command', 'Plan'])
+                         ['Details', 'Technical · Command', 'Technical · Summary', 'Technical · Dependencies', 'Technical · Data'])
         inspector = view.inspector_scroll
         self.assertTrue(inspector.isVisible())
         self.assertEqual(set(view.rows), {phase.id for phase in self.plan.phases})

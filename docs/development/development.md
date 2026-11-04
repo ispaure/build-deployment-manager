@@ -225,3 +225,5 @@ extraction, including delayed admission and active-cleanup contention.
 - [Simple project integration and shared guest workloads](project-integration.md)
 
 - [Configuration storage assessment](configuration-storage.md)
+
+- [UI and UX audit brief for approval](ui-ux-audit-brief.md)

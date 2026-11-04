@@ -59,17 +59,26 @@ class ToolbarGoalTests(unittest.TestCase):
 
     def test_compact_header_keeps_management_available_and_paths_on_demand(self):
         window = self.window
-        self.assertEqual(window.controls.count(), 4)
+        self.assertEqual(window.controls.count(), 5)
         self.assertEqual(window.projects.currentText(), 'one')
         self.assertEqual(window.projects.toolTip(), str(self.root / 'one'))
         self.assertEqual(set(window.menu_actions), {'Add project…', 'Locate moved checkout…',
             'Remove registration', 'Accounts…', 'Test machines…', 'Check connections and settings…',
             'Manage build storage…', 'App settings…'})
         self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
-        self.assertIs(window.controls.itemAt(3).widget(), window.help_button)
+        self.assertIs(window.controls.itemAt(4).widget(), window.help_button)
         self.data['projects']['two']['name'] = 'one'
         window.refresh()
         self.assertNotEqual(window.projects.itemText(0), window.projects.itemText(1))
+
+    def test_text_size_reaches_docked_controls_after_native_style_resolution(self):
+        original = QFont(self.app.font())
+        self.addCleanup(lambda: self.app.setFont(original))
+        self.window.show(); self.app.processEvents()
+        font = QFont(original); font.setPointSize(18); self.app.setFont(font)
+        for _ in range(5): self.app.processEvents()
+        for widget in (self.panel, self.view, self.view.source_mode, self.view.goal_buttons['deliver']):
+            self.assertEqual(widget.font().pointSizeF(), 18)
 
     def test_visible_goals_share_existing_selection_and_keyboard_invalidation(self):
         panel, view = self.panel, self.view
@@ -103,7 +112,7 @@ class ToolbarGoalTests(unittest.TestCase):
         self.assertEqual(panel.choices(), before)
         panel.platform_checks['android'].setChecked(True)
         self.assertTrue(view.config_tabs.tabIcon(1).isNull())
-        self.assertEqual(view.config_tabs.tabText(view.config_tabs.indexOf(view.config_pages['platforms'])), 'Test (2)')
+        self.assertEqual(view.config_tabs.tabText(view.config_tabs.indexOf(view.config_pages['platforms'])), 'Platforms (2)')
         self.assertIn('(2)', view.config_tabs.tabToolTip(view.config_tabs.indexOf(view.config_pages['platforms'])))
         view.goal_buttons['validate'].click()
         self.assertEqual(view.config_tabs.tabText(2), 'Delivery (0)')

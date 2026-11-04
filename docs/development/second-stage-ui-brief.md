@@ -3,10 +3,11 @@
 ## Current UI decision
 
 Review plan and Progress & results now share `ReviewPlanView`: a persistent
-captured-card overview beside the task tree and Details / Command / Plan inspector.
+captured-card overview beside the task tree and one scoped Evidence selector.
 Selecting every card follows the same rule: filter the side pane without opening
 a nested map. All tasks clears that filter. Run-only test, timing, output and
-delivery reports supplement the inspector under Results. Start retains the
+delivery reports appear in that same selector. A visible summary exposes captured
+source, execution locations and destinations; full values remain expandable. Start retains the
 selection and pane sizes, and live facts update the reviewed cards in place.
 Best fit measures wrapped card layouts in both orientations using widths from
 88% to 124% of the normal card width. It favors readable text before scaling the
@@ -24,6 +25,9 @@ Portable Qt tests cover both stages, consistent leaf/multi-task selection,
 frozen overview geometry, live facts, cross-card prerequisite selection, report
 inspection and reset. Offscreen screenshots are layout checks, not native desktop
 or screen-reader acceptance. Raw evidence remains under ignored test-results.
+
+See the approved [complete UI and UX brief](ui-ux-audit-brief.md) for the balanced
+workspace, supporting dialogs and implementation acceptance.
 
 ## Earlier design decision (superseded)
 

@@ -21,7 +21,7 @@ class RunHistoryView(QWidget):
         self.find = search_shortcut(self, self.search)
         self.filter = QComboBox()
         self.filter.setAccessibleName('Saved run status filter')
-        for label, key in [('All runs', 'all'), ('Needs attention', 'attention'), ('Completed', 'completed')]:
+        for label, key in [('All runs', 'all'), ('Needs attention', 'attention'), ('Successful', 'completed')]:
             self.filter.addItem(label, key)
         controls.addWidget(self.search, 1)
         controls.addWidget(self.filter)
@@ -79,9 +79,12 @@ class RunHistoryView(QWidget):
         visible = 0
         for index in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(index)
-            passed = item.data(0, Qt.ItemDataRole.UserRole + 1) == 'passed'
+            state = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            passed = state == 'passed'
             text = ' '.join(item.text(column) for column in range(item.columnCount())) + ' ' + item.toolTip(0)
-            match = query in text.casefold() and (choice == 'all' or passed == (choice == 'completed'))
+            attention = state in {'awaiting_review', 'unknown', 'failed', 'error', 'cancelled', 'interrupted', 'timeout', 'unreadable'}
+            matches_status = choice == 'all' or (passed if choice == 'completed' else attention)
+            match = query in text.casefold() and matches_status
             item.setHidden(not match)
             visible += bool(match)
             if not match and item is self.tree.currentItem():

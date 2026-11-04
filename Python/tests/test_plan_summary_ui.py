@@ -75,7 +75,7 @@ class PlanSummaryTests(unittest.TestCase):
         self.app.processEvents()
         workspace = panel.review_workspace
         self.assertEqual([workspace.inspector_tabs.tabText(i) for i in range(workspace.inspector_tabs.count())],
-                         ['Details', 'Command', 'Plan'])
+                         ['Details', 'Technical · Command', 'Technical · Summary', 'Technical · Dependencies', 'Technical · Data'])
         self.assertTrue(panel.review_splitter.isVisible())
         self.assertTrue(workspace.inspector_scroll.isVisible())
         self.assertLessEqual(panel.start.mapTo(panel, panel.start.rect().bottomRight()).y(), panel.height())

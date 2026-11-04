@@ -5,7 +5,7 @@ from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFormLayout,
     QLabel, QPushButton, QSpinBox, QVBoxLayout)
 from .profiles import load_profile, save_profile
-from .ui_components import style_dialog_buttons
+from .ui_components import style_dialog_buttons, install_font_refresh, style_utilities
 from .registry import config_directory
 
 
@@ -17,6 +17,7 @@ def preferences_path(project=None):
 def apply_preferences(app, path):
     from .palette_ui import install_palette_refresh
     install_palette_refresh(app)
+    install_font_refresh(app)
     values = load_profile(path)
     size = values.get('text_size', 0)
     if type(size) is not int or not 0 <= size <= 28:
@@ -33,7 +34,7 @@ class ApplicationSettingsDialog(QDialog):
     def __init__(self, project=None, parent=None, *, directory=None):
         super().__init__(parent)
         self.setWindowTitle('App settings')
-        self.resize(580, 430)
+        self.resize(540, 300)
         self.path = Path(directory) / 'appearance.json' if directory is not None else preferences_path(project)
         layout = QVBoxLayout(self)
         intro = QLabel('Application appearance applies to all projects. Build tools, signing and destinations belong in Project settings.')
@@ -67,35 +68,29 @@ class ApplicationSettingsDialog(QDialog):
             except (OSError, ValueError, RuntimeError) as error:
                 self.status.setText(str(error))
         open_folder.clicked.connect(show_folder)
+        layout.addStretch()
         layout.addWidget(open_folder)
-        if project is not None:
-            scope = QLabel('Selected project: ' + str(getattr(project, 'description', 'current checkout')))
-            scope.setWordWrap(True)
-            layout.addWidget(scope)
-            button = QPushButton('Open project settings…')
-            def open_project():
-                from .settings_ui import SettingsDialog
-                dialog = SettingsDialog(project, self)
-                owner = self.parent()
-                panel = owner if hasattr(owner, 'invalidate') else getattr(owner, 'panel', None)
-                if dialog.exec() and panel is not None:
-                    panel.invalidate()
-                    panel.settings_saved.emit()
-            button.clicked.connect(open_project)
-            layout.addWidget(button)
-        guide = QLabel('<b>Your next steps</b><br>1. Choose work and press Next to prepare a plan.'
-                       '<br>2. Review the plan, then press Start to run tests.'
-                       '<br>3. See Results and Timing. If delivery was selected, review the prepared files before approving it.'
-                       '<br><br>History opens saved results in run tabs. Project settings configures the selected checkout. '
-                       'The More menu manages accounts and test machines.')
-        guide.setWordWrap(True)
-        layout.addWidget(guide)
+        self.preview = QLabel('Build Deployment Manager · source, checks and delivery')
+        self.preview.setWordWrap(True)
+        self.preview.setAccessibleName('Text size preview')
+        def preview_size():
+            font = QFont(getattr(QApplication.instance(), '_manager_default_font', QApplication.font()))
+            if self.size.value():
+                font.setPointSize(self.size.value())
+            self.preview.setFont(font)
+        self.size.valueChanged.connect(preview_size)
+        preview_size()
+        layout.insertWidget(2, self.preview)
+        reset = QPushButton('Use system text size')
+        reset.clicked.connect(lambda: self.size.setValue(0))
+        layout.insertWidget(3, reset)
         layout.addWidget(self.status)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         style_dialog_buttons(buttons)
         layout.addWidget(buttons)
+        style_utilities(self)
 
     def save(self):
         try:

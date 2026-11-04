@@ -8,6 +8,7 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMessageBox,
     QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
+from .ui_components import WrappingLayout, style_button
 
 
 @dataclass(frozen=True)
@@ -60,10 +61,10 @@ class CommandPanel(QWidget):
         self.target.addItem('All available devices', None)
         row.addWidget(self.target, 1)
         layout.addLayout(row)
-        row = QHBoxLayout()
+        row = WrappingLayout()
         self.actions = {}
         for action in policy.actions:
-            button = QPushButton(action.label)
+            button = style_button(QPushButton(action.label))
             button.setToolTip(action.tooltip)
             button.clicked.connect(lambda checked=False, key=action.key: self.start(key))
             self.actions[action.key] = button

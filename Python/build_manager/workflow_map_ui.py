@@ -35,6 +35,7 @@ class FitMapView(QGraphicsView):
     def __init__(self, canvas):
         super().__init__()
         self.canvas, self.fit_mode = canvas, True
+        self.readable_scale = 0
         self._fitted = None
         self.orientation = 'horizontal'
         self._fitting = False
@@ -223,6 +224,13 @@ class FitMapView(QGraphicsView):
             self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
             fitted = self.transform().m11()
             scale = min(1.35, fitted)
+            if not force and self.isVisible() and self.readable_scale and scale < self.readable_scale:
+                # Automatic layout favors readable labels. Explicit Fit remains
+                # a complete overview; manual pan/zoom and task access stay intact.
+                scale = self.readable_scale
+                self.fit_mode = False
+                self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             self.resetTransform(); self.scale(scale, scale)
             self._fitted = (rect, self.viewport().size())
             self.scale_changed.emit(scale)

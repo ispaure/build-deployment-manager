@@ -40,19 +40,20 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 Run checks, Build only and Prepare and deliver are visible, exclusive goal buttons.
 Build only selects a supported Build operation without tests or delivery.
-Project operation opens the project operation controls. The Source, Test,
-Delivery and Options tab buttons sit above the settings pane; click one to
-open its choices. Delivery categories are Tester, Development, Store and Source.
-Test and each delivery category show selection counts. Tester and Development
-each contain Android and iOS subtabs; selecting a workflow card opens its matching
-platform. Development and its platform subtabs count selected devices for enabled
-destinations; its total combines Android and iOS devices. Other delivery categories
-count selected destinations. Hover for selected names. The active tab remains highlighted.
-The workflow overview takes roughly three quarters of the workspace by default;
-drag the divider to resize the panes. Requirements appear below both panes,
-keeping warning actions outside the tab contents.
-Amber repair buttons open the exact source, platform or recipient control that
-needs attention and highlight its workflow card. They preserve current choices;
+Project operation opens the project operation controls. Source, Platforms,
+Delivery and Options sit above the configuration form. Platforms shows selected
+platform counts. Delivery uses one scrolling form with category and platform
+headings, so Android and iOS destinations can be inspected together. Selected
+rows expand their notes and recipients in place. Development headings count
+selected devices; other headings count destinations. Source releases is distinct
+from the Source section that chooses build input.
+
+Configuration receives about 42% of the workspace and the overview about 58%;
+drag the divider to change the balance. On smaller displays or with enlarged
+text the two regions stack. Presets stays above the configuration form. Requirements
+appear below both regions, outside the section contents. Repair controls open
+the exact source, platform or recipient input and highlight its workflow card.
+They preserve current choices;
 select the required value explicitly. Source repairs use declared project policy
 or the selected execution host, without committing or excluding files for you.
 Switching to Run checks excludes delivery without discarding saved destination
@@ -68,12 +69,14 @@ current draft intact. Presets remain private to the selected checkout. On reopen
 that exactly match a saved preset re-select its name without reapplying it.
 
 Configuration uses two resizable columns. The selected section's settings appear
-on the left. Test presents a platform checkbox and
+on the left. Platforms presents a platform checkbox and
 execution-location dropdown in each table row. The live workflow overview keeps
 cards on the right. The overview defaults to Horizontal; Best fit can choose the
-orientation, or select Vertical explicitly. Display controls sit beside the
-overview heading in the upper-right corner. Fit shows the complete graph without scrollbars; zoom in
-to read a dense graph and scroll or drag to explore it. Follow mouse is disabled
+orientation, or select Vertical explicitly in View. View also contains Follow
+mouse; Fit and zoom remain directly available beside the overview heading.
+Automatic layout keeps a readable minimum scale and may need panning for a dense
+workflow. Explicit Fit shows the complete graph without scrollbars, scaling down
+when necessary. Zoom in to read a dense graph and scroll or drag to explore it. Follow mouse is disabled
 by default and remembers your choice across app launches. Enable it to move
 inside a fitted map to enlarge small cards, then move toward
 an edge to reach that corner. The map reaches its edge within the outer fifth
@@ -121,7 +124,7 @@ revision. Changing execution hosts no longer silently switches source. Source
 policy is checked during Review, and committed-source failures reopen Source with
 an explanation. Routine editing and card selection do not add footer messages.
 Unresolved choices appear as requirement buttons; source conflicts explain the
-next step beside Build from and disappear when resolved. Additional source and
+next step beside Build from. Once resolved, ordinary source guidance remains visible. Additional source and
 release-policy details are available in that control's tooltip and accessibility
 description. A clean-checkout policy is verified during Review rather than shown
 as a warning before the checkout has been inspected.
@@ -166,7 +169,7 @@ profile/default/environment origins when you need them. Unsaved changes are
 identified; Save returns to the main window with confirmation. App settings is
 separate from project tools and delivery destinations.
 
-App settings controls application text size and explains the workflow. Project
+App settings controls application text size with a preview and a System default reset. Help explains the workflow. Project
 settings opens its loading shell immediately and loads the categorized form, with
 navigation on the left and fields on the right. Registered projects need no
 additional trust approval, including existing registrations and descriptor updates.
@@ -216,7 +219,7 @@ During execution, Running, Queued, Waiting for capacity and Needs approval count
 open their relevant step. Cancelling shows Stopping until the retained result
 arrives; it does not imply that cleanup has already finished.
 
-History supports search and All runs, Needs attention and Completed filters.
+History supports search and All runs, Needs attention and Successful filters. Needs attention selects approvals, failures, interruptions and unknown outcomes rather than ordinary queued/running records.
 Outcome icons and a Next step column distinguish approvals, failures and unknown
 provider outcomes. Refresh preserves the selected run; viewing remains separate
 from retrying or approving it.
@@ -266,8 +269,8 @@ responsible for obeying this rule in their own storage and artifact outputs.
 ## Review
 
 Read the captured source, selected platforms and exact destination identities.
-Expand Captured source and run choices to see the full source identity and captured
-notes and recipients. Click an overview card to inspect its execution steps.
+Source identity, platforms/hosts and destination identities appear above the
+workspace. Expand Captured choices to see full identity, notes and recipients. Click an overview card to inspect its execution steps.
 The overview stays visible; All tasks restores the full list in the side pane.
 Select a task in that list to show its prerequisites, execution location, timing
 and declared outputs. Prerequisite buttons
@@ -279,11 +282,12 @@ tooltip. Repeated platform and validation prefixes are shortened so task names
 remain distinguishable; their tooltips retain full identities. Review does not
 manufacture elapsed times or historical estimates. The selected step shows compact
 fields and prerequisite buttons rather than a text dump; timeout, required flags
-and resource settings remain in the Command tab. Output filenames
+and resource settings remain under Evidence → Technical · Command. Output filenames
 keep their full paths in tooltips.
 
-When evidence is present, failed task rows carry an error icon. View error details
-above the workspace opens the failing step even when another card is selected.
+When evidence is present, failed task rows carry an error icon. Review exposes
+View error details; during a run the global attention summary and footer action
+lead to the cause without repeating the same action above the map.
 Its Error details panel appears automatically, with the error headline, full
 traceback, exit code, failed test messages and captured step output. Successful
 and unstarted steps have no empty error box. View blocking step follows a blocked
@@ -291,13 +295,19 @@ step back to the recorded failure. Changing unrelated facts preserves selected
 text and scroll position in the details. A plan-preparation failure exposes Error
 details with the full redacted traceback beside the retained choices.
 
-The right inspector uses Details, Command and Plan tabs. Details presents labelled
-task facts, prerequisite controls and available error evidence. Command shows the
-exact selected step command, working directory and environment references. Plan
-contains Summary, Dependencies and Data views for the complete reviewed plan.
-The task/test tree and details tabs occupy independently resizable vertical panes,
-with no outer scrolling sidebar. Each pane scrolls its own content. Selecting tasks or tabs starts no
-commands.
+The right inspector has a single Evidence selector and a visible scope label.
+Details presents labelled task facts, prerequisites and available error evidence.
+Technical · Command shows the exact selected command, working directory and
+references. Technical · Summary, Dependencies and Data inspect the complete
+reviewed plan. Progress adds Run summary, Tests, Timing, Output and Files and
+deliveries to the same selector. Selecting a different card or task preserves
+the chosen evidence view where applicable.
+
+The task/test tree and inspector occupy independently resizable vertical panes,
+with no outer scrolling sidebar. A short task selection gives more space to
+evidence; manual pane sizes survive live updates and Start. Output refreshes
+preserve selected text and reading position when the scope is unchanged.
+Selecting a task or evidence view starts no commands.
 
 Fit shows the entire graph without scrollbars, scaling down when necessary.
 Zooming switches to a pannable view for inspecting dense graphs.

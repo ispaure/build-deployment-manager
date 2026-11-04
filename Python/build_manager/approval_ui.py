@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFrame,
     QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
     QVBoxLayout, QWidget)
 
-from .ui_components import style_button, style_dialog_buttons
+from .ui_components import style_button, style_dialog_buttons, HeadingLabel
 
 
 class EffectReviewDialog(QDialog):
@@ -13,8 +13,7 @@ class EffectReviewDialog(QDialog):
         self.setWindowTitle('Review delivery')
         self.resize(850, 650)
         layout = QVBoxLayout(self)
-        heading = QLabel('Review delivery')
-        heading.setStyleSheet('font-size: 18px; font-weight: 600;')
+        heading = HeadingLabel('Review delivery')
         layout.addWidget(heading)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -57,12 +56,12 @@ class EffectReviewDialog(QDialog):
                 [name + ': ' + str(value) for name, value in card['recipients'] + card['choices']] +
                 [build['name'] + ' · SHA-256 ' + build['sha256'] for build in card['builds']]))
             title.addWidget(control)
+            label(card['title'], title, bold=True)
             badge = QLabel('Approval required')
             badge.setStyleSheet('border: 1px solid #b37c12; border-radius: 4px; padding: 2px 5px;')
             title.addStretch()
             title.addWidget(badge)
             rows.addLayout(title)
-            label(card['title'], rows, bold=True)
             if card['title'].casefold() != step.casefold():
                 label(step, rows)
             label('Destination · ' + ('\n'.join(card['destinations']) or 'Not declared'), rows, bold=True)
@@ -78,6 +77,12 @@ class EffectReviewDialog(QDialog):
             for build in card['builds']:
                 item = label(build['name'] + ' · SHA-256 ' + build['sha256'][:12], rows)
                 item.setToolTip(build['path'] + '\nSHA-256: ' + build['sha256'])
+                from .review_ui import Disclosure
+                identity = QLabel(build['path'] + '\nSHA-256: ' + build['sha256'])
+                identity.setWordWrap(True)
+                identity.setTextFormat(Qt.TextFormat.PlainText)
+                identity.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                rows.addWidget(Disclosure('File path and full checksum', identity))
                 for name, value in build.get('identity', ()):
                     label(name + ' · ' + str(value), rows)
             self.approvals[step], self.cards[step] = control, frame

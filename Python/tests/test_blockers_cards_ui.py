@@ -87,7 +87,7 @@ class BlockerCardTests(unittest.TestCase):
         view.blocker_actions['recipients.phones'].click()
         picker = panel.run_fields.controls['phones']
         self.assertTrue(picker.items.hasFocus())
-        self.assertIs(view.delivery_tabs.currentWidget(), view.delivery_categories['Mobile dev devices'][0])
+        self.assertTrue(view.delivery_categories['Mobile dev devices'][0].isAncestorOf(view.destination_checks['phones']))
         self.assertEqual(panel.choices(), before)
         project.make_journey.assert_not_called()
         picker.set_choices([dict(id='fixture-device', label='Fixture device')])
