@@ -154,6 +154,25 @@ class WindowsEvidenceTests(unittest.TestCase):
         self.assertEqual(write.call_args.kwargs, dict(values=dict(file='plan-operation.json'),
                                                       data=b'{"phases":[]}', timeout=60))
 
+    def test_lost_plan_write_ack_requires_exact_file_hash_before_continuing(self):
+        from build_manager.windows_guest import WRITE, WRITE_STATE
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
+        receipt = dict(token='token', operation='operation', file='plan.json',
+                       sha256=hashlib.sha256(b'plan bytes').hexdigest())
+        for changes in ({}, {'sha256': None}, {'sha256': 'wrong'}, {'token': 'other'},
+                        {'operation': 'other'}, {'file': 'other.json'}):
+            with self.subTest(changes=changes):
+                record = dict(receipt, **changes)
+                with patch.object(guest, 'call', side_effect=[transient]*3+[json.dumps(record)]) as call, \
+                        patch('build_manager.windows_guest.time.sleep'):
+                    if changes:
+                        with self.assertRaisesRegex(RuntimeError, 'unverified'):
+                            guest.write('plan.json', b'plan bytes')
+                    else:
+                        guest.write('plan.json', b'plan bytes')
+                self.assertEqual([c.args[0] for c in call.call_args_list], [WRITE]*3+[WRITE_STATE])
+
     def test_unknown_status_queries_do_not_imply_absence(self):
         identity = dict(token='token', operation='operation', invocation='current')
         transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
