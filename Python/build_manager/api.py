@@ -36,6 +36,16 @@ class ManagerAPI:
         bridge = self._project(project)
         return dict(fields=bridge.run_fields, defaults=bridge.run_defaults(), choices=bridge.run_choices())
 
+    def tooling_status(self, project=None):
+        """Read project-owned bootstrap readiness without loading its normal adapter."""
+        return self._project(project).tooling_status()
+
+    def update_tooling(self, project=None, *, confirmed=False):
+        """Explicitly invoke the project's declared dependency repair policy."""
+        if confirmed is not True:
+            raise ValueError('Project tooling update requires explicit confirmation.')
+        return self._project(project).update_tooling(confirmed=confirmed)
+
     def set_app_version(self, value, project=None):
         return self._project(project).set_app_version(value)
 

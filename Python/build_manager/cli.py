@@ -81,6 +81,10 @@ def parser_for_cli():
     check = sub.add_parser('check-project', help='Check registered adapter files/imports/settings without running workloads')
     check.add_argument('--project')
     check.add_argument('--prepare', action='store_true', help='Explicitly prepare every advertised combination; project preparation may capture sources or prune owned outputs')
+    tooling = sub.add_parser('tooling', help='Check project tooling before adapter imports; explicitly repair its declared dependencies')
+    tooling.add_argument('--project')
+    tooling.add_argument('--update', action='store_true', help='Run the project-owned installer for its declared dependency pin')
+    tooling.add_argument('--confirm', action='store_true', help='Confirm updating only the project-owned environments')
     sub.add_parser('list', help='List project registrations')
     add = sub.add_parser('add', help='Register a trusted project checkout')
     add.add_argument('path', type=Path)
@@ -181,6 +185,12 @@ def parser_for_cli():
 def execute(args, api):
     registry = api.registry
     command = args.command
+    if command == 'tooling':
+        if args.confirm and not args.update:
+            raise ArgumentError('Use --confirm only with an explicit tooling --update.')
+        if args.update and not args.confirm:
+            raise ArgumentError('Project tooling --update requires --confirm.')
+        return api.update_tooling(args.project, confirmed=args.confirm) if args.update else api.tooling_status(args.project)
     if command == 'init-project':
         from .onboarding import scaffold
         return scaffold(args.path, args.name, args.project_id, args.argv)
@@ -321,6 +331,8 @@ def main(argv=None):
         status = result.get('status')
         code = ({'passed': 0, 'awaiting_review': 3, 'cancelled': 130}.get(status, 1)
                 if command in ('run', 'resume', 'start') else 1 if command == 'check-project' and status == 'failed' else 0)
+        if command == 'tooling':
+            code = 0 if result['ready'] else 1
         # Existing registration/planning fields stay at the top level.
         emit(dict(result, cli_schema=API_VERSION, command=command, ok=code == 0))
         return code
