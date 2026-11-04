@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -53,22 +54,25 @@ class AndroidLeaseTests(unittest.TestCase):
             self.assertEqual(held, [])
 
     def test_conflicting_serial_cleans_only_creation_checked_process(self):
-        with TemporaryDirectory() as folder:
-            root=Path(folder);client=AndroidEmulator(root/'sdk',root/'owned');client.workspace.mkdir()
-            (client.workspace/'avds').mkdir()
-            original='Tue Nov  3 22:17:58 2026 emulator -avd build-manager-fixture'
-            current='Tue Nov  3 22:17:58 2026 qemu -avd build-manager-fixture'
-            record=dict(token='fixture',name='build-manager-fixture',serial='emulator-5580',
-                        workspace=str(client.workspace.resolve()),pid=123,process_started=original)
-            client.marker.write_text(json.dumps(record))
-            with patch.object(client,'invoke',return_value='another-avd\nOK') as invoke, \
-                 patch('build_manager.process_identity.read_process_fingerprint',side_effect=[current,None,None]), \
-                 patch('build_manager.process_identity.stop_owned_process') as stop:
-                client.cleanup()
-                self.assertEqual(invoke.call_count,1)
-                stop.assert_called_once_with(123,current,token='build-manager-fixture')
-            self.assertFalse(client.marker.exists())
-            self.assertTrue((client.workspace/'removed-lease.json').exists())
+        for host in ('posix', 'nt'):
+            with self.subTest(host=host), TemporaryDirectory() as folder:
+                root=Path(folder);client=AndroidEmulator(root/'sdk',root/'owned');client.workspace.mkdir()
+                (client.workspace/'avds').mkdir()
+                original='Tue Nov  3 22:17:58 2026 emulator -avd build-manager-fixture'
+                current='Tue Nov  3 22:17:58 2026 qemu -avd build-manager-fixture'
+                record=dict(token='fixture',name='build-manager-fixture',serial='emulator-5580',
+                            workspace=str(client.workspace.resolve()),pid=123,process_started=original)
+                client.marker.write_text(json.dumps(record))
+                with patch('build_manager.android_emulators.os', SimpleNamespace(name=host)), \
+                     patch.object(client,'invoke',return_value='another-avd\nOK') as invoke, \
+                     patch('build_manager.process_identity.read_process_fingerprint',side_effect=[current,None,None]), \
+                     patch('build_manager.process_identity.stop_owned_process') as stop:
+                    client.cleanup()
+                    self.assertEqual(invoke.call_count,1)
+                    expected = current if host == 'posix' else original
+                    stop.assert_called_once_with(123,expected,token='build-manager-fixture')
+                self.assertFalse(client.marker.exists())
+                self.assertTrue((client.workspace/'removed-lease.json').exists())
 
     def test_startup_timeout_is_bounded_and_defaults_to_four_minutes(self):
         with TemporaryDirectory() as folder:
