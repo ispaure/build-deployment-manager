@@ -108,6 +108,39 @@ class WindowsEvidenceTests(unittest.TestCase):
             self.assertEqual(guest.recover_completion('reports', 'current', time.monotonic(), 10, Event()), 7)
             self.assertEqual(read.call_count, 2)
 
+    def test_lost_wait_handle_recovers_without_replaying_worker(self):
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        process = Mock(returncode=255)
+        process.communicate.return_value = (b'', b'PrlJob_Wait: Invalid argument. An invalid argument was passed.')
+        process.poll.return_value = 255
+        receipt = json.dumps(dict(exit=7, token='token', operation='operation', invocation='current')).encode()
+        with patch('build_manager.windows_guest.uuid4', return_value=Mock(hex='current')), \
+                patch('build_manager.windows_guest.subprocess.Popen', return_value=process) as spawn, \
+                patch.object(guest, 'call', return_value=receipt) as read:
+            self.assertEqual(guest.run('python', ['fixture'], 'source', 'reports', {}, Event(), timeout=10), 7)
+        self.assertEqual(spawn.call_count, 1)
+        self.assertEqual(read.call_count, 1)
+
+    def test_staging_reconciles_lost_wait_handle_without_reupload(self):
+        from build_manager.windows_guest import STAGE
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        payload = b'owned source bytes'
+        receipt = json.dumps(dict(token='token', operation='operation', folder='source-operation',
+                                  sha256=hashlib.sha256(payload).hexdigest(), state='complete')).encode()
+        transient = RuntimeError('Windows guest command failed (255): PrlJob_Wait: Invalid argument')
+        with patch.object(guest, 'call', side_effect=[transient, receipt]) as call:
+            guest.stage('source-operation', payload)
+        self.assertEqual(sum(c.args[0] == STAGE for c in call.call_args_list), 1)
+        self.assertEqual(call.call_count, 2)
+
+    def test_replay_safe_read_retries_lost_wait_handle(self):
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        transient = RuntimeError('Windows guest command failed (255): PrlJob_Wait: Invalid argument')
+        with patch.object(guest, 'call', side_effect=[transient, b'verified']) as read, \
+                patch('build_manager.windows_guest.time.sleep'):
+            self.assertEqual(guest.call_idempotent('read only'), b'verified')
+        self.assertEqual(read.call_count, 2)
+
     def test_unknown_status_queries_do_not_imply_absence(self):
         identity = dict(token='token', operation='operation', invocation='current')
         transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
