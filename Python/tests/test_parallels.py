@@ -119,6 +119,41 @@ class ParallelsTransportTests(unittest.TestCase):
                 self.assertEqual(archive.getnames(), ['public.py'])
                 self.assertNotIn(b'synthetic-secret', archive.extractfile('public.py').read())
 
+    def test_timed_out_stage_recovers_matching_receipt_without_second_upload(self):
+        from build_manager.parallels import STAGE, INSPECT_STAGE
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'public.py').write_text('pass')
+            client = Parallels('/fixture/prlctl')
+            def execute(vm, argv, **kwargs):
+                if argv[2] == STAGE:
+                    raise subprocess.TimeoutExpired('upload', 180)
+                self.assertEqual(argv[2], INSPECT_STAGE)
+                workspace, token, digest, uid, gid, runner = argv[3:]
+                return json.dumps(dict(state='complete', identity=dict(token=token,
+                    archive_sha256=digest, uid=int(uid), gid=int(gid), runner_sha256=runner))).encode()
+            with patch.object(client, 'execute', side_effect=execute) as calls:
+                client.stage(VM, root, '/var/tmp/token', 'token', 1000, 1000, members=['public.py'])
+            self.assertEqual(calls.call_count, 2)
+
+    def test_stage_unknown_observations_cannot_extend_total_deadline(self):
+        from build_manager.parallels import STAGE
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'public.py').write_text('pass')
+            client = Parallels('/fixture/prlctl')
+            clock = [0.]
+            def execute(vm, argv, **kwargs):
+                clock[0] += kwargs['timeout']
+                raise subprocess.TimeoutExpired('transport', kwargs['timeout'])
+            with patch.object(client, 'execute', side_effect=execute) as calls, \
+                    patch('build_manager.parallels.time.monotonic', side_effect=lambda: clock[0]), \
+                    patch('build_manager.parallels.time.sleep', side_effect=lambda delay: clock.__setitem__(0, clock[0]+delay)):
+                with self.assertRaisesRegex(RuntimeError, 'unknown'):
+                    client.stage(VM, root, '/var/tmp/token', 'token', 1000, 1000, members=['public.py'])
+            self.assertEqual(clock[0], 210.)
+            self.assertEqual(sum(c.args[1][2] == STAGE for c in calls.call_args_list), 1)
+
     def test_large_linux_command_is_stdin_data_not_guest_command_line(self):
         import json
         from threading import Event
