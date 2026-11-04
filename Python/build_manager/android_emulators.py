@@ -13,7 +13,10 @@ from uuid import uuid4
 
 
 class AndroidEmulator:
-    def __init__(self, sdk, workspace, *, environment=None):
+    def __init__(self, sdk, workspace, *, environment=None, startup_timeout=240):
+        if type(startup_timeout) is not int or not 1 <= startup_timeout <= 3600:
+            raise ValueError('Emulator startup timeout must be 1 to 3600 seconds.')
+        self.startup_timeout = startup_timeout
         self.sdk, self.workspace = Path(sdk), Path(workspace)
         self.environment = dict(os.environ, **(environment or {}))
         self.environment.update(ANDROID_HOME=str(self.sdk), ANDROID_SDK_ROOT=str(self.sdk),
@@ -119,7 +122,7 @@ class AndroidEmulator:
                         signal.signal(sig,handler)
                 if received:
                     raise KeyboardInterrupt
-            deadline = time.monotonic()+240
+            deadline = time.monotonic()+self.startup_timeout
             while time.monotonic()<deadline:
                 if child.poll() is not None:
                     raise RuntimeError(self.startup_failure())
@@ -144,7 +147,7 @@ class AndroidEmulator:
                 except (OSError,subprocess.SubprocessError,RuntimeError):
                     pass
                 time.sleep(1)
-            raise RuntimeError('Owned Android emulator did not become ready within four minutes.')
+            raise RuntimeError(f'Owned Android emulator did not become ready within {self.startup_timeout} seconds.')
         finally:
             for channel in sockets:channel.close()
 

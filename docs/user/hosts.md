@@ -65,3 +65,7 @@ keeps another manager run from selecting a console/ADB pair while the first
 emulator is binding it. Cleanup verifies the AVD name before console commands;
 if a serial belongs to another run, only the recorded process may be stopped,
 after checking its creation time and unique AVD token.
+
+The disposable backend defaults to a 240-second boot deadline. An owning native
+probe may explicitly select a longer `startup_timeout`, up to 3600 seconds, for
+a busy host; boot-completion and AVD/process identity checks remain required.

@@ -64,6 +64,15 @@ class AndroidLeaseTests(unittest.TestCase):
             self.assertFalse(client.marker.exists())
             self.assertTrue((client.workspace/'removed-lease.json').exists())
 
+    def test_startup_timeout_is_bounded_and_defaults_to_four_minutes(self):
+        with TemporaryDirectory() as folder:
+            root=Path(folder)
+            self.assertEqual(AndroidEmulator(root/'sdk',root/'owned').startup_timeout,240)
+            self.assertEqual(AndroidEmulator(root/'sdk',root/'owned',startup_timeout=600).startup_timeout,600)
+            for value in (0,-1,3601,True,1.5):
+                with self.assertRaises(ValueError):
+                    AndroidEmulator(root/'sdk',root/'owned',startup_timeout=value)
+
     def test_low_disk_startup_cause_survives_disposable_log_removal(self):
         with TemporaryDirectory() as folder:
             root = Path(folder)
