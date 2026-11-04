@@ -13,11 +13,15 @@ from uuid import uuid4
 
 
 class AndroidEmulator:
-    def __init__(self, sdk, workspace, *, environment=None, startup_timeout=240, gpu='auto'):
+    def __init__(self, sdk, workspace, *, environment=None, startup_timeout=240, gpu='auto', execution_context='local'):
         if type(startup_timeout) is not int or not 1 <= startup_timeout <= 3600:
             raise ValueError('Emulator startup timeout must be 1 to 3600 seconds.')
         if gpu not in {'auto', 'host', 'swiftshader'}:
             raise ValueError('Choose auto, host or swiftshader emulator graphics.')
+        if execution_context not in {'local', 'github-actions'}:
+            raise ValueError('Choose an explicit local or github-actions execution context.')
+        self.execution_context = execution_context
+        self.admission = None
         self.gpu = gpu
         self.startup_timeout = startup_timeout
         self.sdk, self.workspace = Path(sdk), Path(workspace)
@@ -39,26 +43,67 @@ class AndroidEmulator:
             from .redaction import Redactor
             raise RuntimeError('ADB command failed: '+Redactor()(error.output[-3000:])) from None
 
+    def _verify_hosted_kvm(self):
+        device = Path('/dev/kvm')
+        if not device.is_char_device() or not os.access(device, os.R_OK | os.W_OK):
+            raise ValueError('GitHub-hosted Android requires an accessible /dev/kvm character device.')
+        try:
+            descriptor = os.open(device, os.O_RDWR | getattr(os, 'O_CLOEXEC', 0))
+        except OSError:
+            raise ValueError('GitHub-hosted Android cannot open /dev/kvm for acceleration.') from None
+        else:
+            os.close(descriptor)
+
+    def _host_requirements(self):
+        from .hosts import android_host_issue, android_abi, android_acceleration, host_identity
+        host = host_identity()
+        if self.execution_context == 'local':
+            issue = android_host_issue()
+            if issue:
+                raise ValueError(issue)
+            return host, android_abi(), android_acceleration()
+        if host['system'] != 'Linux' or host['architecture'].lower() not in {'x86_64', 'amd64'}:
+            raise ValueError('The github-actions Android context requires an actual Linux x64 host.')
+        # Read the provider's actual process environment, not caller-supplied
+        # emulator environment overrides. Markers alone never select this mode.
+        expected = {'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'RUNNER_ARCH': 'X64'}
+        if any(os.environ.get(key) != value for key, value in expected.items()):
+            raise ValueError('The github-actions Android context requires matching GitHub runner markers.')
+        self._verify_hosted_kvm()
+        return host, 'x86_64', 'KVM'
+
     def inspect(self, image, *, acceleration=None):
+        self.admission = None
         if not re.fullmatch(r'system-images;android-\d+;[A-Za-z0-9_]+;(?:arm64-v8a|x86_64)',image):
             raise ValueError('Choose an explicit supported SDK system image identifier.')
-        from .hosts import android_host_issue
-        issue = android_host_issue()
-        if issue:
-            raise ValueError(issue)
+        host, abi, required_acceleration = self._host_requirements()
         required = [self.adb, self.emulator, self.avdmanager,
                     self.sdk/'system-images'/Path(*image.split(';')[1:])/'system.img',
                     self.sdk/'system-images'/Path(*image.split(';')[1:])/'source.properties']
         if any(not path.is_file() for path in required):
             raise ValueError('Selected SDK lacks the required emulator, AVD tools or complete system image.')
+        if image.rsplit(';',1)[-1] != abi:
+            raise ValueError('Selected image is not native to the detected host architecture; no emulation fallback was selected.')
+        if self.execution_context == 'github-actions':
+            if acceleration not in (None, 'KVM'):
+                raise ValueError('GitHub-hosted Android requires KVM; no acceleration fallback was selected.')
+            properties = {key.strip(): value.strip() for key, value in
+                          (line.split('=', 1) for line in required[-1].read_text().splitlines() if '=' in line)}
+            if properties.get('SystemImage.Abi', '').strip() != abi:
+                raise ValueError('The installed GitHub system image does not declare the native x86_64 ABI.')
         output = subprocess.check_output([str(self.emulator),'-accel-check'], env=self.environment,
                                          text=True, stderr=subprocess.STDOUT, timeout=30)
-        from .hosts import android_abi,android_acceleration
-        if image.rsplit(';',1)[-1] != android_abi():
-            raise ValueError('Selected image is not native to the detected host architecture; no emulation fallback was selected.')
-        acceleration = acceleration or android_acceleration()
+        if self.execution_context == 'github-actions':
+            if not re.search(r'(?im)^\s*KVM\b[^\n]*\bis installed and usable\b', output):
+                raise ValueError('The GitHub emulator acceleration check did not verify usable KVM.')
+        acceleration = acceleration or required_acceleration
         if acceleration and acceleration not in output:
             raise ValueError('The selected emulator does not provide required acceleration: '+acceleration)
+        self.admission = dict(execution_context=self.execution_context, host=host,
+                              acceleration=acceleration, acceleration_verified=True,
+                              acceleration_check=output.strip()[:1000])
+        if self.execution_context == 'github-actions':
+            self.admission['kvm_device_accessible'] = True
         return output.strip()
 
     def start(self, image, model):
@@ -101,6 +146,7 @@ class AndroidEmulator:
         port,sockets = selected
         record = dict(token=token,name=name,serial='emulator-'+str(port),image=image,model=model,
                       workspace=str(self.workspace.resolve()),gpu=self.gpu,startup_timeout=self.startup_timeout,
+                      execution_context=self.execution_context, admission=self.admission,
                       image_properties=(self.sdk/'system-images'/Path(*image.split(';')[1:])/'source.properties').read_text())
         self.marker.write_text(json.dumps(record))
         try:

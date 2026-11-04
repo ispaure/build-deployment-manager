@@ -29,6 +29,24 @@ from Android acceptance. The current release records Linux/Windows Android as a
 known limitation. Never create/access held guests to obtain coverage. Project-owned
 native suites retain their own supported-toolchain limits.
 
+## Explicit GitHub-hosted Android context
+
+Hosted adapters may explicitly construct `AndroidEmulator` with
+`execution_context='github-actions'`. The default remains `local`; runner
+environment variables alone never enable local Linux or Windows Android testing.
+The opt-in requires an actual Linux x64 host, process-level GitHub runner markers
+(`GITHUB_ACTIONS=true`, `RUNNER_OS=Linux`, `RUNNER_ARCH=X64`), read/write access to
+an actual `/dev/kvm` device, complete SDK/image files, a native x86_64 image ABI
+and a successful emulator acceleration check reporting usable KVM. Caller-supplied
+emulator environment overrides cannot supply admission markers. Missing prerequisites
+fail before AVD creation; acceleration or architecture fallbacks are not selected.
+
+Owned leases retain execution context, host identity and verified acceleration
+alongside the existing unique AVD/process ownership evidence. This provider context
+does not alter local capability reporting. Portable admission/lifecycle tests are
+separate from actual GitHub emulator acceptance; the consuming hosted workflow
+must still demonstrate native execution before claiming that coverage.
+
 ## Adapter process supervision prerequisites
 
 POSIX hosts need the system `ps` utility with PID, process-group and state output
