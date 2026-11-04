@@ -77,6 +77,7 @@ class ProjectBridge:
         environment = dict(os.environ)
         for key in ('PYTHONPATH', 'PYTHONHOME'):
             environment.pop(key, None)
+        environment['BUILD_MANAGER_DEPENDENCIES'] = 'project'
         from .settings import SettingsStore
         account_defaults = SettingsStore(self.registry.directory).account_defaults(
             descriptor['project_id'], descriptor.get('account_fields', {}))

@@ -59,13 +59,29 @@ manager/commonUtils identities captured during that run. These can differ in an
 editable development setup. The source choice exposed by a workflow is a further
 project-owned decision; do not infer it from the installation alone.
 
-The manager requires its own real `Python/commonUtils` submodule. Its bootstrap
-prepends that source root, while a previously imported consumer commonUtils stays
-loaded. A plain import-location probe can therefore depend on import order.
-For compatibility work, record the actual loaded paths and explicitly distinguish
-consumer-preloaded tests from standalone manager tests. Do not discover a sibling
-library checkout or change a pin to make a test pass. See the
-[current audit](developer-audit.md#findings-and-ordered-actions).
+The manager requires its own real `Python/commonUtils` submodule. Fresh standalone
+manager processes bind that source root. Adapter subprocesses receive
+`BUILD_MANAGER_DEPENDENCIES=project`: importing the manager then preserves the
+project interpreter's dependency resolution in either import order. The bridge
+clears inherited `PYTHONPATH`/`PYTHONHOME`; the project's bridge supplies its own
+source roots or installed dependencies. Direct project tooling must set this
+context before importing either package. Do not set it in a global shell profile.
+
+For a direct compatibility probe, supply explicit paths and the project's Python:
+
+```sh
+BUILD_MANAGER_DEPENDENCIES=project PYTHONPATH="/explicit/project/Python:/explicit/manager/Python" \
+  /explicit/project/.venv/bin/python -c 'import build_manager, commonUtils; print(commonUtils.__file__)'
+```
+
+Legacy callers that preload commonUtils remain supported, but new integrations
+must use the explicit context so correctness does not depend on import order.
+Runtime `engine.commonUtils` now identifies the dependency actually loaded. The
+manager's own pin remains the source used by its standalone process and by exact
+dependency packaging; the context never changes a pin or discovers a sibling
+checkout. Start a separate manager process with its interpreter and manager
+context when leaving a project process; changing an environment variable cannot
+replace a library already imported in that process.
 
 ## Diagnose an outcome before choosing recovery
 

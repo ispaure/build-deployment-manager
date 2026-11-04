@@ -43,6 +43,16 @@ is reported by its descriptor path. Bridge stdout must contain one JSON object
 with `schema: 1` and `result`; write diagnostics to stderr. Invalid responses name
 the project/action without echoing private stdout.
 
+The bridge sets `BUILD_MANAGER_DEPENDENCIES=project` in the project subprocess
+before its script starts. This keeps both commonUtils/manager import orders on
+the project's explicit source roots or interpreter installation. It does not
+prepend the manager source root or import the project in the manager process.
+Direct adapter tooling must opt into this context before its first import.
+Fresh standalone manager processes use manager context and the real manager
+submodule. See [Logistics dependency identities](logistics-integration.md#distinguish-the-three-dependency-identities).
+Runtime commonUtils provenance records the loaded package rather than assuming
+it came from the manager checkout. Plan/Phase and adapter schemas stay unchanged.
+
 Inspection phases may declare `retry_exit_codes` and `retry_delay` (seconds,
 default 30). Only those explicitly temporary command failures retry, without a
 retry limit; each command retains its bounded timeout. The scheduler releases

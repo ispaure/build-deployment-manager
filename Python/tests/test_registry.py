@@ -12,6 +12,22 @@ from build_manager.bridge import ProjectBridge
 
 
 class RegistryTests(unittest.TestCase):
+    def test_adapter_process_uses_project_dependency_context_without_manager_path_injection(self):
+        root = self.fixture('dependencies')
+        source = root / 'source'
+        shared = source / 'commonUtils'
+        shared.mkdir(parents=True)
+        manager_source = Path(__file__).resolve().parents[1]
+        (shared / '__init__.py').write_text('__path__ = ' + repr([str(manager_source / 'commonUtils')]))
+        (root / 'bridge.py').write_text(f'''import json,os,sys
+sys.path[:0] = [{str(source)!r}, {str(manager_source)!r}]
+import build_manager, commonUtils
+assert os.environ['BUILD_MANAGER_DEPENDENCIES'] == 'project'
+print(json.dumps(dict(schema=1,result=commonUtils.__file__)))
+''')
+        key = self.registry.add(root)
+        self.assertEqual(ProjectBridge(self.registry, key).call('settings'), str(shared / '__init__.py'))
+
     def test_bridge_supplies_checkout_specific_private_profile_and_manager_context(self):
         root = self.fixture('context')
         (root / 'bridge.py').write_text('import json,sys; r=json.load(sys.stdin); print(json.dumps(dict(schema=1,result=r)))')
