@@ -15,6 +15,18 @@ def run_modules(tests, *, runner=subprocess.run, python=sys.executable):
     tests = Path(tests).resolve()
     environment = dict(os.environ)
     environment['PYTHONPATH'] = os.pathsep.join(filter(None, (str(tests.parent), os.environ.get('PYTHONPATH', ''))))
+    # Windows offscreen Qt uses FreeType rather than the native font database.
+    # Without a font directory, missing-glyph metrics invalidate layout checks.
+    # GUI fixtures default to offscreen; an explicit platform/font choice wins.
+    if (os.name == 'nt'
+            and environment.get('QT_QPA_PLATFORM', 'offscreen').split(':', 1)[0] == 'offscreen'
+            and 'QT_QPA_FONTDIR' not in environment):
+        windows_environment = {key.upper(): value for key, value in environment.items()}
+        system_root = windows_environment.get('SYSTEMROOT') or windows_environment.get('WINDIR')
+        if system_root:
+            fonts = Path(system_root) / 'Fonts'
+            if fonts.is_dir():
+                environment['QT_QPA_FONTDIR'] = str(fonts)
     modules = sorted(Path(tests).glob('test*.py'))
     if not modules:
         raise ValueError('No manager contract modules discovered.')
