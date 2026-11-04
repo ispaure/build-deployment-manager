@@ -10,6 +10,39 @@ from test_journeys import integrated
 
 
 class ResultsOverviewTests(unittest.TestCase):
+    @staticmethod
+    def reported_case():
+        return dict(name='case', classname='Fixture', suite='Unit', status='passed',
+                    seconds=.2, message='')
+
+    def test_presenter_updates_scope_and_expired_interim_totals_without_changed_final_cases(self):
+        from build_manager.run_test_results_ui import TestResultsView
+        presenter = TestResultsView()
+        self.addCleanup(presenter.close)
+        facts = {'android': dict(tests=[self.reported_case()], live_tests=[{}])}
+        presenter.present(facts)
+        self.assertFalse(presenter.tests.isColumnHidden(4))
+        self.assertIn('interim', presenter.result_counts.text())
+        facts['android']['live_tests'] = []
+        presenter.present(facts)
+        self.assertNotIn('interim', presenter.result_counts.text())
+        presenter.present(facts, selected=True)
+        self.assertTrue(presenter.tests.isColumnHidden(4))
+        self.assertTrue(presenter.timings.isColumnHidden(3))
+        presenter.present(facts, selected=False)
+        self.assertFalse(presenter.tests.isColumnHidden(4))
+        presenter.tests.setCurrentItem(presenter.tests.topLevelItem(0))
+        self.assertIn('Fixture.case', presenter.test_detail.toPlainText())
+        presenter.tests.setCurrentItem(None)
+        self.assertEqual(presenter.test_detail.toPlainText(), '')
+
+    def test_reset_repopulates_identical_retained_test_facts(self):
+        previous = [dict(id='android', status='passed', tests=[self.reported_case()])]
+        for _ in range(2):
+            self.view.reset(self.plan, previous)
+            self.assertEqual(self.view.tests.topLevelItemCount(), 1)
+            self.assertEqual(self.view.timings.topLevelItemCount(), 1)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
