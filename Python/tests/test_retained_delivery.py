@@ -15,11 +15,12 @@ from build_manager import Phase, Plan
 from build_manager.api import ManagerAPI
 from build_manager.bridge import ProjectBridge
 from build_manager.cli import main
+from owned_cleanup import cleanup_private_interpreter
 
 
 class RetainedDeliveryTests(unittest.TestCase):
     def setUp(self):
-        temp = TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        temp = TemporaryDirectory(); self.addCleanup(cleanup_private_interpreter, temp)
         self.root = Path(temp.name).resolve()
         self.directory = self.root / 'retained'; self.directory.mkdir()
         self.previous = Plan('Fixture', 'Original', {'commit': 'verified-old-source'}, (

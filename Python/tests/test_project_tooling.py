@@ -15,6 +15,7 @@ from build_manager.api import ManagerAPI
 from build_manager.bridge import ProjectBridge
 from build_manager.cli import main
 from build_manager.project_tooling import validate_status
+from owned_cleanup import cleanup_private_interpreter
 
 
 def status(ready=False, blocked=False):
@@ -27,7 +28,7 @@ def status(ready=False, blocked=False):
 
 class ProjectToolingTests(unittest.TestCase):
     def setUp(self):
-        temporary = TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        temporary = TemporaryDirectory(); self.addCleanup(cleanup_private_interpreter, temporary)
         self.root = Path(temporary.name).resolve()
         subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(self.root / '.venv')], check=True)
         python = '.venv/Scripts/python.exe' if os.name == 'nt' else '.venv/bin/python'
