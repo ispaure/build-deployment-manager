@@ -43,6 +43,41 @@ class StageRecoveryTests(unittest.TestCase):
             self.guest.stage('source', b'zip')
         self.assertEqual(sum(c.args[0] == STAGE for c in call.call_args_list), 1)
 
+    def test_timed_out_upload_adopts_receipt_without_reupload(self):
+        with patch.object(self.guest, 'call', side_effect=[subprocess.TimeoutExpired('upload', 180),
+                json.dumps(self.receipt)]) as call:
+            self.guest.stage('source', b'zip')
+        self.assertEqual([c.args[0] for c in call.call_args_list], [STAGE, STAGE_STATE])
+
+    def test_slow_upload_leaves_recovery_time_and_unknown_queries_keep_deadline(self):
+        clock = [0.]
+        def call(script, **kwargs):
+            if script == STAGE:
+                clock[0] = 180.
+                raise subprocess.TimeoutExpired('upload', 180)
+            if clock[0] < 185:
+                raise subprocess.TimeoutExpired('query', kwargs['timeout'])
+            return json.dumps(self.receipt)
+        with patch.object(self.guest, 'call', side_effect=call) as calls, \
+                patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]), \
+                patch('build_manager.windows_guest.time.sleep', side_effect=lambda delay: clock.__setitem__(0, clock[0]+delay)):
+            self.guest.stage('source', b'zip')
+        self.assertEqual(sum(c.args[0] == STAGE for c in calls.call_args_list), 1)
+        self.assertEqual(clock[0], 185.)
+
+    def test_unknown_queries_cannot_extend_total_stage_budget(self):
+        clock = [0.]
+        def call(script, **kwargs):
+            clock[0] += kwargs['timeout']
+            raise subprocess.TimeoutExpired('transport', kwargs['timeout'])
+        with patch.object(self.guest, 'call', side_effect=call) as calls, \
+                patch('build_manager.windows_guest.time.monotonic', side_effect=lambda: clock[0]), \
+                patch('build_manager.windows_guest.time.sleep', side_effect=lambda delay: clock.__setitem__(0, clock[0]+delay)):
+            with self.assertRaisesRegex(RuntimeError, 'unknown'):
+                self.guest.stage('source', b'zip')
+        self.assertEqual(clock[0], 210.)
+        self.assertEqual(sum(c.args[0] == STAGE for c in calls.call_args_list), 1)
+
     def test_stale_or_changed_receipt_is_never_adopted(self):
         for key in ('token', 'operation', 'folder', 'sha256'):
             changed = dict(self.receipt, **{key: 'wrong'})
@@ -52,7 +87,7 @@ class StageRecoveryTests(unittest.TestCase):
 
     def test_unknown_completion_remains_bounded_and_nontransport_error_not_replayed(self):
         with patch.object(self.guest, 'call', return_value='{"state":"pending"}') as call, \
-             patch('build_manager.windows_guest.time.monotonic', side_effect=[0, 31]):
+             patch('build_manager.windows_guest.time.monotonic', side_effect=[0, 0, 211]):
             with self.assertRaisesRegex(RuntimeError, 'unknown'):
                 self.guest.stage('source', b'zip')
         self.assertEqual(call.call_count, 1)
