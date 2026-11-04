@@ -155,6 +155,8 @@ def parser_for_cli():
         command.add_argument('--events', action='store_true', help='Stream JSONL events before the final result')
     resume.add_argument('--no-retry-failed', action='store_true', help='Keep failed checks and blocked steps; continue independently ready work only')
     resume.add_argument('--approval-identity', action='append', default=[], help='Reviewed pending STEP=SHA256 from review')
+    resume.add_argument('--approve-step', action='append', default=[], metavar='STEP',
+                        help='Authorize this named pending action using its verified retained artifacts; requires --confirm. Use --no-retry-failed to preserve other failed branches')
     resume.add_argument('--engine-review-identity', help='Explicitly reviewed old/new engine identity from review; preserves provenance')
     for name in ('status', 'logs', 'review'):
         command = sub.add_parser(name, help={
@@ -290,6 +292,7 @@ def execute(args, api):
                               confirmed=args.confirm, resume=command == 'resume',
                               retry_failed=not args.no_retry_failed if command == 'resume' else True,
                               approval_identities=assignments(args.approval_identity) if command == 'resume' else None,
+                              approve_steps=args.approve_step if command == 'resume' else (),
                               expected_identity=args.expect_identity, engine_review=args.engine_review_identity if command == 'resume' else None, cancelled=cancelled,
                               event=event if args.events else None, maintenance=api.storage_maintenance)
         return summarize_run_report(report, args.output)

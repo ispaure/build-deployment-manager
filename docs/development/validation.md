@@ -7,6 +7,24 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 independent delivery continuation
+
+The changes after `e5a76b0` expose verified named-step approval in the public CLI,
+compact continuation guidance, and an explicit GUI choice to preserve failed
+checks while continuing ready actions. The GUI session and internal CLI forward
+that choice to the existing executor policy. Fresh start approval policy and
+unknown-effect/engine checks are unchanged.
+
+Focused validation passes 45 cases: 24 headless CLI cases with real harmless
+children, three guidance cases, three mocked transport/internal-CLI cases and
+15 offscreen Qt review/approval-card cases. The partial-delivery fixture verifies
+that the ready action completes, the failed leg's report and attempt count stay
+unchanged, and the aggregate result remains failed. Scope, changed-artifact and
+unknown-action rejection remain covered. The first Qt attempt caught a label
+priority regression and a test-mock binding error; the corrected targeted run
+passes. This is new scoped coverage, not a replay of the earlier 101-module suite
+or new native desktop, mobile, signing, device or provider acceptance.
+
 ## November 4 documentation audit and integrated validation
 
 The documentation audit reviewed manager source and test definitions at

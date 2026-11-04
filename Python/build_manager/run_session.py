@@ -42,7 +42,10 @@ class RunSession(QObject):
         else:
             self.clock.stop()
 
-    def launch(self, interpreter, plan_path, output, *, resume=False, confirmed=False, approvals=(), engine_review=None):
+    def launch(self, interpreter, plan_path, output, *, resume=False, confirmed=False, approvals=(), engine_review=None,
+               retry_failed=True):
+        if not resume and not retry_failed:
+            raise ValueError('Preserving failed steps requires a retained run.')
         suffix = '.resume-' + uuid4().hex + '.cancel' if resume else '.cancel'
         self.cancel_file = output.with_suffix(suffix)
         self.buffer = ''
@@ -52,6 +55,8 @@ class RunSession(QObject):
                      '--cancel-file', str(self.cancel_file)]
         if resume:
             arguments.append('--resume')
+        if not retry_failed:
+            arguments.append('--no-retry-failed')
         if confirmed:
             arguments.append('--confirm')
         if engine_review is not None:

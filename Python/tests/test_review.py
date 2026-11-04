@@ -69,6 +69,46 @@ class ReviewTests(unittest.TestCase):
             self.assertTrue(launch.call_args.kwargs['resume'])
         self.assertFalse(effect.exists())
 
+    def test_ready_delivery_selection_preserves_failed_leg_through_gui_transport(self):
+        from dataclasses import replace
+        import sys
+        from build_manager.continuation_actions import ContinuationSelection
+        result, report, _, effect = self.retained()
+        plan = Plan.load(result.parent / 'plan.json')
+        plan = replace(plan, phases=(*plan.phases,
+            Phase('android-check', (sys.executable, '-c', 'raise AssertionError("must not rerun")'),
+                  str(self.root), effect='test')))
+        report.update(status='failed', plan_identity=plan.identity)
+        report['phases'].append(dict(id='android-check', status='failed', exit_code=7))
+        plan.save(result.parent / 'plan.json')
+        result.write_text(json.dumps(report)); before = result.read_bytes()
+        panel = ManagerPanel(fixtures.OtherProject(self.root))
+        self.addCleanup(panel.close)
+        with patch.object(panel, 'confirm_continuation', return_value=ContinuationSelection(('upload',), False)), \
+                patch.object(panel.session, 'launch') as launch:
+            panel.resume_workflow(result)
+            self.wait_review(panel)
+        self.assertFalse(launch.call_args.kwargs['retry_failed'])
+        self.assertEqual([permission.step for permission in launch.call_args.kwargs['approvals']], ['upload'])
+        self.assertEqual(result.read_bytes(), before)
+        self.assertFalse(effect.exists())
+
+    def test_ready_delivery_dialog_defaults_to_preserving_failed_checks(self):
+        from build_manager.approval_ui import EffectReviewDialog
+        from PySide6.QtWidgets import QDialog
+        result, report, _, _ = self.retained()
+        report['phases'].append(dict(id='android-check', status='failed', exit_code=7))
+        panel = ManagerPanel(fixtures.OtherProject(self.root))
+        self.addCleanup(panel.close)
+        def select(dialog):
+            self.assertFalse(dialog.retry_failed.isChecked())
+            dialog.approvals['upload'].setChecked(True)
+            return QDialog.DialogCode.Accepted
+        with patch.object(EffectReviewDialog, 'exec', new=select):
+            choice = panel.confirm_continuation(Plan.load(result.parent / 'plan.json'), report, ('upload',))
+        self.assertFalse(choice.retry_failed)
+        self.assertEqual(choice.steps, ('upload',))
+
     def test_legacy_device_history_omits_default_approval_field_and_still_opens(self):
         from dataclasses import replace
         from PySide6.QtCore import Qt

@@ -8,7 +8,7 @@ from .ui_components import style_button, style_dialog_buttons, HeadingLabel
 
 
 class EffectReviewDialog(QDialog):
-    def __init__(self, text, parent=None, steps=(), *, cards=(), source=''):
+    def __init__(self, text, parent=None, steps=(), *, cards=(), source='', retry_failed=None):
         super().__init__(parent)
         self.setWindowTitle('Review delivery')
         self.resize(850, 650)
@@ -109,6 +109,12 @@ class EffectReviewDialog(QDialog):
         content.addStretch()
         scroll.setWidget(body)
         layout.addWidget(scroll, 1)
+        self.retry_failed = None
+        if retry_failed is not None:
+            self.retry_failed = QCheckBox('Retry failed checks and their blocked steps')
+            self.retry_failed.setChecked(retry_failed)
+            self.retry_failed.setToolTip('Leave unchecked to continue selected ready actions while preserving failed and blocked branches. Unknown external outcomes are never repeated automatically.')
+            layout.addWidget(self.retry_failed)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         approve = buttons.addButton('Approve selected actions' if steps else 'Approve and continue',
             QDialogButtonBox.ButtonRole.AcceptRole)
