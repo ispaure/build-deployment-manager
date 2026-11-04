@@ -42,6 +42,18 @@ before the quiet window and were not replayed by the documentation audit or
 continuation. No new mobile build, live provider, VM/device, Windows/Linux GUI or
 screen-reader acceptance is established.
 
+The subsequent dependency merge preserves release manager `59363db` and pins
+commonUtils `d44cfd4e59ddec4139c7ddeb788f1a9d33af0d91`, retaining both shared
+development and release diagnostic ancestry. Manager implementation files remain
+identical to the tested `428b3ca` source. Compared with its commonUtils `6c2d5dc`,
+the new shared changes are documentation, tests and Android recycled-list code;
+Qt and iOS runtime files are unchanged. Twenty focused import-order, registry /
+bridge and privacy cases pass on the final dependency. Actual-process provenance
+checks also preserve standalone manager and both Logistics import orders' own
+dependency roots without loading Qt or project modules. The 101-module and
+98-case totals above retain their recorded source scope; the suite was not
+replayed for this dependency merge, and Android native acceptance remains separate.
+
 Earlier dated results below remain historical acceptance for their recorded
 scope. A documentation or static-link pass does not extend native, provider or
 consumer acceptance.
