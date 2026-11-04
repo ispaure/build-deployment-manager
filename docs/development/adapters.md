@@ -468,6 +468,19 @@ project-wrapper containment remain separate from the SDK's tested POSIX and
 mocked Windows contracts. A project must also protect mutation ownership after an
 abrupt supervisor death; a lock owned only by the dead PID is insufficient.
 
+POSIX teardown failures include a bounded JSON receipt in the error: the exact
+owned bridge PID/session ID, failure stage and exception class, root exit code,
+and at most 32 last-verified owned PID/group pairs with a truncation flag. Raw
+exception text, arguments and environment values are omitted. A failed root-group
+fallback records its exception class while preserving the original cause.
+Preserve that receipt for read-only ownership inspection; it is not a cleanup or
+retry authorization. `ownership: incomplete` and `retry_safe: false` remain set
+on failure, including an output-drain failure after the session was verified empty.
+Last-verified members are historical observations. A missing bridge PID, a free
+lock, or an old membership list cannot prove that all current descendants are gone
+or that an external effect did not occur. Earlier generic errors without a session
+receipt cannot acquire that proof retrospectively.
+
 ## Optional delivery from retained inputs
 
 Declare `retained_delivery_plan` in `adapter_actions` to offer a new delivery from

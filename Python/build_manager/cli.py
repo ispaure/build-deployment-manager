@@ -90,7 +90,8 @@ def parser_for_cli():
     add.add_argument('path', type=Path)
     add.add_argument('--name', help='Unique local name for this checkout and its settings folder')
     for name in ('select', 'remove', 'trust', 'inspect'):
-        sub.add_parser(name).add_argument('project')
+        sub.add_parser(name, help={'trust': 'Explicitly record the reviewed current project descriptor',
+                                  'inspect': 'Inspect the current registration and descriptor without executing project code'}.get(name)).add_argument('project')
     locate = sub.add_parser('locate')
     locate.add_argument('project')
     locate.add_argument('path', type=Path)

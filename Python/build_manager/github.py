@@ -47,9 +47,20 @@ class GitHub:
         return self.request('GET', self.base)
 
     def resolve_ref(self, ref):
+        if not isinstance(ref, str) or not ref:
+            raise ValueError('Select a published branch or tag.')
+        candidates = [('heads', ref), ('tags', ref)]
         for family in ('heads', 'tags'):
+            prefix = 'refs/' + family + '/'
+            if ref.startswith(prefix):
+                name = ref[len(prefix):]
+                if not name:
+                    raise ValueError('Select a published branch or tag.')
+                candidates = [(family, name)]
+                break
+        for family, name in candidates:
             try:
-                row = self.request('GET', self.base + '/git/ref/' + family + '/' + quote(ref, safe=''))
+                row = self.request('GET', self.base + '/git/ref/' + family + '/' + quote(name, safe=''))
             except RuntimeError as error:
                 if 'HTTP 404' in str(error):
                     continue

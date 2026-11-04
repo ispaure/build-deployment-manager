@@ -166,6 +166,71 @@ class BridgeOwnershipUnitTests(unittest.TestCase):
             with self.assertRaises(OSError): bridge_process.stop_session(process)
         stop.assert_called_once_with(process, grace=15)
 
+    def test_inventory_failure_preserves_original_cause_if_root_fallback_also_fails(self):
+        process = Mock(pid=41, returncode=0)
+        original = OSError('private inventory detail')
+        with patch.object(bridge_process, 'session_groups', side_effect=original), \
+                patch.object(bridge_process, 'stop_process', side_effect=PermissionError('private fallback detail')):
+            with self.assertRaises(OSError) as caught:
+                bridge_process.stop_session(process)
+        self.assertIs(caught.exception, original)
+        failure = bridge_process.teardown_failure(process, 'session_teardown', original)
+        self.assertEqual(failure.receipt['stage'], 'session_inventory')
+        self.assertEqual(failure.receipt['session_id'], 41)
+        self.assertEqual(failure.receipt['error_class'], 'OSError')
+        self.assertEqual(failure.receipt['fallback_error_class'], 'PermissionError')
+        self.assertFalse(failure.receipt['retry_safe'])
+        self.assertEqual(failure.receipt['ownership'], 'incomplete')
+        self.assertNotIn('private', str(failure))
+
+    def test_signal_failure_receipt_contains_only_bounded_last_verified_owned_members(self):
+        process = Mock(pid=41, returncode=None)
+        groups = {70: list(range(100, 140))}
+        with patch.object(bridge_process, 'session_groups', return_value=groups), \
+                patch.object(bridge_process, 'signal_session', side_effect=PermissionError('private')), \
+                patch.object(bridge_process, 'stop_process'):
+            with self.assertRaises(OSError) as caught:
+                bridge_process.stop_session(process)
+        failure = bridge_process.teardown_failure(process, 'session_teardown', caught.exception)
+        self.assertEqual(failure.receipt['stage'], 'session_sigterm')
+        self.assertEqual(failure.receipt['owned_process_count'], 40)
+        self.assertEqual(len(failure.receipt['last_verified_owned_processes']), 32)
+        self.assertTrue(failure.receipt['truncated'])
+        self.assertEqual(failure.receipt['last_verified_owned_processes'][0], dict(pid=100, pgid=70))
+        self.assertFalse(failure.receipt['session_verified_empty'])
+        self.assertNotIn('private', str(failure))
+
+    def test_root_reap_failure_is_identified_without_exposing_process_arguments(self):
+        process = Mock(pid=41, returncode=0)
+        process.wait.side_effect = subprocess.TimeoutExpired(['private-command'], 5)
+        with patch.object(bridge_process, 'session_groups', return_value={}), \
+                patch.object(bridge_process, 'stop_process'):
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                bridge_process.stop_session(process)
+        failure = bridge_process.teardown_failure(process, 'session_teardown', caught.exception)
+        self.assertEqual(failure.receipt['stage'], 'root_reap')
+        self.assertNotIn('private-command', str(failure))
+        self.assertFalse(failure.receipt['retry_safe'])
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX teardown receipt')
+    def test_pipe_drain_failure_exposes_owned_receipt_and_closes_streams(self):
+        process = Mock(pid=41, returncode=0)
+        process.stdin, process.stdout, process.stderr = [io.StringIO() for _ in range(3)]
+        process.communicate.side_effect = [('response', ''), subprocess.TimeoutExpired(['private-command'], 3)]
+        with patch.object(bridge_process, 'session_groups', return_value={}), \
+                patch.object(bridge_process.subprocess, 'Popen', return_value=process), \
+                patch.object(bridge_process, 'stop_session'):
+            with self.assertRaises(ValueError) as caught:
+                bridge_process.run(['private-command'], 'private payload', cwd='.', env={'TOKEN': 'private'},
+                                   timeout=10, cancelled=lambda: False)
+        receipt = caught.exception.receipt
+        self.assertEqual(receipt['stage'], 'pipe_drain')
+        self.assertTrue(receipt['session_verified_empty'])
+        self.assertFalse(receipt['retry_safe'])
+        self.assertEqual(receipt['session_id'], 41)
+        self.assertNotIn('private', str(caught.exception))
+        self.assertTrue(all(stream.closed for stream in (process.stdin, process.stdout, process.stderr)))
+
     def test_signals_revalidate_sid_and_pgid_before_touching_a_group(self):
         with patch.object(bridge_process.os, 'getsid', side_effect=[41, 99]), \
                 patch.object(bridge_process.os, 'getpgid', return_value=70), \
