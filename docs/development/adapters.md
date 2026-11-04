@@ -332,6 +332,19 @@ identified device in `Booted` state. Readiness requires a successful command
 exit; partial output or inventory alone cannot satisfy it. A second timeout or
 any other state remains a failure. Caller-owned leases and cleanup are unchanged.
 
+Callers can opt into initial boot-request timeout reconciliation with
+`boot(device, name=expected_name)`. They must obtain both UUID and expected name
+from validated project-owned lease metadata or their freshly created device.
+The SDK checks that exact UUID/name before boot and during every subsequent
+observation. If the initial `boot` RPC times out, it observes only `Booting` or
+`Booted` for at most 30 seconds, with inventory requests bounded to five seconds
+or the remaining observation budget. It then requires a successful normal
+`bootstatus -b` command before returning. No second boot or device creation is
+performed. Ownership loss, missing/duplicate identity, other states, expired
+observation, inventory errors or readiness failures propagate the original boot
+timeout. Unnamed callers retain their original initial-timeout behavior.
+This portable contract requires separate exact-source native acceptance.
+
 ## Boundaries when adding another project
 
 Keep generic execution, subprocess ownership, result/review UI, presets, retained
