@@ -197,6 +197,35 @@ are reused when their evidence still matches. After `status="unknown"`, follow
 the project's reconciliation procedure before attempting another delivery. The
 CLI does not provide a force/retry option that bypasses this check.
 
+## Retry an uncertain device installation
+
+Use this only after deciding to install the same prepared app on the same device
+again. The original installation may already have completed. Obtain the exact
+unknown installation step ID from `status --full`, then prepare a separate plan:
+
+```sh
+build-manager retry-device /tmp/original-run --step INSTALL_STEP --output /tmp/retry-plan.json
+build-manager show-plan /tmp/retry-plan.json
+build-manager run /tmp/retry-plan.json --output /tmp/retry-run --confirm --expect-identity PLAN_SHA256
+build-manager review /tmp/retry-run
+```
+
+Choose new plan and result paths. Preparation verifies passed prerequisites and
+retained artifact checksums. The retry plan verifies the original run again before
+installation and writes new receipt paths. It preserves the original unknown
+outcome, does not rebuild the app and does not repeat other deliveries.
+
+CLI preparation leaves the installation awaiting review after the verification
+step. Inspect the returned review identity, then use `resume --confirm` with the
+retry plan identity and `--approval-identity INSTALL_STEP=REVIEW_SHA256` as in the
+delivery sequence above. `--confirm` alone cannot approve the installation.
+Eligibility requires an unknown `deploy` step with passed prerequisites, retained
+prepared artifacts and declared receipt paths present as command arguments.
+Uploads, failed preparation and active runs are ineligible. Changed original
+reports or prepared bytes block execution; this is not a general force-retry path.
+The GUI's explicit Retry install click supplies authorization for its separate
+attempt, so it does not show this additional CLI review sequence.
+
 ## Continuing after manager maintenance
 
 An engine or dependency checkout change blocks ordinary `resume`. Run `review`

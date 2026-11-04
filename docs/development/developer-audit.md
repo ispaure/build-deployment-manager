@@ -1,5 +1,16 @@
 # Developer experience audit and action plan — November 3, 2026
 
+## November 4 integration status
+
+Manager implementation and fixture work is committed on root `3e4cafb`.
+The separate `428b3ca` candidate merges reviewed dependency ancestry and a newer
+real commonUtils pin; it has not been consolidated into this checkout.
+[Current validation scope](validation.md#november-4-documentation-audit-and-pending-candidate-validation)
+records the candidate-bound checks and ten pending manager modules. Completion
+requires that continuation after the release quiet hold and an updated acceptance
+record; no complete suite pass is claimed. The dated observations below describe
+their original snapshots rather than today's registration or dependency state.
+
 ## Scope and conclusion
 
 Reviewed manager `6be191b` plus the existing Android emulator working edits,

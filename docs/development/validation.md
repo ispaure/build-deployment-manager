@@ -7,6 +7,33 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 documentation audit and pending candidate validation
+
+The documentation audit reviewed manager source and test definitions at
+`3e4cafb38b44a7c8b2e525798592256d8b60362e`. H1 titles, local file links and
+same-named folder landing coverage were checked statically. No workload, Qt,
+VM, device, Simulator, emulator or build validation was run during the release
+quiet hold.
+
+Candidate `428b3ca6fd260a1777b1028fae1eea62e9e506c1` adds reviewed dependency
+ancestry and pins real commonUtils `6c2d5dc93777e1cd79b3e6da1585efbd38d5a2e1`.
+The root `3e4cafb` checkout retains its earlier commonUtils pin; that candidate
+integration has not landed there. Before the quiet interruption, 91 manager
+modules reported 643 passing cases with zero failures. Ten modules remain pending
+after the hold: this is **not a completed full-suite pass**.
+
+Candidate-bound Logistics compatibility passed 98 cases across eight modules on
+consumer `6f5907a39f8a8f49e7499c31ffa1152207f9c7b6`, using its own interpreter
+and commonUtils with stable source inputs. Synthetic native macOS Cocoa
+layout/review/help checks passed 20 cases; shared privacy regressions passed
+three. These are earlier candidate checks, not tests rerun by this documentation
+audit. No new mobile build, live provider, VM/device, Windows/Linux GUI or
+screen-reader acceptance is established.
+
+Earlier dated results below remain historical acceptance for their recorded
+scope. A documentation or static-link pass does not extend native, provider or
+consumer acceptance.
+
 ## October 29 maintainability refactor
 
 Preparation now uses typed, headless workflow selections and normalized adapter

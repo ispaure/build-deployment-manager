@@ -174,6 +174,11 @@ native paths from unavailable platforms.
 
 ## Further reading
 
+- [Setup and launch](setup.md)
+- [Guided UI control reference](guided-ui.md)
+- [Configuration files, device catalogs and backup](configuration-files.md)
+- [Workflow review, retention and recovery](workflows.md)
+- [Host capabilities and mobile target limits](hosts.md)
 - [CLI for automation and AI agents](cli.md)
 - [Dedicated Fedora and Windows test machines](virtual-machines.md)
 

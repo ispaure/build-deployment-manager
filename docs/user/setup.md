@@ -2,8 +2,11 @@
 
 Use this guide to open the manager from a Git checkout. You need Git, Python
 3.12.2 and uv, plus internet access for packages not already cached. The GUI
-requires a graphical desktop. Project SDKs and provider accounts are needed only
-for the project operations that use them.
+requires a graphical desktop on macOS, Linux or Windows. There is no Android or
+iOS manager application: mobile platforms are project build/test/install targets
+controlled from a supported desktop host. See [host capabilities](hosts.md) for
+the target and host combinations currently available. Project SDKs and provider
+accounts are needed only for the project operations that use them.
 
 Run commands from the **build-deployment-manager repository root**, the folder
 containing this README and the platform launchers. The commands below create the

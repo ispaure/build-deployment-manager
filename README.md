@@ -6,6 +6,8 @@ Start with the [documentation wiki](docs/docs.md), [setup](docs/user/setup.md), 
 [adapter contract](docs/development/adapters.md). Python 3.12.2 and a pinned commonUtils Git
 submodule are required. The headless engine has no Qt dependency; the local GUI
 environment is locked separately. Projects retain their own environments.
+The GUI runs on desktop hosts; iOS and Android are project targets, with
+[host-specific availability](docs/user/hosts.md), rather than manager apps.
 
 Use the platform launcher to open the GUI and register a trusted project checkout.
 Adding it authorizes its adapter to run in that project's interpreter.
