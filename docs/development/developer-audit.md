@@ -33,8 +33,10 @@ project commonUtils and immutable SDK roots in both import orders; source,
 dependency pin and checkout status remain unchanged. This supersedes the earlier
 130-case consumer receipt for SDK `5d068f4` without qualifying later source or the
 complete 115-module SDK/hosted pipeline. Full hosted and native acceptance remain
-separate. The dated observations below describe their original snapshots rather
-than today's registration or dependency state.
+separate. A separate Fedora run at Logistics `c5bd805` / SDK `8ad92eb` / commonUtils
+`66b9eed` passes all 115 SDK modules; Windows and macOS full-suite qualification
+remain pending at that checkpoint. The dated observations below describe their
+original snapshots rather than today's registration or dependency state.
 
 The separate [Fedora inspector follow-up](validation.md#november-4-fedora-inspector-containment-follow-up)
 reproduces the exact 43-pixel pressure failure and verifies the candidate across
