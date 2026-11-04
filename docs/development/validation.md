@@ -94,7 +94,7 @@ and exception. Only a matching Windows deletion failure for the exact owned,
 non-reparse private interpreter starts a three-second isolated diagnostic child.
 Its bounded metadata includes Windows version/architecture, executable hashes/build
 provenance, file attributes and Restart Manager owner identities or explicit query errors.
-No diagnostic query runs on success, and failures are never retried or suppressed. Eight portable
+No diagnostic query runs on success. At that revision failures were never retried or suppressed. Eight portable
 diagnostic checks and all 23 existing tooling/retained-delivery fixture methods
 pass; the latter require OS process-inventory access. These diagnostics have not
 yet established a cleanup cause or fix.
@@ -110,6 +110,37 @@ Exact-runtime process/job/image lifetime measurement remains required before
 changing cleanup policy. The hosted SDK aggregate also exhausts its 600-second
 budget while modules continue making progress; that timeout is separate from
 the two cleanup errors. No complete hosted SDK pass is claimed.
+
+A later managed Windows diagnostic uses the exact hosted PSF CPython 3.12.2
+base executable and freshly generated venv executable hashes. The unmodified
+bootstrap fixture reproduces its cleanup error; the retained-delivery fixture
+passes in that run. A separate timing-altered topology diagnostic observes every
+known child in the SDK job, zero active members after the original wait, and
+successful job/root handle closes before the first failed deletion. This narrows
+the investigation without establishing an OS cause; the managed and hosted
+Windows kernel builds still differ.
+
+The private-interpreter fixture helper now captures and logs the first failure
+before reusing the existing three-second owned-tree cleanup policy for Windows
+errors 5, 32 and 33. Recovery requires the exact private interpreter path,
+non-reparse ancestors and unchanged directory/file identities after diagnosis.
+It logs the bounded outcome; unknown ownership, other errors and persistent
+locks preserve the original exception and cause. This is a test-fixture policy
+alignment, with no change to production transport or interpreter isolation.
+The diagnostic child has its own three-second bound before the existing
+three-second removal policy; the combined failure path is not a three-second limit.
+Portable checks exercise these recovery and rejection contracts. The matched-runtime
+Windows qualification passes both original project fixture methods and all 13
+helper contracts. The bootstrap fixture first reproduces error 5, captures its
+evidence, then records successful bounded removal; the retained-delivery fixture
+passes without recovery in that run. Separate creation-only, ordinary subprocess
+and minimal SDK subprocess controls each attempt original cleanup once. Creation-only
+cleanup succeeds; both subprocess controls fail with error 5. This establishes
+that the failure also occurs outside SDK transport, without identifying an OS
+cause or making a passing sample proof against intermittency. All owned job trees
+retire and private guest paths are removed, with the VM's original running state
+preserved. The original failing baseline and control failures remain archived;
+no complete hosted SDK pass is claimed.
 
 ## November 4 hosted Fedora contract follow-up
 

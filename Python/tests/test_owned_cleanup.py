@@ -1,4 +1,6 @@
-"""Cleanup diagnostics cannot mask, repeat or pre-delay original fixture cleanup."""
+"""Owned fixture recovery preserves first-failure evidence and fails closed."""
+from contextlib import redirect_stderr
+from io import StringIO
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -18,38 +20,126 @@ class OwnedCleanupTests(unittest.TestCase):
         temporary.cleanup.assert_called_once_with()
         diagnostic.assert_not_called(); guard.assert_not_called()
 
-    def test_original_error_survives_metadata_timeout_and_bad_serialization(self):
-        for result in ({'resource_owners': {'query_error': 5}}, object(), TimeoutError(),
-                       json.JSONDecodeError('invalid', '', 0)):
+    def test_known_windows_errors_capture_evidence_before_existing_bounded_policy(self):
+        for code in (5, 32, 33):
+            with self.subTest(code=code), TemporaryDirectory() as folder:
+                root = Path(folder).resolve()
+                target = root / '.venv/Scripts/python.exe'
+                target.parent.mkdir(parents=True); target.write_bytes(b'fixture')
+                error = PermissionError(13, 'denied', str(target)); error.winerror = code
+                temporary = SimpleNamespace(name=str(root), cleanup=Mock(side_effect=error))
+                events, log = [], StringIO()
+                def diagnose(*args):
+                    events.append('diagnose')
+                    return {'resource_owners': {'query_error': 0, 'owners': []}}
+                from build_manager.retention import remove_tree
+                def recover(path):
+                    events.append('remove')
+                    self.assertIn('first_failure', log.getvalue())
+                    self.assertTrue(target.exists())
+                    remove_tree(path)
+                with patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
+                        patch.object(owned_cleanup, '_diagnose_failure', side_effect=diagnose), \
+                        patch('build_manager.retention.remove_tree', side_effect=recover) as removal, \
+                        redirect_stderr(log):
+                    self.assertIsNone(owned_cleanup.cleanup_private_interpreter(temporary))
+                self.assertEqual(events, ['diagnose', 'remove'])
+                temporary.cleanup.assert_called_once_with(); removal.assert_called_once_with(root)
+                self.assertFalse(root.exists())
+                receipts = [json.loads(line.split(': ', 1)[1]) for line in log.getvalue().splitlines()]
+                self.assertEqual(receipts[0]['winerror'], code)
+                self.assertEqual(receipts[0]['errno'], 13)
+                self.assertEqual(receipts[0]['failed_path'], str(target))
+                self.assertEqual(receipts[1], dict(stage='bounded_outcome', outcome='removed', policy_seconds=3))
+                self.assertIn('Private interpreter cleanup evidence:', error.__notes__[0])
+
+    def test_persistent_or_unknown_recovery_failure_preserves_original_error_and_cause(self):
+        for failure in (PermissionError('persistent'), OSError('unknown')):
+            with self.subTest(failure=type(failure).__name__):
+                error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe'); error.winerror = 5
+                cause = RuntimeError('original cause'); error.__cause__ = cause
+                temporary = SimpleNamespace(name='/fixture', cleanup=Mock(side_effect=error))
+                with patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
+                        patch.object(owned_cleanup, '_owned_fixture_identity', return_value=('identity',)), \
+                        patch.object(owned_cleanup, '_diagnose_failure', return_value={'evidence': 'first'}), \
+                        patch('build_manager.retention.remove_tree', side_effect=failure) as removal, \
+                        redirect_stderr(StringIO()) as log:
+                    with self.assertRaises(PermissionError) as caught:
+                        owned_cleanup.cleanup_private_interpreter(temporary)
+                self.assertIs(caught.exception, error); self.assertIs(error.__cause__, cause)
+                removal.assert_called_once(); temporary.cleanup.assert_called_once_with()
+                self.assertIn('"outcome": "failed"', log.getvalue())
+                self.assertIn('Private interpreter cleanup outcome:', error.__notes__[-1])
+
+    def test_metadata_failure_is_captured_before_persistent_recovery_failure(self):
+        for result in (object(), TimeoutError(), json.JSONDecodeError('invalid', '', 0)):
             with self.subTest(result=type(result).__name__):
-                error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe')
-                error.winerror = 5
+                error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe'); error.winerror = 5
                 temporary = SimpleNamespace(name='/fixture', cleanup=Mock(side_effect=error))
                 diagnostic = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
                 with patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
-                        patch.object(owned_cleanup, '_owned_executable', return_value=True), \
-                        patch.object(owned_cleanup, '_diagnose_failure', diagnostic):
+                        patch.object(owned_cleanup, '_owned_fixture_identity', return_value=('identity',)), \
+                        patch.object(owned_cleanup, '_diagnose_failure', diagnostic), \
+                        patch('build_manager.retention.remove_tree', side_effect=PermissionError('locked')), \
+                        redirect_stderr(StringIO()):
                     with self.assertRaises(PermissionError) as caught:
                         owned_cleanup.cleanup_private_interpreter(temporary)
                 self.assertIs(caught.exception, error)
-                temporary.cleanup.assert_called_once_with()
-                diagnostic.assert_called_once_with(temporary.name, error.filename)
-                self.assertIn('Private interpreter cleanup evidence:', error.__notes__[0])
-                json.loads(error.__notes__[0].split(': ', 1)[1])
+                temporary.cleanup.assert_called_once_with(); diagnostic.assert_called_once()
+                self.assertIn('error', json.loads(error.__notes__[0].split(': ', 1)[1]))
 
-    def test_other_platforms_errors_and_foreign_paths_do_not_query_owners(self):
-        for system, code, owned in [('posix', 5, True), ('nt', 32, True), ('nt', 5, False)]:
-            with self.subTest(system=system, code=code, owned=owned):
+    def test_other_platforms_unknown_errors_and_unowned_paths_never_recover(self):
+        for system, code, identity in [('posix', 5, True), ('nt', 87, True), ('nt', 5, False)]:
+            with self.subTest(system=system, code=code, identity=identity):
                 error = PermissionError(13, 'denied', '/unowned/python.exe'); error.winerror = code
                 temporary = SimpleNamespace(name='/fixture', cleanup=Mock(side_effect=error))
                 with patch.object(owned_cleanup, 'os', SimpleNamespace(name=system)), \
-                        patch.object(owned_cleanup, '_owned_executable', return_value=owned), \
-                        patch.object(owned_cleanup, '_diagnose_failure') as diagnostic:
+                        patch.object(owned_cleanup, '_owned_fixture_identity', side_effect=None if identity else ValueError('unowned')), \
+                        patch.object(owned_cleanup, '_diagnose_failure') as diagnostic, \
+                        patch('build_manager.retention.remove_tree') as removal:
                     with self.assertRaises(PermissionError) as caught:
                         owned_cleanup.cleanup_private_interpreter(temporary)
                 self.assertIs(caught.exception, error)
                 temporary.cleanup.assert_called_once_with()
-                diagnostic.assert_not_called()
+                diagnostic.assert_not_called(); removal.assert_not_called()
+
+    def test_changed_or_unknown_identity_after_evidence_prevents_recovery(self):
+        for second in (('replaced',), OSError('missing')):
+            error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe'); error.winerror = 5
+            temporary = SimpleNamespace(name='/fixture', cleanup=Mock(side_effect=error))
+            with self.subTest(second=second), \
+                    patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
+                    patch.object(owned_cleanup, '_owned_fixture_identity', side_effect=[('original',), second]), \
+                    patch.object(owned_cleanup, '_diagnose_failure', return_value={}), \
+                    patch('build_manager.retention.remove_tree') as removal, redirect_stderr(StringIO()):
+                with self.assertRaises(PermissionError) as caught:
+                    owned_cleanup.cleanup_private_interpreter(temporary)
+            self.assertIs(caught.exception, error); removal.assert_not_called()
+
+    def test_unrecordable_first_failure_never_starts_recovery(self):
+        error = PermissionError(13, 'denied', '/fixture/.venv/Scripts/python.exe'); error.winerror = 5
+        temporary = SimpleNamespace(name='/fixture', cleanup=Mock(side_effect=error))
+        with patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
+                patch.object(owned_cleanup, '_owned_fixture_identity', return_value=('identity',)), \
+                patch.object(owned_cleanup, '_diagnose_failure', return_value={}), \
+                patch.object(owned_cleanup, '_cleanup_receipt', side_effect=OSError('log unavailable')), \
+                patch('build_manager.retention.remove_tree') as removal:
+            with self.assertRaises(PermissionError) as caught:
+                owned_cleanup.cleanup_private_interpreter(temporary)
+        self.assertIs(caught.exception, error); removal.assert_not_called()
+
+    def test_removal_without_verified_absence_still_raises_original(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder).resolve(); target = root / '.venv/Scripts/python.exe'
+            target.parent.mkdir(parents=True); target.write_bytes(b'fixture')
+            error = PermissionError(13, 'denied', str(target)); error.winerror = 5
+            temporary = SimpleNamespace(name=str(root), cleanup=Mock(side_effect=error))
+            with patch.object(owned_cleanup, 'os', SimpleNamespace(name='nt')), \
+                    patch.object(owned_cleanup, '_diagnose_failure', return_value={}), \
+                    patch('build_manager.retention.remove_tree') as removal, redirect_stderr(StringIO()):
+                with self.assertRaises(PermissionError) as caught:
+                    owned_cleanup.cleanup_private_interpreter(temporary)
+            self.assertIs(caught.exception, error); removal.assert_called_once_with(root)
 
     def test_resource_query_errors_are_not_reported_as_empty_owners(self):
         library = Mock()
