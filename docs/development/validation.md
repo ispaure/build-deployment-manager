@@ -7,6 +7,32 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 hosted Fedora contract follow-up
+
+The hosted failure report for SDK `0d08194` identified a missing host `ps` utility,
+an unsupported-project tooling menu entry and a tamper fixture that did not
+forward the executor's `launch` keyword. The SDK now checks process inventory
+before launching any POSIX adapter, with an actionable host-prerequisite error;
+the Fedora image owner supplies `procps-ng`. No cleanup check is bypassed.
+Legacy and command-only projects keep their original menu unless they opt into
+tooling status. The tamper fixture forwards execution metadata while retaining
+its changed-package and no-provider-effect assertions.
+
+All 43 affected UI/onboarding/tooling checks pass on both the manager's pinned
+Qt 6.10 environment and a separate cached Qt 6.12 environment, run sequentially.
+Seventy-four headless lifecycle, bridge, bootstrap, retained-delivery and CLI
+cases also pass. The settings-loading case passes with inventory available,
+supporting the original failure as an inventory cascade.
+
+The hosted small-viewport failure remains unreproduced locally. The exact
+Qt 6.12 probe records Fusion, Sans Serif at 14 points and 96 DPI, with the blocker
+inside every ancestor. Its production layout and strict containment condition
+are unchanged; failure diagnostics now include actual bounds and Qt/style/font/
+DPI for the next owning Fedora run. This is local compatibility evidence, not a
+passing Fedora rerun or native platform acceptance. The temporary Qt 6.12
+environment was removed after preserving package and geometry evidence; existing
+manager/project environments and immutable release attempts were untouched.
+
 ## November 4 project tooling bootstrap route
 
 The optional read-only tooling check and explicitly confirmed update route are

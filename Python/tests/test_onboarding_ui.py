@@ -128,6 +128,7 @@ class OnboardingUITests(unittest.TestCase):
             window = ManagerWindow(registry)
             try:
                 self.assertEqual(window.projects.currentText(), 'Commands')
+                self.assertNotIn('Project tooling…', window.menu_actions)
                 self.assertFalse(window.menu_actions['Check connections and settings…'].isEnabled())
                 self.assertTrue(window.menu_actions['Manage build storage…'].isEnabled())
                 # Manager-owned retained runs are available without adapter storage actions.

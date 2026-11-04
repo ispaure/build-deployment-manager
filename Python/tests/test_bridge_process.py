@@ -125,6 +125,14 @@ else:
 
 
 class BridgeOwnershipUnitTests(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'POSIX host prerequisite')
+    def test_missing_host_inventory_prevents_any_adapter_launch(self):
+        with patch.object(bridge_process, 'session_groups', side_effect=OSError('missing ps')), \
+                patch.object(bridge_process.subprocess, 'Popen') as launch:
+            with self.assertRaisesRegex(ValueError, 'host ps utility'):
+                bridge_process.run(['project-python', 'bridge.py'], '{}', cwd='.', env={},
+                                   timeout=1, cancelled=lambda: False)
+            launch.assert_not_called()
     def windows_accounting(self, values):
         from build_manager.windows_process import WindowsProcess
         process = object.__new__(WindowsProcess)
