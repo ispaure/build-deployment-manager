@@ -95,7 +95,8 @@ class WindowsEvidenceTests(unittest.TestCase):
         for patch_record in (dict(token='other'), dict(operation='other'), dict(invocation='old'), dict(exit=True)):
             record = dict(exit=0, token='token', operation='operation', invocation='current')
             record.update(patch_record)
-            with self.assertRaises(ValueError): guest.completion_code(record, 'current')
+            with self.assertRaises(ValueError):
+                guest.completion_code(record, 'current')
 
     def test_accepted_worker_can_finish_after_transport_disconnect(self):
         import time
@@ -174,10 +175,12 @@ class WindowsEvidenceTests(unittest.TestCase):
             self.assertEqual(call.call_count, 2)
             self.assertEqual(call.call_args_list[0], call.call_args_list[1])
         with patch.object(guest, 'call', side_effect=transient) as call, patch('build_manager.windows_guest.time.sleep'):
-            with self.assertRaises(RuntimeError): guest.remove_paths(['reports-operation'])
+            with self.assertRaises(RuntimeError):
+                guest.remove_paths(['reports-operation'])
             self.assertEqual(call.call_count, 3)
         with patch.object(guest, 'call', side_effect=RuntimeError('Workspace ownership mismatch')) as call:
-            with self.assertRaisesRegex(RuntimeError, 'ownership'): guest.remove_paths(['reports-operation'])
+            with self.assertRaisesRegex(RuntimeError, 'ownership'):
+                guest.remove_paths(['reports-operation'])
             self.assertEqual(call.call_count, 1)
 
     def fixture(self, name):
