@@ -40,6 +40,28 @@ plus the descriptor's suites, run fields and combined journey capability. It doe
 not execute project code. `inputs` explicitly queries the trusted adapter for
 non-secret defaults and dynamic choices, such as device IDs.
 
+If automatic storage maintenance reports a stale registration, inspect the current
+adapter before explicitly refreshing its recorded identity:
+
+```sh
+build-manager inspect REGISTRATION_ID
+build-manager show-plan /path/to/retained-plan.json
+build-manager trust REGISTRATION_ID
+```
+
+Compare the current descriptor digest and project ID with the plan's `adapter`
+identity before using `trust` for retained work. Use the same `--registry` directory
+for every command. `trust` records the reviewed descriptor; it does not execute
+maintenance or change any retained phase outcome. A changed adapter cannot be
+approved for an old plan by refreshing registration: restore and review the
+original adapter or prepare a fresh plan. Do not replay a workload solely to clear
+a maintenance warning. Use the storage inventory and explicit cleanup commands
+below when cleanup is needed independently.
+
+In the window, **More → Add project** lets you review and add the same registered
+checkout again with its existing registration name to refresh its recorded
+descriptor. Review the displayed checkout and descriptor before adding it; existing unknown run outcomes remain unchanged.
+
 Use the IDs and case-sensitive names returned by discovery. Omitting `--project`
 uses the selected registration. Put `--registry /private/config` **before** the
 command to use a separate manager configuration directory.

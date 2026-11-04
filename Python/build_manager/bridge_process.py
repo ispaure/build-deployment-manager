@@ -55,34 +55,74 @@ def signal_session(session, groups, sig):
                 continue
 
 
+def teardown_receipt(process, stage, error, groups, *, session_verified_empty=False):
+    """Bounded owned-process metadata only; exception text may contain secrets."""
+    pid = getattr(process, 'pid', None)
+    pid = pid if type(pid) is int else None
+    members = [dict(pid=member, pgid=group) for group, values in groups.items() for member in values]
+    code = process.returncode if type(process.returncode) is int else None
+    return dict(schema=1, bridge_pid=pid, session_id=pid, stage=stage,
+                error_class=type(error).__name__, root_exit_code=code,
+                last_verified_owned_processes=members[:32], owned_process_count=len(members),
+                truncated=len(members) > 32, session_verified_empty=session_verified_empty,
+                ownership='incomplete', retry_safe=False)
+
+
+def teardown_failure(process, stage, error, *, session_verified_empty=False):
+    receipt = getattr(error, '_owned_bridge_receipt', None)
+    if receipt is None:
+        receipt = teardown_receipt(process, stage, error, {}, session_verified_empty=session_verified_empty)
+    failure = ValueError('Owned project bridge teardown failed; do not assume the operation stopped. '
+                        'Preserve this owned-session receipt for inspection; do not repeat the request: '
+                        + json.dumps(receipt, sort_keys=True))
+    failure.receipt = receipt
+    return failure
+
+
 def stop_session(process):
     """Retire every subgroup in the session created for this exact bridge."""
     deadline = time.monotonic() + STOP_GRACE
     signalled = set()
+    groups = {}
+    stage = 'session_inventory'
     try:
         while True:
+            stage = 'root_poll'
             process.poll()
+            stage = 'session_inventory'
             groups = session_groups(process.pid)
             if not groups:
                 break
+            stage = 'session_sigterm'
             signal_session(process.pid, {key: value for key, value in groups.items() if key not in signalled}, signal.SIGTERM)
             signalled.update(groups)
             if time.monotonic() >= deadline:
                 deadline = time.monotonic() + 5
                 while groups:
+                    stage = 'session_sigkill'
                     signal_session(process.pid, groups, signal.SIGKILL)
                     if time.monotonic() >= deadline:
+                        stage = 'session_verify_exit'
                         raise subprocess.TimeoutExpired(process.args, STOP_GRACE + 5)
                     time.sleep(.02)
+                    stage = 'root_poll'
                     process.poll()
+                    stage = 'session_inventory'
                     groups = session_groups(process.pid)
                 break
             time.sleep(.02)
+        stage = 'root_reap'
         process.wait(timeout=5)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as error:
         # Inventory failure cannot become a successful cancellation. Still stop
         # the known root group and give project cleanup its full lease window.
-        stop_process(process, grace=STOP_GRACE)
+        receipt = teardown_receipt(process, stage, error, groups,
+                                   session_verified_empty=stage == 'root_reap' and not groups)
+        try:
+            stop_process(process, grace=STOP_GRACE)
+        except (OSError, subprocess.SubprocessError) as fallback_error:
+            receipt['fallback_error_class'] = type(fallback_error).__name__
+        error._owned_bridge_receipt = receipt
         raise
 
 
@@ -115,11 +155,15 @@ def run(argv, payload, *, cwd, env, timeout, cancelled):
                 if process.poll() is not None:
                     break  # Descendant-held pipes must not conceal an exited bridge.
     finally:
+        session_verified_empty = False
+        stage = 'session_teardown'
         try:
             stop_session(process)
+            session_verified_empty = True
+            stage = 'pipe_drain'
             stdout, stderr = process.communicate(timeout=DRAIN_TIMEOUT)
         except (OSError, subprocess.SubprocessError) as error:
-            raise ValueError('Owned project bridge teardown failed; do not assume the operation stopped.') from error
+            raise teardown_failure(process, stage, error, session_verified_empty=session_verified_empty) from error
         finally:
             for stream in (process.stdin, process.stdout, process.stderr):
                 if stream is not None:
