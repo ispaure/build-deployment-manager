@@ -311,10 +311,40 @@ profile, commit source, publish or allocate a provider build number. Review and
 commit the edit before preparing a release plan. Unsupported adapters fail rather
 than receiving a guessed file edit.
 
+## Continue a ready delivery when another branch fails
+
+`status` and execution results include `continuation.completed_actions`,
+`pending_actions`, `failed_steps`, `unknown_steps` and `next_actions`. These expose
+individual outcomes even when the complete run fails. Suggested commands are
+argument arrays for inspection; reading status does not execute them.
+
 To continue reviewed independent deliveries without repeating failed checks, add
 `--no-retry-failed` to `resume`. Failed checks and their blocked consumers remain
 failed or skipped in the retained report; this option never approves a delivery
 or bypasses its dependencies.
+
+After inspecting the prepared files and destinations with `review`, authorize
+specific pending steps directly, without constructing approval JSON or copying
+digests:
+
+```sh
+build-manager review /path/to/run
+build-manager resume /path/to/run --confirm --no-retry-failed --approve-step READY_STEP
+```
+
+Repeat `--approve-step` for distinct selected actions. The manager verifies their
+retained prerequisite files and binds approvals internally; changed files,
+unknown outcomes, completed steps and unrelated blocked deliveries are rejected.
+The explicit `--approval-identity STEP=SHA256` interface remains available; do not
+combine both forms for the same step. Engine changes still require their separate
+explicit review. The overall run and CLI exit remain failed if another required
+branch failed, even when this selected delivery succeeds. Read its step outcome
+and receipt rather than treating the aggregate failure as a failed delivery.
+
+In the GUI, **Continue ready delivery…** opens the same scoped review. Leave
+**Retry failed checks and their blocked steps** unchecked to preserve those
+branches, or explicitly select it to retry them. Saved unknown external outcomes
+are never repeated automatically. Fresh run approval policy is unchanged.
 
 ## Scaffold and check a project
 

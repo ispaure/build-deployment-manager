@@ -163,12 +163,14 @@ def summarize_run_report(report, run_directory):
                 ('name', 'classname', 'status', 'message')} for case in failures[:20]]
             phase['failed_test_count'] = len(failures)
         phases.append(phase)
+    from .continuation_actions import continuation_guidance
     return dict(status=report['status'], project=report.get('project'), operation=report.get('operation'),
                 plan_identity=report.get('plan_identity'), seconds=report.get('seconds'),
                 error=str(report.get('error', ''))[-3000:], counts=dict(Counter(row['status'] for row in phases)),
                 phases=phases, output=str(run_directory),
                 report=str(run_directory / 'result.json'), retired=bool(report.get('retirement')),
-                storage_maintenance=report.get('storage_maintenance'))
+                storage_maintenance=report.get('storage_maintenance'),
+                continuation=continuation_guidance(report, run_directory))
 
 
 def summarize(report, output):
@@ -233,7 +235,7 @@ def review_run(output, *, cancelled=None):
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
              expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True,
-             maintenance=None):
+             maintenance=None, approve_steps=()):
     """Run a trusted Plan/path; reviewed identities authorize only matching pending steps.
 
     This call blocks until completion or review. Cancellation is a threading.Event.
@@ -245,13 +247,19 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
         raise ValueError('Plan identity changed; inspect the current plan before execution.')
     cancelled = cancelled or Event()
     identities = approval_identities or {}
+    if (not isinstance(approve_steps, (list, tuple))
+            or any(not isinstance(step, str) or not step for step in approve_steps)
+            or len(set(approve_steps)) != len(approve_steps)):
+        raise ValueError('Choose distinct named pending steps to approve.')
     if not isinstance(identities, dict) or any(not isinstance(key, str) or not isinstance(value, str)
                                              for key, value in identities.items()):
         raise ValueError('Approval identities must map step IDs to reviewed SHA256 strings.')
     if engine_review is not None and not resume:
         raise ValueError("Engine continuation review requires resume.")
     approvals = []
-    if identities and (not resume or not confirmed):
+    if set(approve_steps).intersection(identities):
+        raise ValueError('Choose named-step approval or a reviewed identity for each step, not both.')
+    if (identities or approve_steps) and (not resume or not confirmed):
         raise ValueError('Step approval needs resume and confirmation after artifact/destination review.')
     if resume:
         retained, previous = load_run(Path(output) / 'result.json')
@@ -260,11 +268,11 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
         recover_phase_records(plan, previous, cancelled=cancelled.is_set, preserve_unknown=True)
         pending = {row['id'] for row in previous['phases'] if row['status'] == 'awaiting_review'}
         external = {phase.id for phase in plan.phases if phase.effect in EXTERNAL}
-        for step, digest in identities.items():
+        for step in (*identities, *approve_steps):
             if step not in pending or step not in external:
                 raise ValueError('Approval must name a pending external step: ' + step)
             permission = approve(plan, step, previous, cancelled=cancelled.is_set)
-            if digest != permission.identity:
+            if step in identities and identities[step] != permission.identity:
                 raise ValueError('Reviewed artifact identity changed; inspect the current preparation.')
             approvals.append(permission)
     report = Executor(cancelled=cancelled, event=event).run(

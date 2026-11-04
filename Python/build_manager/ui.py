@@ -860,7 +860,13 @@ class ManagerPanel(QWidget):
             if not selected:
                 return
             approvals = continuation.approvals
-            if isinstance(selected, tuple):
+            from .continuation_actions import ContinuationSelection
+            retry_options = {}
+            if isinstance(selected, ContinuationSelection):
+                if selected.steps is not None:
+                    approvals = tuple(approval for approval in approvals if approval.step in selected.steps)
+                retry_options['retry_failed'] = selected.retry_failed
+            elif isinstance(selected, tuple):
                 approvals = tuple(approval for approval in approvals if approval.step in selected)
             # The CLI verifies these exact identities again, after the dialog.
             self.plan, self.result = plan, result
@@ -871,7 +877,7 @@ class ManagerPanel(QWidget):
             self.set_busy(True)
             self.session.launch(self.project.interpreter, result.parent / 'plan.json', result.parent,
                                 resume=True, confirmed=confirmed, approvals=approvals,
-                                engine_review=engine_change['identity'] if engine_change else None)
+                                engine_review=engine_change['identity'] if engine_change else None, **retry_options)
         except (OSError, ValueError, RuntimeError, KeyError, TypeError) as error:
             self.status.setText(self.redact(str(error)))
 
@@ -899,10 +905,17 @@ class ManagerPanel(QWidget):
         cards = approval_cards(plan_view, self.redacted_data(previous), steps,
             self.redacted_data(getattr(self.project, 'run_fields', ())), previews)
         source = captured_choices(plan_view)[0][1]
-        dialog = EffectReviewDialog('\n'.join(lines), self, steps=steps, cards=cards, source=source)
+        failed = any(row['status'] in {'failed', 'skipped', 'cancelled', 'timeout', 'interrupted'}
+                     for row in previous['phases'])
+        dialog = EffectReviewDialog('\n'.join(lines), self, steps=steps, cards=cards, source=source,
+                                    retry_failed=not bool(steps) if failed else None)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
-        return tuple(step for step, control in dialog.approvals.items() if control.isChecked()) if steps else True
+        selected = tuple(step for step, control in dialog.approvals.items() if control.isChecked()) if steps else None
+        if dialog.retry_failed is not None:
+            from .continuation_actions import ContinuationSelection
+            return ContinuationSelection(selected, dialog.retry_failed.isChecked())
+        return selected if steps else True
 
     def read_json_evidence_preview(self, path):
         from pathlib import Path
@@ -1207,10 +1220,8 @@ class ManagerPanel(QWidget):
             self.resumable = not report.get('retirement') and report['status'] in {'awaiting_review', 'failed', 'cancelled', 'unknown'}
             self.continue_run.setEnabled(self.resumable)
             self.continue_run.setVisible(self.resumable)
-            self.continue_run.setText('Review and start GitHub checks…' if report['status']=='awaiting_review' and any(
-                row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in report['phases'])
-                else 'Continue independent steps…' if report['status'] == 'unknown'
-                else 'Review and continue delivery…' if report['status'] == 'awaiting_review' else 'Retry unfinished steps…')
+            from .continuation_actions import continuation_label
+            self.continue_run.setText(continuation_label(report))
             self.update_run_actions()
             self.open_results.setEnabled(True)
             self.stages.setCurrentIndex(2)
@@ -1317,10 +1328,8 @@ class ManagerPanel(QWidget):
         self.resumable = status in {'awaiting_review', 'failed', 'cancelled', 'unknown'} and bool(self.result and self.result.is_file())
         self.continue_run.setEnabled(self.resumable)
         self.continue_run.setVisible(self.resumable)
-        self.continue_run.setText('Review and start GitHub checks…' if status=='awaiting_review' and any(
-            row.get('effect')=='dispatch' and row['status']=='awaiting_review' for row in self.run_view.facts.values())
-            else 'Continue independent steps…' if status == 'unknown'
-            else 'Review and continue delivery…' if status == 'awaiting_review' else 'Retry unfinished steps…')
+        from .continuation_actions import continuation_label
+        self.continue_run.setText(continuation_label(dict(status=status, phases=list(self.run_view.facts.values()))))
         self.update_run_actions()
         self.refresh_history()
         next_action = ' Review and continue this run to approve prepared delivery.' if status == 'awaiting_review' else ''

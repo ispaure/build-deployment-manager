@@ -214,7 +214,12 @@ print(json.dumps(dict(schema=1, result=result)))
         digest = self.invoke('review', output)['approvals'][0]['identity']
         self.invoke('resume', output, '--no-retry-failed', '--confirm', '--approval-identity', 'deliver=wrong', code=1)
         self.assertFalse(delivered.exists())
-        result = self.invoke('resume', output, '--no-retry-failed', '--confirm', '--approval-identity', 'deliver=' + digest, code=1)
+        guidance = self.invoke('status', output)['continuation']
+        self.assertEqual(guidance['pending_actions'], ['deliver'])
+        command = next(row['argv'] for row in guidance['next_actions'] if row['id'] == 'continue-ready')
+        self.assertIn('--no-retry-failed', command)
+        self.assertIn('--approve-step', command)
+        result = self.invoke(*command[1:], code=1)
         self.assertEqual(result['status'], 'failed')
         self.assertTrue(delivered.exists())
         self.assertEqual(failed_marker.read_text(), 'x')
@@ -224,6 +229,29 @@ print(json.dumps(dict(schema=1, result=result)))
         self.invoke('resume', output, '--no-retry-failed', code=1)
         self.assertEqual(failed_marker.read_text(), 'x')
         self.assertEqual(self.invoke('review', output)['approvals'], [])
+
+    def test_named_pending_approval_verifies_inputs_and_rejects_ambiguous_scope(self):
+        artifact, delivered = self.root / 'candidate', self.root / 'delivered'
+        plan, path = self.plan(
+            self.phase('prepare', f'from pathlib import Path; Path({str(artifact)!r}).write_text("candidate")',
+                       artifacts=(str(artifact),)),
+            self.phase('deliver', f'from pathlib import Path; Path({str(delivered)!r}).touch()',
+                       dependencies=('prepare',), effect='upload'))
+        output = self.root / 'named-approval'
+        self.invoke('run', path, '--output', output, code=3)
+        for arguments in [('--approve-step', 'deliver'),
+                ('--confirm', '--approve-step', 'missing'),
+                ('--confirm', '--approve-step', 'prepare'),
+                ('--confirm', '--approve-step', 'deliver', '--approve-step', 'deliver'),
+                ('--confirm', '--approve-step', 'deliver', '--approval-identity', 'deliver=wrong')]:
+            self.invoke('resume', output, *arguments, code=1)
+            self.assertFalse(delivered.exists())
+        artifact.write_text('tampered')
+        self.invoke('resume', output, '--confirm', '--approve-step', 'deliver', code=1)
+        self.assertFalse(delivered.exists())
+        artifact.write_text('candidate')
+        self.assertEqual(self.invoke('resume', output, '--confirm', '--approve-step', 'deliver')['status'], 'passed')
+        self.invoke('resume', output, '--confirm', '--approve-step', 'deliver', code=1)
 
     def test_changed_artifact_and_unknown_effect_cannot_be_retried(self):
         artifact = self.root / 'candidate'
@@ -246,6 +274,8 @@ print(json.dumps(dict(schema=1, result=result)))
         after = self.invoke('status', output, '--full')
         self.assertEqual(after['phases'], before['phases'])
         self.assertEqual(self.invoke('review', output)['unresolved_steps'], ['deliver'])
+        self.invoke('resume', output, '--confirm', '--approve-step', 'deliver', code=1)
+        self.assertEqual(self.invoke('status', output, '--full')['phases'], after['phases'])
 
     def test_external_plan_needs_confirmation_before_creating_output(self):
         plan, path = self.plan(self.phase('external', 'pass'), effect='dispatch')

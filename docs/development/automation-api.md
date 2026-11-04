@@ -129,3 +129,14 @@ only that exact reviewed pair. The executor records a transition and retained
 phase IDs in `engine_history` after locked recovery verifies prior artifacts.
 Original phase results remain unchanged. Unknown external outcomes and pending
 artifact approvals retain their existing recovery requirements.
+
+`run_plan(..., resume=True, confirmed=True, approve_steps=('ready-step',),
+retry_failed=False)` verifies and binds only the named pending external actions.
+It avoids a caller-maintained approval JSON document. Duplicate, nonpending,
+unknown or overlapping named/identity scopes are rejected before execution;
+retained prerequisite bytes and engine changes keep their existing guards.
+Explicit `approval_identities` remains supported for clients retaining review
+digests. The compact report's additive `continuation` object exposes completed,
+pending, failed and unknown actions plus suggested command argument arrays.
+These are guidance, not authorization. A successful independent delivery leaves
+other failed required branches and the overall failed status unchanged.

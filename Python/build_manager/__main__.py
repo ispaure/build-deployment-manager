@@ -15,6 +15,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--confirm', action='store_true')
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--no-retry-failed', action='store_true',
+                        help='Resume independently ready work, preserving failed checks and blocked steps')
     parser.add_argument('--engine-review-identity', help='Explicitly reviewed old/current manager identity binding')
     parser.add_argument('--approval-identity', action='append', default=[], help='Reviewed STEP=SHA256 identity; rechecked before continuation')
     parser.add_argument('--approve-step', action='append', default=[])
@@ -59,7 +61,7 @@ def main():
                 raise ValueError('Reviewed artifact identity changed; inspect and approve the current preparation.')
         report = Executor(cancelled=cancelled, event=event).run(
             plan, args.output, confirmed=args.confirm, resume=args.resume, approvals=approvals,
-            engine_review=args.engine_review_identity)
+            engine_review=args.engine_review_identity, retry_failed=not args.no_retry_failed)
     except (OSError, ValueError, RuntimeError) as error:
         print(json.dumps(dict(type='error', error=str(error))), flush=True)
         return 1
