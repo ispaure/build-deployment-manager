@@ -315,23 +315,38 @@ if ($exists) {
         envelope = json.dumps(dict(archive=base64.b64encode(payload).decode(),
                                    runner=base64.b64encode(runner).decode())).encode()
         arguments = [workspace, token, digest, str(uid), str(gid), hashlib.sha256(runner).hexdigest()]
+        deadline = time.monotonic() + 210
+        def remaining():
+            value = deadline - time.monotonic()
+            if value <= 0:
+                raise RuntimeError('Source staging completion is unknown; preserve the owned workspace for recovery.')
+            return value
         for attempt in range(3):
             try:
-                self.execute(selector, ['python3', '-c', STAGE, *arguments], data=envelope, timeout=180)
+                self.execute(selector, ['python3', '-c', STAGE, *arguments], data=envelope,
+                             timeout=min(180, remaining()))
                 return digest
-            except RuntimeError as error:
-                transient = '(255)' in str(error) and any(message in str(error) for message in
-                    ('Invalid argument', 'Unable to open new session'))
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                transient = isinstance(error, subprocess.TimeoutExpired) or (
+                    '(255)' in str(error) and any(message in str(error) for message in
+                        ('Invalid argument', 'Unable to open new session')))
                 late_admission = attempt > 0 and 'FileExistsError' in str(error)
                 if not transient and not late_admission:
                     raise
-                # A lost session can precede admission or follow a completed
-                # extraction. Inspect the bound receipt instead of overwriting
-                # the workspace or assuming that the transfer did not run.
-                deadline = time.monotonic() + 30
+                # A timeout is also an unknown outcome. Reconcile the exact
+                # receipt before considering another deduplicated admission.
                 while True:
-                    state = json.loads(self.execute_idempotent(selector,
-                        ['python3', '-c', INSPECT_STAGE, *arguments], timeout=30))
+                    try:
+                        state = json.loads(self.execute(selector,
+                            ['python3', '-c', INSPECT_STAGE, *arguments], timeout=min(10, remaining())))
+                    except (RuntimeError, subprocess.TimeoutExpired) as observation:
+                        unknown = isinstance(observation, subprocess.TimeoutExpired) or (
+                            '(255)' in str(observation) and any(message in str(observation) for message in
+                                ('Invalid argument', 'Unable to open new session')))
+                        if not unknown:
+                            raise
+                        time.sleep(min(.2, remaining()))
+                        continue
                     if state.get('state') == 'complete':
                         expected = dict(token=token, archive_sha256=digest, uid=uid, gid=gid,
                                         runner_sha256=arguments[-1])
@@ -341,13 +356,11 @@ if ($exists) {
                     if state.get('state') == 'absent':
                         if attempt == 2:
                             raise error
-                        time.sleep(.5)
+                        time.sleep(min(.5, remaining()))
                         break
                     if state.get('state') != 'pending':
                         raise ValueError('Invalid source staging inspection state.')
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError('Source staging completion is unknown; preserve the owned workspace for recovery.') from error
-                    time.sleep(.2)
+                    time.sleep(min(.2, remaining()))
         raise RuntimeError('Source staging did not complete.')
 
     def collect(self, selector, workspace, token, destination):

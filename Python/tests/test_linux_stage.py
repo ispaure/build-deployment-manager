@@ -88,7 +88,7 @@ class LinuxStageTests(unittest.TestCase):
                 self.execute(selector, [*argv[:2], partial, *argv[3:]], **options)
                 raise RuntimeError(ERROR)
             return self.execute(selector, argv, **options)
-        with patch('build_manager.parallels.time.monotonic', side_effect=[0, 31]):
+        with patch('build_manager.parallels.time.monotonic', side_effect=[0, 0, 0, 211]):
             with self.assertRaisesRegex(RuntimeError, 'completion is unknown'):
                 self.stage(execute)
         self.assertEqual(self.executions, 1)
