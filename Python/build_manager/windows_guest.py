@@ -247,26 +247,41 @@ class WindowsGuest:
     def stage(self, folder, payload):
         values = dict(folder=folder, sha256=hashlib.sha256(payload).hexdigest())
         expected = dict(token=self.values['token'], operation=self.values['operation'], **values)
-        deadline = time.monotonic() + 30
+        # One total upload/reconciliation budget; slow uploads still leave a
+        # recovery window, while retries cannot each start another full budget.
+        deadline = time.monotonic() + 210
+        def remaining():
+            value = deadline - time.monotonic()
+            if value <= 0:
+                raise RuntimeError('Windows source staging completion is unknown; preserve workspace for recovery.')
+            return value
         for attempt in range(3):
             try:
-                state = json.loads(self.call(STAGE, values=values, data=payload, timeout=180))
-            except RuntimeError as error:
-                if '(255)' not in str(error) or not any(detail in str(error) for detail in LOST_JOB_ERRORS):
+                state = json.loads(self.call(STAGE, values=values, data=payload, timeout=min(180, remaining())))
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                if isinstance(error, RuntimeError) and ('(255)' not in str(error) or not any(
+                        detail in str(error) for detail in LOST_JOB_ERRORS)):
                     raise
                 state = None
             while True:
                 if state is None:
-                    state = json.loads(self.call_idempotent(STAGE_STATE, values=values))
+                    try:
+                        state = json.loads(self.call(STAGE_STATE, values=values, timeout=min(10, remaining())))
+                    except (RuntimeError, subprocess.TimeoutExpired) as error:
+                        if isinstance(error, RuntimeError) and ('(255)' not in str(error) or not any(
+                                detail in str(error) for detail in LOST_JOB_ERRORS)):
+                            raise
+                        time.sleep(min(.5, remaining()))
+                        continue
                 if state.get('state') == 'complete':
                     if any(state.get(key) != value for key, value in expected.items()):
                         raise RuntimeError('Windows source staging receipt identity mismatch.')
                     return
                 if state.get('state') == 'absent':
                     break
-                if state.get('state') != 'pending' or time.monotonic() >= deadline:
+                if state.get('state') != 'pending':
                     raise RuntimeError('Windows source staging completion is unknown; preserve workspace for recovery.')
-                time.sleep(.5)
+                time.sleep(min(.5, remaining()))
                 state = None
         raise RuntimeError('Windows source staging was not admitted after bounded recovery.')
 
