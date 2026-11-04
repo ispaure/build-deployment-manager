@@ -13,13 +13,22 @@ identifies missing offscreen fonts as the cause of both sizing failures. Publish
 SDK `5d068f4` supplies the existing Windows system font directory to contract
 children when no explicit directory or native platform was selected. All 40
 affected Windows cases pass through the actual runner with unchanged UI
-assertions. The two historical hosted interpreter-deletion errors remain
-unreproduced on the managed guest; no cleanup-policy fix or hosted rerun is
-claimed. Logistics passes 130 project-context compatibility cases against that
+assertions. The two historical hosted interpreter-deletion errors did not
+reproduce on the managed guest, but the matching natural hosted Windows job
+reproduces them with failure-only metadata. Their cause remains unresolved; no
+cleanup-policy fix is claimed. Logistics passes 130 project-context compatibility
+cases against that
 published SDK, with both private interpreters' dependency roots verified. Separate
-failure-only fixture diagnostics prepare the next planned hosted Windows job to
-retain actionable evidence. The dated observations below describe their original
+failure-only fixture diagnostics retain actionable evidence. The dated
+observations below describe their original
 snapshots rather than today's registration or dependency state.
+
+The separate [Fedora inspector follow-up](validation.md#november-4-fedora-inspector-containment-follow-up)
+reproduces the exact 43-pixel pressure failure and verifies the candidate across
+42 Fedora offscreen cases. It fixes ancestor overflow and stale task-row font
+minima while preserving strict containment, repair/caption visibility and manual
+split choices. These checks remain bound to the recorded source; the next full
+hosted gates and native mobile acceptance are separate.
 
 ## Scope and conclusion
 

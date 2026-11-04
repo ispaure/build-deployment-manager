@@ -1,7 +1,7 @@
 """One review map and a persistent, synchronized task/evidence inspector."""
 import shlex
 import json
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QHBoxLayout, QLabel, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
@@ -172,12 +172,18 @@ class ReviewPlanView(QWidget):
         self.scope_label.setWordWrap(True)
         self.scope_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.scope_label.setAccessibleName('Evidence scope')
+        self.blocking_key = ''
+        self.blocker = QPushButton('View blocking step')
+        self.blocker.clicked.connect(lambda: self.inspect_phase(self.blocking_key))
+        self.blocker.hide()
         # These captions share the bounded inspector header. Stacking them
-        # consumes another text line before the scrollable repair/details body.
+        # consumes another text line. Keep the repair alongside its task scope;
+        # scrolling evidence cannot make an overflowing ancestor pane visible.
         heading = QHBoxLayout()
         heading.setSpacing(8)
         heading.addWidget(self.selection_heading, 1)
         heading.addWidget(self.scope_label, 2)
+        heading.addWidget(self.blocker)
         side.addLayout(heading)
         self.inspector_tabs = EvidenceNavigator()
         self.inspector_tabs.setAccessibleName('Selected task details, command and complete plan')
@@ -192,11 +198,6 @@ class ReviewPlanView(QWidget):
         self.details_scroll.setWidget(details_body)
         self.inspector_tabs.addTab(self.details_scroll, 'Details')
         detail_side.addWidget(self.case_detail)
-        self.blocking_key = ''
-        self.blocker = QPushButton('View blocking step')
-        self.blocker.clicked.connect(lambda: self.inspect_phase(self.blocking_key))
-        self.blocker.hide()
-        detail_side.addWidget(self.blocker)
         self.context_info = QLabel()
         self.context_info.setWordWrap(True)
         self.context_info.setTextFormat(Qt.TextFormat.PlainText)
@@ -252,12 +253,55 @@ class ReviewPlanView(QWidget):
         for label, widget in [('Summary', self.overview), ('Dependencies', self.board), ('Data', self.plan_data)]:
             self.plan_tabs.addTab(widget, label)
         self.technical_section = self.plan_tabs
-        self.inspector_tabs.setMinimumHeight(140)
         self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([450, 550])
         self.splitter.setStretchFactor(0, 45)
         self.splitter.setStretchFactor(1, 55)
         layout.addWidget(self.splitter, 1)
+        self._task_size_timer = QTimer(self)
+        self._task_size_timer.setSingleShot(True)
+        self._task_size_targets = (self.tasks, self.tasks.header())
+        self._task_size_observer_active = False
+        self._connect_task_size_refresh()
+
+    def _connect_task_size_refresh(self):
+        if not self._task_size_observer_active:
+            self._task_size_timer.timeout.connect(self._refresh_task_minimum)
+            for target in self._task_size_targets:
+                target.installEventFilter(self)
+            self._task_size_observer_active = True
+
+    def _disconnect_task_size_refresh(self):
+        self._task_size_timer.stop()
+        if self._task_size_observer_active:
+            for target in self._task_size_targets:
+                target.removeEventFilter(self)
+            self._task_size_timer.timeout.disconnect(self._refresh_task_minimum)
+            self._task_size_observer_active = False
+
+    def _refresh_task_minimum(self):
+        self.size_task_list(False)
+
+    def eventFilter(self, watched, event):
+        if (watched in self._task_size_targets
+                and event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange)):
+            # Native header/row metrics settle after the application's font
+            # batch. Coalesce that batch without resetting a user's split.
+            self._task_size_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._connect_task_size_refresh()
+        self._task_size_timer.start(0)
+
+    def hideEvent(self, event):
+        self._disconnect_task_size_refresh()
+        super().hideEvent(event)
+
+    def closeEvent(self, event):
+        self._disconnect_task_size_refresh()
+        super().closeEvent(event)
 
     def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='', preview=True):
         self.plan, self.fields, self.summary = plan, fields, summary

@@ -7,6 +7,37 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 Fedora inspector containment follow-up
+
+The strict 43-pixel summary-pressure fixture reproduced the hosted failure on
+an owned Fedora 44 ARM64 guest using Python 3.12.2, Qt 6.12, Fusion, Noto Sans
+at 14 points and 96 DPI. Baseline SDK `50dacd0` / commonUtils `888872d` allocated
+109 pixels to the details pane while its evidence navigator forced a 140-pixel
+minimum. The repair control ended at pixel 112 of that pane. Its scroll viewport
+was 98 pixels high and already contained the 34-pixel button; the original
+`ensureWidgetVisible` call changed neither scroll value nor geometry. This was
+ancestor overflow. The task tree also retained a pre-font minimum of 40 pixels
+despite needing 58 for its current header, one row and frame.
+
+The candidate removes the fixed navigator floor while retaining its preferred
+size/stretch, places repair beside both persistent inspector captions and
+refreshes the native task minimum after font/style updates. Its owned deferred
+observer disconnects on hide/close and reconnects on show. It preserves manual
+split choices, caption text, button size and selection behavior. The dormant
+nested browser remains disconnected.
+
+A frozen candidate based on SDK `ffbc831` / commonUtils `64f9330` passes 42 cases
+across the complete blocker-card, review-workspace and balanced-workspace modules
+in separate interpreters on that guest. The same operation first reproduces the
+old strict failure. Existing 43-pixel pressure, all-ancestor containment, native
+task-row, detached 129-pixel pane and caption checks remain unchanged. Added
+coverage keeps an active repair and both long captions visible at 360/520 pixels,
+preserves the native button minimum and checks manual split and observer lifetime.
+The two-CPU operation completes in 14.829 seconds; all child groups are retired
+and the owned workspace is removed after evidence collection. The existing VM's
+running state and configuration are preserved. This is source-bound Fedora
+offscreen acceptance, not a new hosted aggregate or native Apple/Android pass.
+
 ## November 4 Windows offscreen fonts and interpreter cleanup
 
 SDK `5d068f47cb880bcb67eeee13915e0e8cb9ca6992`, with real commonUtils
@@ -47,15 +78,15 @@ project's real submodule and the manager to the immutable SDK source. This is
 consumer-contract evidence, not a mobile build or a change to active release
 interpreters, pins or PDF work.
 
-The two archived hosted `WinError 5` interpreter-deletion failures remain
-unreproduced. Both original tests pass without diagnostic hooks, and their full
+The two archived hosted `WinError 5` interpreter-deletion failures did not
+reproduce on the managed guest. Both original tests pass without diagnostic hooks,
+and their full
 modules pass above with immediate fixture cleanup. A separate instrumented run
 recorded empty owned jobs, closed root handles, normal file attributes and no
 Restart Manager resource owners before deletion. This does not establish a cause
 or a cleanup fix: the archived setup-python x64 distribution differs from the
 managed guest runtime. No retry, ignored cleanup error, containment relaxation or
-antivirus explanation was added. Matched hosted-toolchain evidence remains a
-separate acceptance gap. Raw attempts, provenance and cleanup receipts remain
+antivirus explanation was added. Raw attempts, provenance and cleanup receipts remain
 under ignored `test-results/`.
 
 Subsequent test-only diagnostics in `ab6e8e2` preserve the original cleanup call
@@ -66,8 +97,19 @@ provenance, file attributes and Restart Manager owner identities or explicit que
 No diagnostic query runs on success, and failures are never retried or suppressed. Eight portable
 diagnostic checks and all 23 existing tooling/retained-delivery fixture methods
 pass; the latter require OS process-inventory access. These diagnostics have not
-yet captured the hosted failure. The next already-planned alpha Windows job is
-the matched-toolchain acceptance route; no additional dispatch is implied.
+yet established a cleanup cause or fix.
+
+The subsequent natural hosted Windows job at Logistics `70b06169` / SDK
+`50dacd0` passes all 12 balanced-workspace cases, including the strict font/map
+and recipient sizing checks. It reproduces both interpreter-cleanup errors with
+the failure-only notes: ordinary file attributes and an empty Restart Manager
+owner list after failure. Those observations do not identify the cause. The
+host is Windows 11 ARM64 running AMD64 MSVC CPython 3.12.2; its build and launcher
+hashes differ from the managed guest's python-build-standalone distribution.
+Exact-runtime process/job/image lifetime measurement remains required before
+changing cleanup policy. The hosted SDK aggregate also exhausts its 600-second
+budget while modules continue making progress; that timeout is separate from
+the two cleanup errors. No complete hosted SDK pass is claimed.
 
 ## November 4 hosted Fedora contract follow-up
 
