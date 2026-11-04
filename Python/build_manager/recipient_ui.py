@@ -1,9 +1,10 @@
 """Generic checkable run recipients supplied by a project, without device access."""
 import json
 from PySide6.QtCore import Qt, Signal, QEvent
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QLineEdit, QPushButton
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QLineEdit, QPushButton
 
 from .run_fields import parse_multiselect_ids
+from .ui_components import WrappingLayout
 
 
 class RecipientPicker(QWidget):
@@ -19,7 +20,7 @@ class RecipientPicker(QWidget):
         self.setFocusProxy(self.items)
         self.items.itemChanged.connect(self.selection_changed)
         layout.addWidget(self.note); layout.addWidget(self.items)
-        row = QHBoxLayout(); self.manual = QLineEdit()
+        row = WrappingLayout(); self.manual = QLineEdit()
         self.manual.setPlaceholderText('Paired device ID / Android serial')
         self.manual.setAccessibleName('Add a specific device ID')
         self.add = QPushButton('Add ID'); self.reload = QPushButton('Reload saved devices')
@@ -27,7 +28,10 @@ class RecipientPicker(QWidget):
         self.reload.setToolTip('Reload saved device metadata. This does not scan or connect to devices.')
         self.add.clicked.connect(self.add_manual); self.reload.clicked.connect(self.reload_requested)
         self.manual.returnPressed.connect(self.add_manual)
-        layout.addWidget(QLabel('Add a paired device by ID'))
+        manual_label = QLabel('Add a paired device by ID')
+        manual_label.setWordWrap(True)
+        manual_label.setBuddy(self.manual)
+        layout.addWidget(manual_label)
         layout.addWidget(self.manual)
         row.addWidget(self.add); row.addWidget(self.reload); row.addStretch(); layout.addLayout(row)
         self.selected_count = QLabel('0 devices selected · saved metadata is not a connection check')
