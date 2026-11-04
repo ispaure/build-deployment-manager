@@ -131,7 +131,20 @@ class Executor:
         recorder = RunRecorder(output, report, plan.secret_environment, resume=resume)
         resources = HostResourceSlots(getattr(self, 'resource_directory', None))
         def execute(phase):
+            # The journal belongs to this operation attempt, not elapsed time or
+            # missing logs. Each worker writes only its own atomic record.
+            launch_state = 'unknown'
+            launch_record = phase.id + '.' + rows[phase.id]['operation_id'] + '.launch.json'
+            def record_launch(state):
+                nonlocal launch_state
+                from .profiles import save_json
+                # Fail closed if persistence itself fails at a launch boundary.
+                launch_state = 'unknown'
+                save_json(output / launch_record, dict(schema=1, phase=phase.id,
+                    operation_id=rows[phase.id]['operation_id'], state=state))
+                launch_state = state
             try:
+                record_launch('not_started')
                 from dataclasses import replace
                 from .workflows import transitive_dependency_ids
                 if phase.effect in EXTERNAL:
@@ -145,7 +158,7 @@ class Executor:
                     from .infrastructure_recovery import execute as recover_infrastructure
                     def run_attempt(command, directory):
                         if not phase.infrastructure_recovery:
-                            return self.run_phase(command, directory, plan.secret_environment)
+                            return self.run_phase(command, directory, plan.secret_environment, launch=record_launch)
                         first_event = True
                         def relay(value):
                             nonlocal first_event
@@ -161,14 +174,18 @@ class Executor:
                             if value.get('log'):
                                 value['log'] = str((directory / value['log']).relative_to(output.resolve()))
                             self.event(value)
-                        return self.run_phase(command, directory, plan.secret_environment, event=relay)
-                    return EvidenceCache(self.evidence_directory).reuse_or_run_phase(phase, output,
+                        return self.run_phase(command, directory, plan.secret_environment, event=relay, launch=record_launch)
+                    row = EvidenceCache(self.evidence_directory).reuse_or_run_phase(phase, output,
                         lambda: recover_infrastructure(phase, output, run_attempt,
                             cancelled=self.cancelled.is_set, event=self.event),
                         cancelled=self.cancelled.is_set)
             except (OSError, ValueError, RuntimeError, OperationCancelled) as error:
-                return dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() or isinstance(error, OperationCancelled) else 'failed',
-                            error=Redactor()(str(error)),seconds=0)
+                row = dict(id=phase.id,required=phase.required,status='cancelled' if self.cancelled.is_set() or isinstance(error, OperationCancelled) else 'failed',
+                           error=Redactor()(str(error)),seconds=0)
+            row.update(launch_state=launch_state, launch_record=launch_record)
+            if row['status'] != 'passed' and launch_state == 'not_started':
+                row['retryable'] = True
+            return row
         try:
             with ExitStack() as locks:
                 from .retention import lease
@@ -263,7 +280,8 @@ class Executor:
                                     pending.append(phase)
                                 elif phase.id in retry_history:
                                     row.update(retry_count=len(retry_history[phase.id]), retry_attempts=retry_history[phase.id])
-                                if effect in EXTERNAL and row['status'] != 'passed':
+                                if (effect in EXTERNAL and row['status'] != 'passed'
+                                        and row.get('launch_state') != 'not_started'):
                                     row['status'] = 'unknown'
                                 rows[phase.id] = row
                                 self.event(dict(type='phase', **row))
@@ -305,7 +323,7 @@ class Executor:
         self.event(dict(type='finished', status=report['status'], seconds=report['seconds']))
         return report
 
-    def run_phase(self, phase, output, secret_environment, *, event=None):
+    def run_phase(self, phase, output, secret_environment, *, event=None, launch=None):
         emit = self.event if event is None else event
         row = dict(id=phase.id, required=phase.required, kind=phase.kind,
                    started_at=timestamp(), status='running', log=phase.id + '.log')
@@ -403,12 +421,26 @@ class Executor:
                 emit(dict(type='phase', **row))
 
         try:
+            if launch is not None:
+                launch('launching')  # Durable intent must precede every constructor.
             if os.name == 'nt':
                 from .windows_process import WindowsProcess
+                # This constructor may fail after ResumeThread. Without explicit
+                # backend proof, even a constructor exception remains uncertain.
                 process = WindowsProcess(list(phase.argv), cwd=phase.cwd, env=environment)
             else:
-                process = subprocess.Popen(list(phase.argv), cwd=phase.cwd, env=environment,
-                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    process = subprocess.Popen(list(phase.argv), cwd=phase.cwd, env=environment,
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+                except OSError:
+                    # POSIX Popen reports failed creation/exec via its error pipe;
+                    # the requested executable has not run. Do not extend this
+                    # proof to arbitrary exceptions or other process backends.
+                    if launch is not None:
+                        launch('not_started')
+                    raise
+            if launch is not None:
+                launch('started')
             def read():
                 try:
                     while chunk := process.stdout.readline(16384):
