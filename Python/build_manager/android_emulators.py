@@ -59,13 +59,27 @@ class AndroidEmulator:
         if self.workspace.exists():
             raise ValueError('Select a fresh owned emulator workspace.')
         self.inspect(image)
+        from .locking import workspace_lock
+        from .registry import config_directory
+        # Console sockets cannot remain reserved while QEMU binds them. Keep
+        # competing manager launches out of that gap until readiness is verified.
+        with workspace_lock(config_directory() / 'locks/android-emulator-start.lock', timeout=600):
+            return self._start(image, model)
+
+    def _start(self, image, model):
+        if self.workspace.exists():
+            raise ValueError('Select a fresh owned emulator workspace.')
+        self.inspect(image)
         self.workspace.mkdir(parents=True)
         (self.workspace/'avds').mkdir()
         token = uuid4().hex
         name = 'build-manager-'+token
         # Reserve a free console/ADB pair until immediately before launch.
         selected = None
+        advertised = set(re.findall(r'^emulator-(\d+)\s', self.invoke('devices'), re.MULTILINE))
         for port in range(5580,5680,2):
+            if str(port) in advertised:
+                continue
             sockets = [socket.socket(),socket.socket()]
             try:
                 for channel, candidate in zip(sockets,(port,port+1)):
@@ -177,6 +191,11 @@ class AndroidEmulator:
                 deadline = time.monotonic()+5
                 while read_process_fingerprint(record['pid']) is not None and time.monotonic()<deadline:
                     time.sleep(.1)
+        except ValueError:
+            # Never send console commands to a serial owned by another AVD.
+            # A recorded process can still be retired by creation identity below.
+            if not record.get('pid'):
+                raise
         except (subprocess.SubprocessError, RuntimeError):
             pass  # Already stopped/startup failed; verify the owned PID below.
         if record.get('pid'):
@@ -193,7 +212,7 @@ class AndroidEmulator:
                     expected_fingerprint=record['process_started']
                     # Historical Mac records had only lstart; preserve them but
                     # also require the unique AVD token in the current command.
-                    if os.name!='nt' and isinstance(expected_fingerprint,str) and current.startswith(expected_fingerprint) and record['name'] in current:
+                    if os.name!='nt' and isinstance(expected_fingerprint,str) and current.split()[:5] == expected_fingerprint.split()[:5] and record['name'] in current:
                         expected_fingerprint=current
                     stop_owned_process(record['pid'],expected_fingerprint,token=record['name'])
                     deadline=time.monotonic()+5
