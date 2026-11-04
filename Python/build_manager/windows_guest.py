@@ -85,6 +85,16 @@ $target=OwnedPath $p.file
 [IO.File]::WriteAllBytes($target,$transportInput)
 '''
 
+WRITE_STATE = OWNED + r'''
+$target=OwnedPath $p.file
+$hash=$null
+if(Test-Path -LiteralPath $target -PathType Leaf){
+ if((Get-Item -LiteralPath $target).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Written file cannot be a reparse point'}
+ $hash=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+@{token=$p.token;operation=$p.operation;file=$p.file;sha256=$hash}|ConvertTo-Json -Compress
+'''
+
 RUN = OWNED + r'''
 $directory=OwnedPath $p.directory;$reports=OwnedPath $p.reports
 $null=New-Item -ItemType Directory -Path $reports -Force
@@ -286,7 +296,16 @@ class WindowsGuest:
         raise RuntimeError('Windows source staging was not admitted after bounded recovery.')
 
     def write(self, relative, data):
-        self.call_idempotent(WRITE, values=dict(file=relative), data=data)
+        try:
+            self.call_idempotent(WRITE, values=dict(file=relative), data=data)
+        except RuntimeError as error:
+            if '(255)' not in str(error) or not any(detail in str(error) for detail in LOST_JOB_ERRORS):
+                raise
+            record = json.loads(self.call_idempotent(WRITE_STATE, values=dict(file=relative)))
+            expected = dict(token=self.values['token'], operation=self.values['operation'],
+                            file=relative, sha256=hashlib.sha256(data).hexdigest())
+            if record != expected:
+                raise RuntimeError('Windows plan write completion is unverified; preserve workspace for recovery.') from error
 
     def run(self, python, argv, directory, reports, environment, cancelled, *, timeout, progress=None):
         invocation = uuid4().hex
