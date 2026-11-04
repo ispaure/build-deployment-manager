@@ -3,7 +3,7 @@ from dataclasses import replace
 import unittest
 
 from build_manager.models import Phase, Plan
-from build_manager.scheduling import can_consider_phase, skip_reason, final_status
+from build_manager.scheduling import can_consider_phase, defer_for_review, skip_reason, final_status
 
 
 def phase(name, **options):
@@ -27,6 +27,24 @@ class SchedulingDecisionTests(unittest.TestCase):
         self.assertEqual(skip_reason(dependent, failed, cancelled=False), 'dependency did not pass')
         for status in ('running', 'retrying'):
             self.assertFalse(self.ready(completion, rows={'check': {'status': status}}))
+
+    def test_review_deferral_propagates_but_failure_and_cancellation_remain_terminal(self):
+        rows = {'dispatch': {'status': 'awaiting_review'}, 'failed': {'status': 'failed'}}
+        dependent = phase('accept', dependencies=('dispatch',))
+        self.assertTrue(self.ready(dependent, rows=rows))
+        self.assertTrue(defer_for_review(dependent, rows, deferred=set(), cancelled=False))
+        chained = phase('report', dependencies=('accept',))
+        self.assertTrue(self.ready(chained, rows=rows, deferred={'accept'}))
+        self.assertTrue(defer_for_review(chained, rows, deferred={'accept'}, cancelled=False))
+        mixed = phase('blocked', dependencies=('failed', 'accept'))
+        self.assertFalse(defer_for_review(mixed, rows, deferred={'accept'}, cancelled=False))
+        self.assertEqual(skip_reason(mixed, rows, cancelled=False), 'dependency did not pass')
+        self.assertFalse(defer_for_review(dependent, rows, deferred=set(), cancelled=True))
+        self.assertEqual(skip_reason(dependent, rows, cancelled=True), 'cancelled')
+        cleanup = phase('cleanup', always=True, waits_for=('accept',))
+        self.assertTrue(self.ready(cleanup, rows=rows, deferred={'accept'}))
+        self.assertFalse(defer_for_review(cleanup, rows, deferred={'accept'}, cancelled=False))
+        self.assertEqual(skip_reason(cleanup, rows, cancelled=False), '')
 
     def test_cancellation_bypasses_retry_delay_but_keeps_cleanup_ownership(self):
         inspection = phase('inspect', effect='inspect', retry_exit_codes=(75,))
