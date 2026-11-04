@@ -1,6 +1,6 @@
 # Build Deployment Manager UI and UX audit brief
 
-**Status: Balanced workspace approved and implemented; final validation in progress. Reviewed 3 November 2026.**
+**Status: Balanced workspace approved and implemented; UI validation complete. Reviewed 3 November 2026.**
 
 The recommended direction is a calmer native desktop workspace with a clear
 sequence: choose intent, establish source, choose platforms and execution
@@ -36,6 +36,29 @@ checks were active and source was changing. The history-responsiveness fixture
 now holds its worker with an event, proving timer delivery before release. Final
 validation uses isolated interpreters and a fixed checkout for full manager and
 consumer acceptance. Raw per-module logs and captures remain ignored evidence.
+
+### Recorded UI acceptance
+
+Per-module portable results cover **37 UI modules and 260 cases**, including
+passing focused reruns of every initially failing/timed-out module. Native Cocoa
+acceptance covers **75 cases in nine modules**. A further **17 native font and
+docked-control cases** passed after consolidating font-change observation.
+The offscreen workspace module then passed all 13 cases in 37.8 seconds; the
+prior 240-second timeout exposed redundant per-heading application event filters,
+which were removed in favor of the existing single font controller. No assertion
+was weakened to accept partial completion.
+
+Measured custom status text pairs and the active/inactive native primary palette
+range from **6.11:1 upward** in the inspected light/dark configurations. This
+records those pairs, not a universal native accessibility certification.
+Representative offscreen and native captures verify forms, review/evidence,
+secondary dialogs and enlarged text; raw evidence remains ignored.
+
+The coordinated developer-validation chat owns the full manager and Logistics
+compatibility runs in an isolated checkout with each project's real interpreter
+and commonUtils pin. Their final result is separate from this UI acceptance.
+Native Windows/Linux, manual screen-reader use and a new-operator study remain
+unverified; no real delivery, provider, VM or device acceptance is claimed here.
 
 ## Approval decisions
 

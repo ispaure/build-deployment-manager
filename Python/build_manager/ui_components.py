@@ -102,22 +102,14 @@ class HeadingLabel(QLabel):
         super().__init__(text, parent)
         self.scale = 1.0 if section else 1.35
         self.setWordWrap(True)
-        self._setting_font = False
-        QApplication.instance().installEventFilter(self)
+        install_font_refresh(QApplication.instance())
         self.refresh_font()
 
     def refresh_font(self):
-        self._setting_font = True
         font = QFont(QApplication.font())
         font.setPointSizeF(max(1, font.pointSizeF()) * self.scale)
         font.setWeight(QFont.Weight.DemiBold)
         self.setFont(font)
-        self._setting_font = False
-
-    def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.ApplicationFontChange and not self._setting_font:
-            self.refresh_font()
-        return False
 
 
 class FontRefresh(QObject):
