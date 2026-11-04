@@ -11,6 +11,10 @@ import zipfile
 from uuid import uuid4
 
 
+LOST_JOB_ERRORS = ('PrlJob_GetRetCode: Invalid argument',
+                   'PrlJob_GetResult: Invalid argument',
+                   'PrlJob_Wait: Invalid argument')
+
 OWNED = r'''
 $root=[IO.Path]::GetFullPath($p.workspace)
 if ((Split-Path -Leaf $root) -ne $p.token) { throw 'Workspace token/path mismatch' }
@@ -236,7 +240,7 @@ class WindowsGuest:
             except RuntimeError as error:
                 message = str(error)
                 if (attempt == 2 or '(255)' not in message or not any(detail in message for detail in
-                        ('PrlJob_GetRetCode: Invalid argument', 'PrlJob_GetResult: Invalid argument'))):
+                        LOST_JOB_ERRORS)):
                     raise
                 time.sleep(.5)
 
@@ -248,8 +252,7 @@ class WindowsGuest:
             try:
                 state = json.loads(self.call(STAGE, values=values, data=payload, timeout=180))
             except RuntimeError as error:
-                if '(255)' not in str(error) or not any(detail in str(error) for detail in (
-                        'PrlJob_GetRetCode: Invalid argument', 'PrlJob_GetResult: Invalid argument')):
+                if '(255)' not in str(error) or not any(detail in str(error) for detail in LOST_JOB_ERRORS):
                     raise
                 state = None
             while True:
@@ -299,8 +302,7 @@ class WindowsGuest:
                             except subprocess.TimeoutExpired:
                                 process.terminate()
                             return 130 if cancelled.is_set() else 124
-                lost = process.returncode == 255 and any(detail in stderr for detail in
-                    (b'PrlJob_GetRetCode: Invalid argument', b'PrlJob_GetResult: Invalid argument'))
+                lost = process.returncode == 255 and any(detail.encode() in stderr for detail in LOST_JOB_ERRORS)
                 if not process.returncode:
                     record = json.loads(stdout)
                     self.validate_completion(record, invocation)
