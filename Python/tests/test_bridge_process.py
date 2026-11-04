@@ -100,15 +100,19 @@ else:
     def test_force_kill_is_bounded_and_does_not_touch_another_session(self):
         argv = self.scripts(ignore_term=True)
         sentinel = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(60)'], start_new_session=True)
-        try:
-            started = time.monotonic()
-            with self.assertRaisesRegex(ValueError, 'cancelled'):
-                self.invoke(argv, cancelled=lambda: (self.root / 'grandchild.ready').exists())
-            self.assertLess(time.monotonic() - started, bridge_process.STOP_GRACE + 8)
-            self.assertIsNone(sentinel.poll())
-            self.assert_retired()
-        finally:
-            bridge_process.stop_process(sentinel, grace=.1)
+        def retire_sentinel():
+            # Inventory this exact fixture-owned SID, including any descendants.
+            # addCleanup preserves a body failure separately from cleanup errors.
+            bridge_process.stop_session(sentinel)
+            self.assertIsNotNone(sentinel.returncode)
+            self.assertEqual(bridge_process.session_groups(sentinel.pid), {})
+        self.addCleanup(retire_sentinel)
+        started = time.monotonic()
+        with self.assertRaisesRegex(ValueError, 'cancelled'):
+            self.invoke(argv, cancelled=lambda: (self.root / 'grandchild.ready').exists())
+        self.assertLess(time.monotonic() - started, bridge_process.STOP_GRACE + 8)
+        self.assertIsNone(sentinel.poll())
+        self.assert_retired()
 
     def test_clean_completion_reaps_root_and_closes_all_protocol_pipes(self):
         spawn = subprocess.Popen; owners = []
@@ -230,6 +234,48 @@ class BridgeOwnershipUnitTests(unittest.TestCase):
         self.assertEqual(receipt['session_id'], 41)
         self.assertNotIn('private', str(caught.exception))
         self.assertTrue(all(stream.closed for stream in (process.stdin, process.stdout, process.stderr)))
+
+    def test_zombie_only_owned_inventory_reaps_root_without_signalling_group(self):
+        process = Mock(pid=41, returncode=0)
+        inventory = SimpleNamespace(returncode=0, stdout='41 41 Z\n42 70 Zs\n43 80 X\n')
+        with patch.object(bridge_process.Path, 'is_file', return_value=True), \
+                patch.object(bridge_process.subprocess, 'run', return_value=inventory), \
+                patch.object(bridge_process.os, 'getsid', return_value=41, create=True), \
+                patch.object(bridge_process, 'signal_session') as signal_owned, \
+                patch.object(bridge_process, 'stop_process') as fallback:
+            bridge_process.stop_session(process)
+        signal_owned.assert_not_called()
+        fallback.assert_not_called()
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_exited_leader_does_not_hide_live_owned_descendant_group(self):
+        process = Mock(pid=41, returncode=0)
+        with patch.object(bridge_process, 'session_groups', side_effect=[{70: [12]}, {}]), \
+                patch.object(bridge_process.os, 'getsid', return_value=41, create=True), \
+                patch.object(bridge_process.os, 'getpgid', return_value=70, create=True), \
+                patch.object(bridge_process.os, 'killpg', create=True) as kill, \
+                patch.object(bridge_process.time, 'sleep'), \
+                patch.object(bridge_process, 'stop_process') as fallback:
+            bridge_process.stop_session(process)
+        kill.assert_called_once_with(70, signal.SIGTERM)
+        fallback.assert_not_called()
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_permission_denied_for_live_owned_member_remains_unverified_failure(self):
+        process = Mock(pid=41, returncode=0)
+        with patch.object(bridge_process, 'session_groups', return_value={70: [12]}), \
+                patch.object(bridge_process.os, 'getsid', return_value=41, create=True), \
+                patch.object(bridge_process.os, 'getpgid', return_value=70, create=True), \
+                patch.object(bridge_process.os, 'killpg', side_effect=PermissionError('denied'), create=True), \
+                patch.object(bridge_process, 'stop_process') as fallback:
+            with self.assertRaises(PermissionError) as caught:
+                bridge_process.stop_session(process)
+        receipt = caught.exception._owned_bridge_receipt
+        self.assertEqual(receipt['stage'], 'session_sigterm')
+        self.assertEqual(receipt['last_verified_owned_processes'], [dict(pid=12, pgid=70)])
+        self.assertFalse(receipt['session_verified_empty'])
+        self.assertFalse(receipt['retry_safe'])
+        fallback.assert_called_once_with(process, grace=15)
 
     def test_signals_revalidate_sid_and_pgid_before_touching_a_group(self):
         with patch.object(bridge_process.os, 'getsid', side_effect=[41, 99]), \
