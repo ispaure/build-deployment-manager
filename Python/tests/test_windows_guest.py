@@ -141,6 +141,19 @@ class WindowsEvidenceTests(unittest.TestCase):
             self.assertEqual(guest.call_idempotent('read only'), b'verified')
         self.assertEqual(read.call_count, 2)
 
+    def test_plan_write_retries_lost_handle_with_identical_path_and_bytes(self):
+        from build_manager.windows_guest import WRITE
+        guest = WindowsGuest(Mock(), 'vm', 'workspace', 'token', 'operation')
+        transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
+        with patch.object(guest, 'call', side_effect=[transient, b'']) as write, \
+                patch('build_manager.windows_guest.time.sleep'):
+            guest.write('plan-operation.json', b'{"phases":[]}')
+        self.assertEqual(write.call_count, 2)
+        self.assertEqual(write.call_args_list[0], write.call_args_list[1])
+        self.assertEqual(write.call_args.args, (WRITE,))
+        self.assertEqual(write.call_args.kwargs, dict(values=dict(file='plan-operation.json'),
+                                                      data=b'{"phases":[]}', timeout=60))
+
     def test_unknown_status_queries_do_not_imply_absence(self):
         identity = dict(token='token', operation='operation', invocation='current')
         transient = RuntimeError('Windows guest command failed (255): PrlJob_GetRetCode: Invalid argument')
