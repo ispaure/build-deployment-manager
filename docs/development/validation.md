@@ -7,6 +7,33 @@ own change, and [host requirements](../user/hosts.md) to determine availability.
 Portable/offscreen fixtures, native desktop checks and real provider/device
 acceptance establish different things; report which you actually ran.
 
+## November 4 project tooling bootstrap route
+
+The optional read-only tooling check and explicitly confirmed update route are
+available through API, CLI and **More → Project tooling…** before normal adapter
+settings imports. Bootstrap requests omit the GUI checkout as installation
+authority; ordinary adapter requests retain their existing context. The project
+owns declared-pin selection, enrolled environment repair, immutable sources and
+active interpreter lease protection.
+
+Focused checks pass 78 cases: 65 headless/protocol cases and 13 offscreen tooling /
+onboarding cases. The SDK-less fixture interpreter exercises bootstrap status,
+confirmation and active-lease blocking without any actual installer; normal
+adapter imports are deliberately unavailable. Worker mocks cover cancellation
+before dispatch and malformed results. GUI checks cover explicit confirmation,
+both environment rows, blocked updates, safe dialog lifetime, stale status
+clearing and refreshing the idle project after repair. A direct-adapter optional
+method-discovery alias found by the first UI attempt was corrected and the same
+13 cases pass afterward. Existing CLI, registration, retained-delivery and
+continuation regressions also pass in this scope.
+
+These are generic mechanism checks. Actual Logistics repair still requires its
+project-owned standard-library-first dispatcher, post-sync enrollment and
+installer validation; no end-to-end Logistics repair is claimed by these mocks.
+No real installer, in-flight environment, native workload, signing, device or
+provider was used. The historical full-suite totals below were not replayed for
+this source.
+
 ## November 4 independent delivery continuation
 
 The changes after `e5a76b0` expose verified named-step approval in the public CLI,

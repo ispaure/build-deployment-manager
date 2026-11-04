@@ -80,6 +80,32 @@ You should now see the selected project's work choices. Continue with
 
 ## Command-line use and development
 
+### Check or repair project tooling
+
+For projects declaring the optional bootstrap actions, use **More → Project
+tooling…**. This checks the project's own interpreter environments even when its
+normal adapter cannot import the manager package. **Update project tooling…**
+explicitly invokes that project's declared dependency repair, then refreshes the
+idle project view. A blocked active environment must finish its run first.
+
+The same route is available without the GUI:
+
+```sh
+build-manager tooling --project PROJECT
+build-manager tooling --project PROJECT --update --confirm
+```
+
+Checks do not install anything. Repair uses the project's declared dependency
+pin and project-owned immutable sources, rather than the GUI's running checkout.
+The project owns any post-`uv sync --locked` repair, must explicitly enroll tooling
+environments, and must protect in-flight interpreter leases. Ordinary app launches
+are not permission to install manager tooling. No manager interpreter or sibling
+checkout is substituted for the project's environment. Projects without these
+optional actions continue to use their own setup guide; a missing bootstrap
+interpreter also requires initial project setup.
+
+### CLI and development entry points
+
 Use `.venv/bin/build-manager` on macOS/Linux, or activate the manager environment
 and use `build-manager`. `python -m build_manager.cli` exposes the same interface
 when `python` is this installed interpreter. See the [CLI guide](cli.md).

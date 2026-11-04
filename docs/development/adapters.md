@@ -404,6 +404,40 @@ see [project integration](project-integration.md). Existing API-1 bridges remain
 supported. Command projects derive capabilities from their operation catalog;
 custom adapters can use the same capability resolver as the manager.
 
+## Optional tooling bootstrap before adapter imports
+
+Declare `tooling_status` and optionally `tooling_update` in `adapter_actions`.
+Dispatch these API-1 actions in the project's bridge using standard-library code
+**before** importing project modules, the manager SDK or Qt. The bootstrap error
+handler must also work without those packages. `tooling_status` receives `{}`;
+`tooling_update` receives `{"confirmed": true}` and must reject absent confirmation.
+Both return:
+
+```json
+{"ready": false, "status": "needs_update", "message": "Actionable project diagnostic", "declared_revision": "project-pin", "environments": [{"name": "desktop", "interpreter": "/project/.venv/bin/python", "ready": false, "installed_revision": "", "source_checkout": ""}]}
+```
+
+`status` is `ready`, `needs_update` or `blocked`, with `ready` true exactly for
+`ready`. Environment names are unique; a ready result requires every reported
+environment ready. Additional metadata may be added. Report tooling provenance,
+not credential values or credential-file paths.
+
+The project resolves its declared dependency, owns immutable source acquisition,
+checks every required project interpreter, and decides which explicitly enrolled
+environments may be repaired after locked synchronization. It must return a
+blocked result rather than mutate an in-flight environment. No ordinary end-user
+app launch implicitly authorizes manager installation. Installer child ownership,
+deadlines and cleanup remain project policy. The manager omits its running
+`manager_checkout` metadata for these two actions; bootstrap code must never use
+an arbitrary supplied checkout instead of the declared pin, including requests
+from older managers. Never pull or reset a developer checkout for repair.
+
+`ManagerAPI.tooling_status(project)` and `update_tooling(project, confirmed=True)`
+validate the optional protocol. The CLI and **More → Project tooling…** expose
+the same route. Existing adapters and command-only projects require no changes;
+unsupported actions fail without invoking a guessed installer. The descriptor's
+bootstrap interpreter must already exist.
+
 ## Optional delivery from retained inputs
 
 Declare `retained_delivery_plan` in `adapter_actions` to offer a new delivery from

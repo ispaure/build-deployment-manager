@@ -4,10 +4,12 @@
 [CLI](../user/cli.md) provides the subprocess interface with `cli_schema=1`.
 Both delegate to existing adapters, Plan/Phase contracts, Executor and recovery
 mechanisms. No Qt or project modules are imported into the manager process.
-Package startup places its fixed checkout-local `Python/` source root first on
-the import path so editable console entry points find the pinned commonUtils
-from any working directory. A missing submodule fails with setup guidance;
-there is no search for sibling checkouts or installed replacements.
+Standalone package startup binds its checkout-local `Python/` source root so
+editable console entry points find the pinned commonUtils from any working
+directory. Adapter processes explicitly select `BUILD_MANAGER_DEPENDENCIES=project`
+and supply their own source root before importing the manager, preserving the
+project's commonUtils in either import order. A missing manager submodule fails
+with setup guidance; there is no search for sibling checkouts or replacements.
 The project bridge continues to run in its declared interpreter with structured
 JSON stdin/stdout. `API_VERSION` is 1; Plan/result schema versions are separate.
 
@@ -40,6 +42,8 @@ the existing Registry for registration/selection changes. Facade methods:
 | --- | --- |
 | `capabilities(project=None)` | Registration, descriptor, host target/operation/backend mapping and journey; descriptor reads only |
 | `inputs(project=None)` | Declared fields, adapter defaults and dynamic input choices; invokes trusted project code |
+| `tooling_status(project=None)` | Optional read-only bootstrap readiness before normal adapter imports |
+| `update_tooling(project=None, *, confirmed=False)` | Explicit project-owned repair to its declared dependency; blocked active environments remain untouched |
 | `prepare_plan(operation, target, backend, *, project=None, **values)` | Plan from the isolated adapter; validates declared choices |
 | `prepare_journey(goal, platforms, destinations, *, project=None, **values)` | Validated combined Plan; optional `backends` maps platform to execution host |
 | `retire_run(run_name, *, project=None, confirmed=False)` | Retire one retained run and release its holds after confirmation. `retire_workflow` remains available for existing callers. |

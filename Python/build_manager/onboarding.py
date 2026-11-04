@@ -65,6 +65,16 @@ def probe_adapter(registry, project=None, *, prepare_plan_matrix=False):
     result = readiness(bridge.root)
     if not result['ready']:
         return dict(result, status='failed')
+    if bridge.supports_action('tooling_status'):
+        tooling = bridge.tooling_status()
+        if not tooling['ready']:
+            actions = [dict(id='tooling-status', argv=['build-manager', 'tooling', '--project', bridge.key])]
+            if tooling['status'] != 'blocked' and bridge.supports_action('tooling_update'):
+                actions.append(dict(id='tooling-update', argv=['build-manager', 'tooling', '--project', bridge.key,
+                                                             '--update', '--confirm']))
+            return dict(stage='project_tooling', status='failed', tooling=tooling,
+                        message='Project tooling is unavailable. ' + tooling['message'], next_actions=actions,
+                        workloads_executed=False)
     rows = bridge.call('settings', timeout=30)
     if not isinstance(rows, dict) or any(not isinstance(v, dict) or 'value' not in v for v in rows.values()):
         raise ValueError('Adapter settings must map field names to rows with values.')

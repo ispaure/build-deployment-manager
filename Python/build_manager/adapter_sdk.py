@@ -110,4 +110,4 @@ def supports(project, action):
     """Declared optional actions for bridges, method compatibility for direct adapters."""
     if hasattr(project, 'supports_action'):
         return project.supports_action(action)
-    return hasattr(project, {'verification': 'verification_plan'}.get(action, action))
+    return hasattr(project, {'verification': 'verification_plan', 'tooling_update': 'update_tooling'}.get(action, action))

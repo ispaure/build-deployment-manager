@@ -37,6 +37,20 @@ class ProjectBridge:
         declared = self.descriptor.get('adapter_actions')
         return action in declared if declared is not None else action in {'plan', 'settings', 'save_settings', 'verification'}
 
+    def tooling_status(self, *, cancelled=lambda: False):
+        if not self.supports_action('tooling_status'):
+            raise ValueError('This project does not declare a tooling bootstrap check. Follow its setup guide.')
+        from .project_tooling import validate_status
+        return validate_status(self.call('tooling_status', cancelled=cancelled, timeout=30))
+
+    def update_tooling(self, *, confirmed=False, cancelled=lambda: False):
+        if confirmed is not True:
+            raise ValueError('Project tooling update requires explicit confirmation.')
+        if not self.supports_action('tooling_update'):
+            raise ValueError('This project does not declare a tooling bootstrap update. Follow its setup guide.')
+        from .project_tooling import validate_status
+        return validate_status(self.call('tooling_update', confirmed=True, cancelled=cancelled, timeout=600))
+
     def storage_inventory(self):
         if not self.supports_action('storage_inventory'):
             raise ValueError('This adapter does not declare storage inventory.')
@@ -81,9 +95,13 @@ class ProjectBridge:
         from .settings import SettingsStore
         account_defaults = SettingsStore(self.registry.directory).account_defaults(
             descriptor['project_id'], descriptor.get('account_fields', {}))
-        payload = json.dumps(dict(schema=1, action=action, values=values, account_defaults=account_defaults,
-            settings_profile=str(self.registry.path.parent / row['name'] / 'profile.json'),
-            manager_checkout=str(self.runner_directory)))
+        request = dict(schema=1, action=action, values=values, account_defaults=account_defaults,
+            settings_profile=str(self.registry.path.parent / row['name'] / 'profile.json'))
+        # Bootstrap repair must resolve the project's declared dependency itself.
+        # The GUI's running checkout is unrelated to that installation authority.
+        if action not in {'tooling_status', 'tooling_update'}:
+            request['manager_checkout'] = str(self.runner_directory)
+        payload = json.dumps(request)
         from .credentials import reject_secrets
         reject_secrets(values)
         if cancelled():

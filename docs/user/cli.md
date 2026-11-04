@@ -372,6 +372,27 @@ captured old source and new destination before Start. This optional workflow is
 separate from **Retry uncertain device install…**, which repeats the same
 uncertain installation and preserves its original unknown outcome.
 
+## Check project tooling before adapter imports
+
+```sh
+build-manager tooling --project PROJECT
+build-manager tooling --project PROJECT --update --confirm
+```
+
+This optional bootstrap protocol works before normal project/settings imports.
+The first command is read-only. The second explicitly asks the project to repair
+its own tooling to its declared pin and return fresh readiness. Readiness includes
+the declared revision and each project-owned interpreter's installed revision
+and immutable source provenance. The command returns a nonzero exit while any
+required tooling is unavailable or the project reports a blocked active lease.
+`check-project` uses this preflight when declared and returns exact suggested
+tooling command arrays instead of importing a broken adapter first.
+
+No installer is guessed for unsupported projects. The project owns lockfile
+synchronization, explicit tooling enrollment, both-environment installation and
+in-flight lease protection. The GUI checkout is never supplied as bootstrap
+installation authority. See [setup](setup.md#check-or-repair-project-tooling).
+
 ## Scaffold and check a project
 
 For a local command workflow, create a single descriptor in an existing project:
