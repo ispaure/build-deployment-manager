@@ -16,7 +16,7 @@ authority; ordinary adapter requests retain their existing context. The project
 owns declared-pin selection, enrolled environment repair, immutable sources and
 active interpreter lease protection.
 
-Focused checks pass 78 cases: 65 headless/protocol cases and 13 offscreen tooling /
+Initial source `ef1b5d8` focused checks pass 78 cases: 65 headless/protocol cases and 13 offscreen tooling /
 onboarding cases. The SDK-less fixture interpreter exercises bootstrap status,
 confirmation and active-lease blocking without any actual installer; normal
 adapter imports are deliberately unavailable. Worker mocks cover cancellation
@@ -26,6 +26,19 @@ clearing and refreshing the idle project after repair. A direct-adapter optional
 method-discovery alias found by the first UI attempt was corrected and the same
 13 cases pass afterward. Existing CLI, registration, retained-delivery and
 continuation regressions also pass in this scope.
+
+A subsequent absent-interpreter correction permits only declared tooling actions
+to use the trusted running Python with `-I -B` when the configured project venv
+is missing. Status, confirmed update dispatch, SDK-free error handling, normal /
+undeclared-action rejection and unavailable/frozen-host rejection have dedicated
+temporary-fixture coverage. The project remains responsible for its own target
+environments; no installer or environment creation is performed by these tests.
+The UI implementation is unchanged from the preceding offscreen checks.
+With the reviewed commonUtils launcher-hook descendant `4d7c0e7`, all 71 focused
+manager headless cases pass. Fourteen launcher cases also complete with two
+native Windows skips, using controlled fake synchronization tools. The shared
+change adds optional project-owned sync wrappers; no Qt/iOS runtime files change.
+These fixtures do not establish real project installer or native Windows acceptance.
 
 These are generic mechanism checks. Actual Logistics repair still requires its
 project-owned standard-library-first dispatcher, post-sync enrollment and

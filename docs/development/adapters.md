@@ -435,8 +435,15 @@ from older managers. Never pull or reset a developer checkout for repair.
 `ManagerAPI.tooling_status(project)` and `update_tooling(project, confirmed=True)`
 validate the optional protocol. The CLI and **More → Project tooling…** expose
 the same route. Existing adapters and command-only projects require no changes;
-unsupported actions fail without invoking a guessed installer. The descriptor's
-bootstrap interpreter must already exist.
+unsupported actions fail without invoking a guessed installer. When the configured
+project interpreter is absent, only these declared tooling actions may use the
+running manager's absolute, existing, non-frozen `sys.executable` with `-I -B`.
+There is no PATH search, shell command or project-supplied fallback executable.
+The bridge must establish any project import paths it needs explicitly and keep
+bootstrap dispatch/error handling independent of SDK imports. Resolve installation
+targets from project metadata, never this fallback's `sys.executable` or
+`sys.prefix`. An unavailable host Python or missing bridge still requires setup
+guidance. Ordinary actions retain the strict configured-interpreter requirement.
 
 ## Optional delivery from retained inputs
 
