@@ -445,6 +445,28 @@ targets from project metadata, never this fallback's `sys.executable` or
 `sys.prefix`. An unavailable host Python or missing bridge still requires setup
 guidance. Ordinary actions retain the strict configured-interpreter requirement.
 
+## Bridge process ownership
+
+Each bridge request owns a fresh POSIX session or a Windows job established
+before child execution. POSIX teardown inventories only process IDs, group IDs
+and state, verifies session/group membership before signalling, and retires child
+subgroups as well as the bridge group. Missing inventory is an explicit teardown
+failure, not successful cancellation. Windows retains its existing job owner and
+uses [job accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information)
+to verify no active members remain. Private protocol files keep Windows stdout
+and stderr separate; the envelope reader is drained before handles are released.
+
+Cancellation, timeout and an early bridge exit all retire owned descendants and
+bound pipe draining before the request returns. Project cleanup must finish
+within ten seconds while retaining its environment lease; the SDK grants at
+least fifteen seconds before forced termination. POSIX installer subgroups must
+stay in the bridge session (`process_group=0`, never `setsid`); Windows children
+must not break away from the job. An unavailable inventory or failed drain is
+reported as unverified teardown. Native Windows acceptance and standalone
+project-wrapper containment remain separate from the SDK's tested POSIX and
+mocked Windows contracts. A project must also protect mutation ownership after an
+abrupt supervisor death; a lock owned only by the dead PID is insufficient.
+
 ## Optional delivery from retained inputs
 
 Declare `retained_delivery_plan` in `adapter_actions` to offer a new delivery from

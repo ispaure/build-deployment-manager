@@ -7,6 +7,7 @@ import ctypes as c
 from ctypes import wintypes as w
 import os
 import subprocess
+import time
 
 
 class Security(c.Structure):
@@ -40,6 +41,13 @@ class ExtendedLimits(c.Structure):
                 ('job_memory', c.c_size_t), ('peak_process', c.c_size_t), ('peak_job', c.c_size_t)]
 
 
+class JobAccounting(c.Structure):
+    _fields_ = [('user_time', c.c_int64), ('kernel_time', c.c_int64),
+                ('period_user_time', c.c_int64), ('period_kernel_time', c.c_int64),
+                ('page_faults', w.DWORD), ('total_processes', w.DWORD),
+                ('active_processes', w.DWORD), ('terminated_processes', w.DWORD)]
+
+
 class WindowsProcess:
     def __init__(self, argv, *, cwd, env):
         if os.name != 'nt':
@@ -52,6 +60,7 @@ class WindowsProcess:
             'SetInformationJobObject': ([w.HANDLE, c.c_int, w.LPVOID, w.DWORD], w.BOOL),
             'AssignProcessToJobObject': ([w.HANDLE, w.HANDLE], w.BOOL),
             'TerminateJobObject': ([w.HANDLE, w.UINT], w.BOOL),
+            'QueryInformationJobObject': ([w.HANDLE, c.c_int, w.LPVOID, w.DWORD, w.LPVOID], w.BOOL),
             'CreatePipe': ([c.POINTER(w.HANDLE), c.POINTER(w.HANDLE), c.POINTER(Security), w.DWORD], w.BOOL),
             'SetHandleInformation': ([w.HANDLE, w.DWORD, w.DWORD], w.BOOL),
             'CreateFileW': ([w.LPCWSTR, w.DWORD, w.DWORD, c.POINTER(Security), w.DWORD, w.DWORD, w.HANDLE], w.HANDLE),
@@ -154,6 +163,20 @@ class WindowsProcess:
         self.check(self.kernel.TerminateJobObject(self._job, 1))
 
     kill = kill_tree
+
+    def wait_tree(self, timeout=5):
+        """Termination is asynchronous; do not release ownership with live members."""
+        if not self._job:
+            raise RuntimeError('Owned Windows job is closed.')
+        deadline = time.monotonic() + timeout
+        while True:
+            accounting = JobAccounting()
+            self.check(self.kernel.QueryInformationJobObject(self._job, 1, c.byref(accounting), c.sizeof(accounting), None))
+            if accounting.active_processes == 0:
+                return
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(self.args, timeout)
+            time.sleep(min(.02, max(0, deadline - time.monotonic())))
 
     def close(self):
         for name in ('_job', '_process'):
