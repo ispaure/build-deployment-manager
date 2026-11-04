@@ -107,16 +107,24 @@ class DependencyFlowTests(unittest.TestCase):
     def test_shared_fields_remain_single_and_advanced_fields_return_to_their_form(self):
         with TemporaryDirectory() as directory:
             project = OtherProject(Path(directory)); project.journey_capability = deepcopy(CAPABILITY)
+            for destination in project.journey_capability['destinations'].values():
+                destination['category'] = 'Mobile tester platforms'
             project.run_fields = [dict(id='shared', label='Shared notes', destinations=['firebase', 'testflight']),
                                   dict(id='one', label='Notes', destinations=['firebase'], operations=['Test'])]
             view = ConfigurationView(project)
             try:
                 view.goal.setCurrentIndex(view.goal.findData('deliver'))
                 view.destination_checks['firebase'].setChecked(True)
+                body = view.delivery_categories['Mobile tester platforms'][1]
+                self.assertIs(body.itemAt(body.count() - 1).widget(), view.run_fields)
+                for page, _ in view.delivery_platform_pages['Mobile tester platforms'].values():
+                    self.assertLess(body.indexOf(page), body.indexOf(view.run_fields))
                 self.assertIs(view.run_fields.field_forms['shared'], view.run_fields.form)
                 self.assertIs(view.run_fields.field_forms['one'], view.destination_forms['firebase'])
                 view.run_fields.controls['one'].setText('Preserved')
                 view.goal.setCurrentIndex(view.goal.findData('advanced'))
+                body = view.sections['advanced'].body
+                self.assertIs(body.itemAt(body.count() - 1).widget(), view.run_fields)
                 self.assertIs(view.run_fields.field_forms['one'], view.run_fields.form)
                 self.assertEqual(view.run_fields.values(), {'one': 'Preserved'})
             finally:

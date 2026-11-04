@@ -335,7 +335,10 @@ class ConfigurationView(QWidget):
                 if name in self.destination_categories}
             if len(categories) == 1:
                 field_body = self.delivery_categories[next(iter(categories))][1]
-        field_body.insertWidget(max(0, field_body.count() - 1), self.run_fields)
+        # Section/category bodies contain controls only; the trailing stretch
+        # belongs to the outer page. Shared choices follow the destinations.
+        field_body.removeWidget(self.run_fields)
+        field_body.addWidget(self.run_fields)
         self.run_fields.update_context(self.goal.currentData(),
             [name for name, control in self.destination_checks.items() if control.isChecked()], self.operation.currentText())
         self.legacy_form.setRowVisible(self.suite, self.goal.currentData() != 'build')

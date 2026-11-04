@@ -1,7 +1,7 @@
 """Inputs for this run, initialized asynchronously from project defaults."""
 from queue import Queue,Empty
 from threading import Event
-from PySide6.QtCore import QRunnable,QThreadPool,QTimer,Signal
+from PySide6.QtCore import QRunnable,QThreadPool,QTimer,Signal,QEvent
 from PySide6.QtWidgets import QWidget,QFormLayout,QLabel,QLineEdit,QPlainTextEdit,QComboBox
 
 
@@ -59,7 +59,9 @@ class RunFieldsView(QWidget):
                    QPlainTextEdit() if row.get('kind')=='multiline' else QLineEdit())
             if isinstance(field, RecipientPicker):
                 field.reload_requested.connect(self.reload_choices)
-            if isinstance(field,QPlainTextEdit):field.setFixedHeight(95)
+            if isinstance(field,QPlainTextEdit):
+                field.installEventFilter(self)
+                self.size_notes(field)
             field.setAccessibleName(row['label'])
             field.setProperty('runField',row['id'])
             field.setPlaceholderText(row.get('description','Uses the saved default unless you change it for this run.'))
@@ -78,6 +80,16 @@ class RunFieldsView(QWidget):
         if any(row.get('kind') == 'multiselect' for row in self.fields):
             self.reload_choices()
         self.setVisible(False)
+
+    @staticmethod
+    def size_notes(field):
+        field.setFixedHeight(max(95, field.fontMetrics().lineSpacing() * 3
+            + 2 * field.frameWidth() + int(field.document().documentMargin() * 2)))
+
+    def eventFilter(self, watched, event):
+        if isinstance(watched, QPlainTextEdit) and event.type() == QEvent.Type.FontChange:
+            self.size_notes(watched)
+        return super().eventFilter(watched, event)
 
     def reload_choices(self):
         if self.choice_timer.isActive():return

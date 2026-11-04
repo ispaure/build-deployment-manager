@@ -9,15 +9,17 @@ import unittest
 
 from PySide6.QtCore import Qt, QCoreApplication, QEvent, QThreadPool
 from PySide6.QtGui import QFont, QTextCursor
-from PySide6.QtWidgets import QApplication, QTabBar, QTabWidget
+from PySide6.QtWidgets import QApplication, QTabBar, QTabWidget, QWidget, QFormLayout, QLineEdit, QComboBox, QSpinBox
 
 from build_manager.accounts_ui import AccountsDialog
 from build_manager.configuration_ui import ConfigurationView
 from build_manager.run_ui import RunView
 from build_manager.run_output_ui import RunOutputView
+from build_manager.run_fields_ui import RunFieldsView
+from build_manager.recipient_ui import RecipientPicker
 from build_manager.settings import SettingsStore
 from build_manager.ui import ManagerPanel
-from build_manager.ui_components import EvidenceNavigator, HeadingLabel
+from build_manager.ui_components import EvidenceNavigator, HeadingLabel, install_font_refresh
 from build_manager.vm_ui import VMDialog
 from test_journeys import CAPABILITY, integrated
 from test_ui import OtherProject
@@ -83,6 +85,10 @@ class BalancedWorkspaceTests(unittest.TestCase):
         self.assertIs(nav.currentWidget(), view.test_results)
         self.assertIn('Firebase', view.results_workspace.scope_label.text())
         self.assertEqual(set(view.scoped_facts()), {'firebase'})
+        nav.selector.setCurrentIndex(nav.selector.findData(view.output))
+        nav.setCurrentWidget(view.results_workspace.details_scroll)
+        view.show_results_tab()
+        self.assertIs(nav.currentWidget(), view.output)
 
     def test_captured_summary_visible_and_live_refresh_preserves_manual_panes(self):
         panel = ManagerPanel(self.project()); plan = integrated(self.root)
@@ -143,6 +149,54 @@ class BalancedWorkspaceTests(unittest.TestCase):
         self.assertEqual(view.log.verticalScrollBar().value(), scroll)
         view.show_scope(selected='other', keys={'other'})
         self.assertFalse(view.log.textCursor().hasSelection())
+
+    def test_first_live_output_does_not_include_empty_state_guidance(self):
+        view = RunOutputView()
+        view.show_scope(selected='test', keys={'test'})
+        self.assertFalse(view.log.toPlainText())
+        self.assertIn('No captured output', view.log.placeholderText())
+        view.append('test', 'First real log line', selected='test', keys={'test'})
+        self.assertEqual(view.log.toPlainText(), 'First real log line')
+
+    def test_recipient_actions_and_release_notes_adapt_to_enlarged_text(self):
+        from types import SimpleNamespace
+        install_font_refresh(self.app)
+        picker = RecipientPicker()
+        picker.set_choices([dict(id='qa', label='QA phone')])
+        fields = RunFieldsView(SimpleNamespace(run_fields=[dict(id='notes', label='Release notes',
+            kind='multiline', destinations=['delivery'])]))
+        fields.update_context('deliver', ['delivery'], '')
+        fields.controls['notes'].setPlainText('Keep these notes')
+        picker.resize(400, 500); picker.show(); fields.show(); self.pump()
+        font = QFont(self.font); font.setPointSize(28); self.app.setFont(font); self.pump()
+        self.assertEqual(picker.width(), 400)
+        self.assertGreater(picker.reload.y(), picker.add.y())
+        self.assertGreaterEqual(picker.manual.height(), picker.manual.fontMetrics().height() + 8)
+        notes = fields.controls['notes']
+        self.assertGreaterEqual(notes.viewport().height(), notes.fontMetrics().lineSpacing() * 3)
+        self.assertEqual(notes.toPlainText(), 'Keep these notes')
+
+    def test_native_entries_scale_when_created_late_and_shrink_on_reset(self):
+        install_font_refresh(self.app)
+        font = QFont(self.font); font.setPointSize(28); self.app.setFont(font); self.pump()
+        dialog = QWidget(); form = QFormLayout(dialog)
+        controls = (QLineEdit('Preserved'), QComboBox(), QSpinBox())
+        controls[1].addItem('Current choice'); controls[2].setValue(42)
+        for label, control in zip(('Text', 'Choice', 'Number'), controls):
+            form.addRow(label, control)
+        dialog.show(); self.pump()
+        large = [control.height() for control in controls]
+        for control in controls:
+            self.assertGreaterEqual(control.height(), control.fontMetrics().height() + 8)
+        number_editor = controls[2].findChild(QLineEdit)
+        self.assertTrue(controls[2].rect().contains(number_editor.geometry()))
+        font.setPointSize(12); self.app.setFont(font); self.pump()
+        dialog.adjustSize(); self.pump()
+        for control, height in zip(controls, large):
+            self.assertLess(control.height(), height)
+        self.assertEqual(controls[0].text(), 'Preserved')
+        self.assertEqual(controls[1].currentText(), 'Current choice')
+        self.assertEqual(controls[2].value(), 42)
 
     def test_account_method_inputs_and_storage_values_remain_specific(self):
         store = SettingsStore(self.root / 'private')

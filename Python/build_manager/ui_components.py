@@ -3,7 +3,8 @@ from PySide6.QtCore import Qt, QSize, QEvent, Signal, QRect, QPoint, QObject, QT
 from PySide6.QtGui import QKeySequence, QShortcut, QFont
 from PySide6.QtWidgets import (QApplication, QComboBox, QDialogButtonBox, QPushButton,
     QSizePolicy, QWidget, QGridLayout, QStackedWidget, QLabel, QHBoxLayout,
-    QVBoxLayout, QSplitter, QToolButton, QMenu, QWidgetAction, QFormLayout, QLayout, QSpacerItem)
+    QVBoxLayout, QSplitter, QToolButton, QMenu, QWidgetAction, QFormLayout, QLayout, QSpacerItem,
+    QLineEdit, QAbstractSpinBox)
 
 
 class WrappingLayout(QLayout):
@@ -125,7 +126,24 @@ class FontRefresh(QObject):
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.ApplicationFontChange:
             self.timer.start(0)
+        elif event.type() == QEvent.Type.Polish:
+            self.refresh_entry(watched)
         return False
+
+    @staticmethod
+    def refresh_entry(widget):
+        if isinstance(widget, QLineEdit) and isinstance(widget.parentWidget(), (QComboBox, QAbstractSpinBox)):
+            return  # The containing native control owns its editor geometry.
+        if isinstance(widget, (QLineEdit, QComboBox, QAbstractSpinBox)):
+            # Native Cocoa entry size hints can remain 21 px at 28 pt.
+            # Keep the original minimum so resetting text size stays compact.
+            if not hasattr(widget, '_manager_entry_minimum'):
+                widget._manager_entry_minimum = widget.minimumHeight()
+            minimum = max(widget._manager_entry_minimum, widget.fontMetrics().height() + 8)
+            widget.setMinimumHeight(minimum)
+            if widget.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed:
+                # Bound Qt's cached first-show combo minimum when fonts shrink.
+                widget.setMaximumHeight(max(minimum, widget.sizeHint().height()))
 
     def refresh(self):
         size = self.app.font().pointSizeF()
@@ -139,6 +157,7 @@ class FontRefresh(QObject):
                 if font.pointSizeF() != size:
                     font.setPointSizeF(size)
                     widget.setFont(font)
+            self.refresh_entry(widget)
 
 
 def install_font_refresh(app):
@@ -277,7 +296,13 @@ class EvidenceGroup(QWidget):
     def __init__(self, navigator, *, prefix=''):
         super().__init__(navigator)
         self.navigator, self.prefix, self.pages, self.labels, self.last = navigator, prefix, [], [], 0
+        navigator.currentChanged.connect(self.remember_selection)
         self.hide()
+
+    def remember_selection(self, _):
+        index = self.indexOf(self.navigator.currentWidget())
+        if index >= 0:
+            self.last = index
 
     def addTab(self, widget, label):
         self.pages.append(widget)

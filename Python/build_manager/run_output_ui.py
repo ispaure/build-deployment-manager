@@ -13,6 +13,7 @@ class RunOutputView(QWidget):
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(6000)
         self.log.setAccessibleName('Live redacted execution output')
+        self.log.setPlaceholderText('No captured output for this selection yet. Retained log paths appear in Details.')
         self.notice = QLabel('Output for the whole workflow.')
         self.notice.setWordWrap(True)
         layout = QVBoxLayout(self)
@@ -34,7 +35,7 @@ class RunOutputView(QWidget):
                 lines = [reader(selected)]
             except (OSError, ValueError):
                 lines = []
-        text = '\n'.join(lines) if any(lines) else 'No captured output for this selection yet. Retained log paths appear in Details.'
+        text = '\n'.join(lines) if any(lines) else ''
         identity = (selected, frozenset(keys))
         if text == self.log.toPlainText() and identity == self.scope_identity:
             return

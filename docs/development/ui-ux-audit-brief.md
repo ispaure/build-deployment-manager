@@ -1,6 +1,6 @@
 # Build Deployment Manager UI and UX audit brief
 
-**Status: Balanced workspace approved and implemented; UI validation complete. Reviewed 3 November 2026.**
+**Status: Balanced workspace approved and implemented; UI validation complete. Reviewed 4 November 2026.**
 
 The recommended direction is a calmer native desktop workspace with a clear
 sequence: choose intent, establish source, choose platforms and execution
@@ -59,6 +59,29 @@ compatibility runs in an isolated checkout with each project's real interpreter
 and commonUtils pin. Their final result is separate from this UI acceptance.
 Native Windows/Linux, manual screen-reader use and a new-operator study remain
 unverified; no real delivery, provider, VM or device acceptance is claimed here.
+
+### Three follow-up review passes
+
+The owner's requested three review-and-fix passes covered visual ordering,
+navigation/live evidence, then narrow and enlarged-text layouts plus guidance.
+
+| Pass | Missed behavior found | Correction |
+| --- | --- | --- |
+| 1 · Ordering and spacing | Shared delivery fields could appear between platform groups because insertion still assumed the old layout's trailing stretch | Shared choices follow all destination groups; operation fields follow the standard options |
+| 2 · Navigation and live evidence | Dropdown evidence selection did not update the remembered results page; empty-output guidance could become part of live log text | Remember direct evidence choices when returning from Details; render empty guidance as a placeholder |
+| 3 · Adaptation and forms | Recipient actions and their entry label forced narrow forms wider at 28 pt; multiline release notes retained a fixed 95-pixel height; native entry size hints could clip enlarged text | Wrap actions and entry label, associate the label with its field, reserve three note lines, and size text/choice/number entries through the shared font controller, including late-opened dialogs and size reset |
+
+Fresh panel captures cover Choose, Review, each evidence page, History, empty and
+error states, supporting dialogs and enlarged text. Focused regression checks
+exercise ordering across goal switches, direct dropdown navigation, the first
+live output line, preserved notes, and enlarged recipient controls. Raw captures
+and per-pass logs remain under ignored `test-results/`.
+
+Follow-up per-module results cover **76 portable cases in nine modules** and
+**51 native Cocoa cases in six modules**. After the final entry-size correction,
+all **12 workspace cases** passed again on both backends. The wiki's 31 pages
+also pass H1, local-link and landing-page checks. These checks retain the native
+platform and assistive-technology limits recorded above.
 
 ## Approval decisions
 
