@@ -57,7 +57,8 @@ existing declaration and protected credential rules.
 ## Execution and evidence
 
 `run_plan(plan_or_path, output, *, confirmed=False, resume=False,
-approval_identities=None, expected_identity=None, cancelled=None, event=None)`
+approval_identities=None, expected_identity=None, cancelled=None, event=None,
+reconcile=None)`
 returns the complete Executor report. It does not print. `output` becomes an
 absolute path. Fresh runs require a new output directory; resume requires matching
 retained plan/report identities and the existing engine identity/recovery checks.
@@ -67,6 +68,22 @@ retained plan/report identities and the existing engine identity/recovery checks
 thread safe. Callback failures are caller errors; callbacks should not raise.
 Calls block until the executor finishes or reaches review. The CLI installs and
 restores SIGINT/SIGTERM handlers around execution and review.
+
+On resume, optional `reconcile(step_id, row)` supplies project-owned, read-only
+outcome verification for an uncertain external phase. The executor invokes it
+under the run's supervisor lock. Return an evidenced receipt with `status='passed'`
+for an already completed effect, or `status='not-performed'` to mark it interrupted
+and eligible for the existing retry/review rules. Other receipt statuses fail
+closed. Without this callback, unknown effects remain unknown and are not replayed.
+
+New phase attempts retain an operation-ID-bound `*.launch.json` record.
+`launching` is persisted before the process constructor; `started` follows its
+successful return. A completed admission failure or POSIX creation/exec failure
+with explicit `not_started` proof remains failed and has `retryable=True`.
+Failures after launch, uncertain constructor errors and interrupted running intents
+remain unknown for external effects. Windows constructor errors remain conservative
+because an error may occur after its child starts. No duration, missing-log check,
+or older unknown record is treated as proof that an effect did not happen.
 
 For delivery, call `review_run(output, *, cancelled=None)` to verify prerequisites
 and obtain pending external step identities. It returns `identity`, `plan`,

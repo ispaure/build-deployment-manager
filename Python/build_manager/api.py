@@ -249,11 +249,14 @@ def review_run(output, *, cancelled=None):
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
              expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True,
-             maintenance=None, approve_steps=()):
+             maintenance=None, approve_steps=(), reconcile=None):
     """Run a trusted Plan/path; reviewed identities authorize only matching pending steps.
 
     This call blocks until completion or review. Cancellation is a threading.Event.
-    Event callbacks run on executor threads and must be thread safe.
+    Event callbacks run on executor threads and must be thread safe. On resume,
+    reconcile(step_id, row) runs under the supervisor lock and must return an
+    evidenced receipt with status "passed" or "not-performed". Unknown outcomes
+    are retained when no callback is supplied; they are never automatically retried.
     """
     plan = Plan.from_data(plan.data()) if isinstance(plan, Plan) else Plan.load(plan)
     output = Path(output).resolve()
@@ -291,7 +294,7 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
             approvals.append(permission)
     report = Executor(cancelled=cancelled, event=event).run(
         plan, output, confirmed=confirmed, resume=resume, approvals=approvals, engine_review=engine_review,
-        retry_failed=retry_failed)
+        retry_failed=retry_failed, reconcile=reconcile)
     if maintenance is not None:
         # Execution has released its leases. Project policy may now prune idle
         # caches; a maintenance error must not rewrite the workload's outcome.
