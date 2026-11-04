@@ -108,3 +108,37 @@ def recover_phase_records(plan,report,*,reconcile=None,cancelled=lambda: False,p
             row.update(status='passed' if receipt['status']=='passed' else 'interrupted',receipt=receipt)
         rows.append(row)
     return rows
+
+
+def retained_phase_records(plan, previous, *, retry_failed=True):
+    """Retain evidence only while its nonexternal prerequisites remain retained.
+
+    Cleanup is attempt-bound: a prior no-op cannot order a newly retried owner.
+    Completed/unknown external effects remain immutable and are never replayed.
+    """
+    statuses = {'passed', 'unknown'}
+    if not retry_failed:
+        statuses.update({'failed', 'skipped', 'cancelled', 'timeout', 'interrupted'})
+    rows = {row['id']: row for row in previous if row['status'] in statuses}
+    pending = {phase.id for phase in plan.phases if phase.id not in rows}
+    changed = True
+    while changed:
+        changed = False
+        for phase in plan.phases:
+            row = rows.get(phase.id)
+            effect = phase.effect if phase.effect != 'inherit' else plan.effect
+            if row is None:
+                continue
+            prerequisites = (*phase.dependencies, *phase.waits_for)
+            stale = (any(name in pending for name in prerequisites)
+                     or phase.always and not prerequisites and bool(pending))
+            if effect in EXTERNAL:
+                if phase.always and stale and row['status'] in {'passed', 'unknown'}:
+                    raise ValueError('External cleanup cannot be automatically repeated or reused for a retried owner: '
+                                     + phase.id + '. Review its outcome and prepare a separately reviewed workflow.')
+                continue
+            if row['status'] == 'passed' and stale:
+                del rows[phase.id]
+                pending.add(phase.id)
+                changed = True
+    return rows

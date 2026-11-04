@@ -95,7 +95,7 @@ class WorkflowTests(unittest.TestCase):
                     self.assertEqual(after[name]['status'], 'passed')
                 self.assertTrue(accepted.exists())
                 self.assertEqual(after['android.prepare'], before['android.prepare'])
-                self.assertEqual(after['cleanup'], before['cleanup'])
+                self.assertNotEqual(after['cleanup']['operation_id'], before['cleanup']['operation_id'])
                 if other_platform_failed:
                     self.assertEqual(after['linux.prepare'], before['linux.prepare'])
                     self.assertEqual(after['linux.validated'], before['linux.validated'])

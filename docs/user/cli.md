@@ -219,6 +219,14 @@ are reused when their evidence still matches. After `status="unknown"`, follow
 the project's reconciliation procedure before attempting another delivery. The
 CLI does not provide a force/retry option that bypasses this check.
 
+A cleanup pass from an earlier skipped owner is not a completion guard for a new
+attempt. Resume refreshes successful nonexternal cleanup and consumers whose
+success dependencies or completion-order prerequisites will run again. This can
+include a previously passed runtime check after its preceding owner cleanup is
+rescheduled. Unaffected host proofs remain retained. Completed or unknown
+external actions are never automatically repeated; a stale external cleanup
+requires separate outcome review rather than automatic replay.
+
 ## Retry an uncertain device installation
 
 Use this only after deciding to install the same prepared app on the same device

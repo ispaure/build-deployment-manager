@@ -106,7 +106,7 @@ class Executor:
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
         from .identity import engine_review_identity
         from .resources import HostResourceSlots
-        from .workflows import EXTERNAL, recover_phase_records, review_identity, verify_artifacts
+        from .workflows import EXTERNAL, recover_phase_records, retained_phase_records, review_identity, verify_artifacts
         if resume:
             from .history import read_report
             from .run_retirement import require_resumable
@@ -199,10 +199,7 @@ class Executor:
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
                 previous = recover_phase_records(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []
-                retained = {'passed', 'unknown'}
-                if not retry_failed:
-                    retained.update({'failed', 'skipped', 'cancelled', 'timeout', 'interrupted'})
-                rows = {row['id']:row for row in previous if row['status'] in retained}
+                rows = retained_phase_records(plan, previous, retry_failed=retry_failed)
                 if migration is not None:
                     migration['retained_phases'] = list(rows)
                     report.setdefault('engine_history', []).append(migration)
