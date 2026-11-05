@@ -128,6 +128,107 @@ else:
         self.assertTrue(all(stream.closed for stream in (owners[0].stdin, owners[0].stdout, owners[0].stderr)))
 
 
+class BridgeInventoryRetryTests(unittest.TestCase):
+    def test_transient_timeout_reads_fresh_inventory_without_repeating_request(self):
+        timeout = subprocess.TimeoutExpired('ps', 1)
+        with patch.object(bridge_process.time, 'monotonic', return_value=0), \
+                patch.object(bridge_process, 'session_groups', side_effect=[timeout, {70: [12]}]) as inventory:
+            self.assertEqual(bridge_process.teardown_inventory(41, deadline=5), {70: [12]})
+        self.assertEqual(inventory.call_count, 2)
+        self.assertEqual(inventory.call_args_list[0].kwargs, dict(timeout=1))
+
+    def test_permanent_timeout_preserves_first_cause_and_limits_attempts(self):
+        original = subprocess.TimeoutExpired('ps', 1)
+        with patch.object(bridge_process.time, 'monotonic', return_value=0), \
+                patch.object(bridge_process, 'session_groups', side_effect=[original, subprocess.TimeoutExpired('ps', 1)]) as inventory:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                bridge_process.teardown_inventory(41, deadline=5)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(inventory.call_count, 2)
+
+    def test_expired_budget_prevents_second_attempt_and_preserves_original(self):
+        original = subprocess.TimeoutExpired('ps', .25)
+        with patch.object(bridge_process.time, 'monotonic', side_effect=[.75, 1]), \
+                patch.object(bridge_process, 'session_groups', side_effect=original) as inventory:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                bridge_process.teardown_inventory(41, deadline=1)
+        self.assertIs(caught.exception, original)
+        inventory.assert_called_once_with(41, timeout=.25)
+
+    def test_expired_budget_never_starts_inventory(self):
+        with patch.object(bridge_process.time, 'monotonic', return_value=1), \
+                patch.object(bridge_process, 'session_groups') as inventory:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                bridge_process.teardown_inventory(41, deadline=1)
+        inventory.assert_not_called()
+
+    def test_non_timeout_failures_are_not_retried(self):
+        for original in (OSError('missing or malformed ps'), PermissionError('denied')):
+            with self.subTest(error=type(original).__name__), \
+                    patch.object(bridge_process.time, 'monotonic', return_value=0), \
+                    patch.object(bridge_process, 'session_groups', side_effect=original) as inventory:
+                with self.assertRaises(type(original)) as caught:
+                    bridge_process.teardown_inventory(41, deadline=5)
+                self.assertIs(caught.exception, original)
+                inventory.assert_called_once()
+
+    def test_inventory_subprocess_receives_remaining_budget(self):
+        with patch.object(bridge_process.Path, 'is_file', return_value=True), \
+                patch.object(bridge_process.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='')) as run:
+            self.assertEqual(bridge_process.session_groups(41, timeout=.125), {})
+        self.assertEqual(run.call_args.kwargs['timeout'], .125)
+
+    def test_retry_never_signals_last_inventory_as_if_it_were_fresh(self):
+        process = Mock(pid=41, returncode=0)
+        sequence = [{70: [12]}, subprocess.TimeoutExpired('ps', 1), {80: [13]}, {}]
+        with patch.object(bridge_process, 'session_groups', side_effect=sequence), \
+                patch.object(bridge_process, 'signal_session') as signal_owned, \
+                patch.object(bridge_process.time, 'sleep'), \
+                patch.object(bridge_process, 'stop_process') as fallback:
+            bridge_process.stop_session(process)
+        self.assertEqual([call.args for call in signal_owned.call_args_list],
+                         [(41, {70: [12]}, signal.SIGTERM), (41, {80: [13]}, signal.SIGTERM)])
+        fallback.assert_not_called()
+        process.wait.assert_called_once_with(timeout=5)
+
+    def test_permanent_timeout_retains_last_inventory_without_resignalling_it(self):
+        process = Mock(pid=41, returncode=-15)
+        original = subprocess.TimeoutExpired('ps', 1)
+        with patch.object(bridge_process, 'session_groups', side_effect=[{70: [12]}, original, original]), \
+                patch.object(bridge_process, 'signal_session') as signal_owned, \
+                patch.object(bridge_process.time, 'sleep'), \
+                patch.object(bridge_process, 'stop_process') as fallback:
+            with self.assertRaises(subprocess.TimeoutExpired) as caught:
+                bridge_process.stop_session(process)
+        self.assertIs(caught.exception, original)
+        signal_owned.assert_called_once_with(41, {70: [12]}, signal.SIGTERM)
+        receipt = original._owned_bridge_receipt
+        self.assertEqual(receipt['stage'], 'session_inventory')
+        self.assertEqual(receipt['last_verified_owned_processes'], [dict(pid=12, pgid=70)])
+        self.assertFalse(receipt['session_verified_empty'])
+        self.assertFalse(receipt['retry_safe'])
+        fallback.assert_called_once_with(process, grace=15)
+
+    def test_short_term_grace_does_not_reset_additional_retirement_budget(self):
+        process = Mock(pid=41, returncode=-15)
+        clock = [0]
+        def inventory(_session, *, deadline):
+            self.assertAlmostEqual(deadline, 5.1)
+            if clock[0] == 0:
+                clock[0] = .2
+                return {70: [12]}
+            raise subprocess.TimeoutExpired('ps', deadline - clock[0])
+        with patch.object(bridge_process, 'STOP_GRACE', .1), \
+                patch.object(bridge_process.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(bridge_process.time, 'sleep'), \
+                patch.object(bridge_process, 'teardown_inventory', side_effect=inventory) as read, \
+                patch.object(bridge_process, 'signal_session') as signal_owned, \
+                patch.object(bridge_process, 'stop_process'):
+            with self.assertRaises(subprocess.TimeoutExpired): bridge_process.stop_session(process)
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual([call.args[2] for call in signal_owned.call_args_list], [signal.SIGTERM, signal.SIGKILL])
+
+
 class BridgeOwnershipUnitTests(unittest.TestCase):
     @unittest.skipIf(os.name == 'nt', 'POSIX host prerequisite')
     def test_missing_host_inventory_prevents_any_adapter_launch(self):

@@ -14,12 +14,12 @@ STOP_GRACE = 15  # Project SIGTERM cleanup/lease holding is bounded to ten secon
 DRAIN_TIMEOUT = 3
 
 
-def session_groups(session):
+def session_groups(session, *, timeout=1):
     """Read only PID/group/state metadata; never discover commands or signal outsiders."""
     ps = next((path for path in ('/bin/ps', '/usr/bin/ps') if Path(path).is_file()), None)
     if ps is None:
         raise OSError('Owned session inventory is unavailable.')
-    result = subprocess.run([ps, '-A', '-o', 'pid=,pgid=,stat='], capture_output=True, text=True, timeout=1)
+    result = subprocess.run([ps, '-A', '-o', 'pid=,pgid=,stat='], capture_output=True, text=True, timeout=timeout)
     if result.returncode:
         raise OSError('Owned session inventory is unavailable.')
     groups = {}
@@ -40,6 +40,23 @@ def session_groups(session):
         if owned and not fields[2].startswith(('Z', 'X')):
             groups.setdefault(group, []).append(pid)
     return groups
+
+
+def teardown_inventory(session, *, deadline):
+    """Retry one timed-out read, never an operation or unverified signal."""
+    original = None
+    for _ in range(2):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            if original is not None:
+                raise original
+            raise subprocess.TimeoutExpired('owned-session-inventory', 0)
+        try:
+            return session_groups(session, timeout=min(1, remaining))
+        except subprocess.TimeoutExpired as error:
+            if original is None:
+                original = error
+    raise original
 
 
 def signal_session(session, groups, sig):
@@ -82,6 +99,7 @@ def teardown_failure(process, stage, error, *, session_verified_empty=False):
 def stop_session(process):
     """Retire every subgroup in the session created for this exact bridge."""
     deadline = time.monotonic() + STOP_GRACE
+    retirement_deadline = deadline + 5
     signalled = set()
     groups = {}
     stage = 'session_inventory'
@@ -90,25 +108,27 @@ def stop_session(process):
             stage = 'root_poll'
             process.poll()
             stage = 'session_inventory'
-            groups = session_groups(process.pid)
+            groups = teardown_inventory(process.pid, deadline=retirement_deadline)
             if not groups:
                 break
+            if time.monotonic() >= retirement_deadline:
+                stage = 'session_verify_exit'
+                raise subprocess.TimeoutExpired(process.args, STOP_GRACE + 5)
             stage = 'session_sigterm'
             signal_session(process.pid, {key: value for key, value in groups.items() if key not in signalled}, signal.SIGTERM)
             signalled.update(groups)
             if time.monotonic() >= deadline:
-                deadline = time.monotonic() + 5
                 while groups:
-                    stage = 'session_sigkill'
-                    signal_session(process.pid, groups, signal.SIGKILL)
-                    if time.monotonic() >= deadline:
+                    if time.monotonic() >= retirement_deadline:
                         stage = 'session_verify_exit'
                         raise subprocess.TimeoutExpired(process.args, STOP_GRACE + 5)
+                    stage = 'session_sigkill'
+                    signal_session(process.pid, groups, signal.SIGKILL)
                     time.sleep(.02)
                     stage = 'root_poll'
                     process.poll()
                     stage = 'session_inventory'
-                    groups = session_groups(process.pid)
+                    groups = teardown_inventory(process.pid, deadline=retirement_deadline)
                 break
             time.sleep(.02)
         stage = 'root_reap'

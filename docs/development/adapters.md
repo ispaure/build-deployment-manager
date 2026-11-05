@@ -465,7 +465,15 @@ before child execution. POSIX inventory is checked before adapter launch; a
 missing host `ps` utility stops before project effects. POSIX teardown inventories only process IDs, group IDs
 and state, verifies session/group membership before signalling, and retires child
 subgroups as well as the bridge group. Missing inventory is an explicit teardown
-failure, not successful cancellation. Windows retains its existing job owner and
+failure, not successful cancellation. A timed-out read-only teardown inventory
+gets at most one fresh attempt; each `ps` call is capped at one second and the
+remaining retirement budget. The termination grace and additional five-second
+forced-retirement window share fixed deadlines, so short test graces do not
+promise that an inventory fits within the grace alone. No request is retried,
+and signalling always requires a complete fresh inventory plus session/group
+revalidation. Persistent timeouts and other inventory failures retain the
+unverified teardown receipt and known-root fallback. Root reaping, pipe draining
+and that fallback retain their separate bounds. Windows retains its existing job owner and
 uses [job accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information)
 to verify no active members remain. Private protocol files keep Windows stdout
 and stderr separate; the envelope reader is drained before handles are released.
