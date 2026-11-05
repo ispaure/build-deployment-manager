@@ -255,6 +255,76 @@ class BlockerCardTests(unittest.TestCase):
                     self.assertTrue(parent.rect().contains(caption.rect().translated(caption.mapTo(parent, QPoint()))))
                     self.assertTrue(pane.rect().contains(caption.rect().translated(caption.mapTo(pane, QPoint()))))
 
+    def test_active_repair_and_both_long_captions_fit_narrow_inspector(self):
+        from build_manager.review_ui import ReviewPlanView
+        view = ReviewPlanView()
+        self.addCleanup(view.close)
+        view.reset(integrated(self.root), preview=False)
+        view.set_facts({'ios': dict(status='failed', error='Synthetic gate failure')})
+        view.inspect_phase('firebase')
+        original = QFont(self.app.font()); self.addCleanup(self.app.setFont, original)
+        font = QFont(original); font.setPointSize(14); self.app.setFont(font)
+        view.selection_heading.setText('Selected task with a longer readable caption')
+        view.scope_label.setText('Scope: task · Selected task with a longer readable caption')
+        pane = view.sidebar_splitter.widget(1)
+        pane.setParent(None); self.addCleanup(pane.close)
+        pane.show()
+        for width in (360, 520):
+            with self.subTest(width=width):
+                pane.resize(width, 900)
+                for _ in range(8): self.app.processEvents()
+                self.assertEqual(pane.width(), width)
+                self.assertTrue(view.blocker.isVisible())
+                self.assertEqual(view.blocker.text(), 'View blocking step')
+                self.assertGreaterEqual(view.blocker.width(), view.blocker.minimumSizeHint().width())
+                self.assertGreaterEqual(view.blocker.height(), view.blocker.minimumSizeHint().height())
+                for control in (view.selection_heading, view.scope_label, view.blocker):
+                    self.assertTrue(control.isVisible())
+                    if control is not view.blocker:
+                        self.assertTrue(control.text())
+                        self.assertGreaterEqual(control.height(), control.heightForWidth(control.width()))
+                    parent = control.parentWidget()
+                    self.assertTrue(parent.rect().contains(control.rect().translated(control.mapTo(parent, QPoint()))))
+                    self.assertTrue(pane.rect().contains(control.rect().translated(control.mapTo(pane, QPoint()))))
+        view.blocker.click()
+        self.assertEqual(view.selected, 'ios')
+
+    def test_task_font_refresh_preserves_manual_split_and_stops_on_close(self):
+        view = self.panel.run_view.results_workspace
+        self.panel.run_view.reset(integrated(self.root))
+        view.inspect_phase('firebase')
+        self.panel.stages.setCurrentIndex(2)
+        self.window.resize(1280, 1100); self.window.show()
+        for _ in range(8): self.app.processEvents()
+        # Hold the available pane height constant; font-driven parent-window
+        # changes are independent of preserving the user's splitter choice.
+        view.sidebar_splitter.setParent(None)
+        self.addCleanup(view.sidebar_splitter.close)
+        view.sidebar_splitter.setFixedSize(900, 800)
+        view.sidebar_splitter.show()
+        for _ in range(8): self.app.processEvents()
+        view.sidebar_splitter.setSizes([250, 400])
+        view.manual_task_split = True
+        sizes = view.sidebar_splitter.sizes()
+        original = QFont(self.app.font()); self.addCleanup(self.app.setFont, original)
+        font = QFont(original); font.setPointSize(14); self.app.setFont(font)
+        for _ in range(8): self.app.processEvents()
+        self.assertTrue(view.manual_task_split)
+        self.assertEqual(view.sidebar_splitter.sizes(), sizes)
+        current = view.tasks.currentItem()
+        row = view.tasks.visualItemRect(current)
+        self.assertGreater(row.height(), 0)
+        self.assertGreaterEqual(view.tasks.minimumHeight(), view.tasks.header().height()
+                                + row.height() + 2 * view.tasks.frameWidth())
+        self.assertTrue(view._task_size_observer_active)
+        view._task_size_timer.start(1000)
+        view.close()
+        self.assertFalse(view._task_size_timer.isActive())
+        self.assertFalse(view._task_size_observer_active)
+        view.show()
+        for _ in range(8): self.app.processEvents()
+        self.assertTrue(view._task_size_observer_active)
+
     def check_task_row_visible(self):
         tasks = self.panel.run_view.results_workspace.tasks
         tasks.scrollToItem(tasks.currentItem(), tasks.ScrollHint.PositionAtTop)
