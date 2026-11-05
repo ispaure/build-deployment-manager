@@ -231,3 +231,37 @@ class SettingsLoadContractTests(unittest.TestCase):
         self.assertFalse(own.retired.is_set())
         self.assertFalse(other.entered.is_set())
         self.assertFalse(other.retired.is_set())
+
+
+class OwnedSettingsErrorTests(unittest.TestCase):
+    def test_actual_load_wrapper_preserves_error_before_completion_and_before_missing_control(self):
+        # Read the real fixture wrapper without importing Qt or launching a child.
+        source = Path(importlib.util.find_spec('test_accessible_flow').origin).read_text()
+        tree = ast.parse(source)
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'AccessibleFlowTests')
+        case = next(n for n in cls.body if isinstance(n, ast.FunctionDef)
+                    and n.name == 'test_registered_settings_load_without_approval_popup')
+        load = next(n for n in ast.walk(case) if isinstance(n, ast.FunctionDef) and n.name == 'load')
+        guard = next(n for n in ast.walk(case) if isinstance(n, ast.If)
+                     and isinstance(n.test, ast.Name) and n.test.id == 'load_errors')
+        errors, publication = [], []
+        finished = NS(set=lambda: publication.append(bool(errors)))
+        failure, cause = ValueError('Synthetic owned transport failure'), TimeoutError('Synthetic inventory timeout')
+        failure.receipt = dict(stage='session_inventory', error_class='TimeoutExpired', session_id=41)
+        def fail(*args, **kwargs):
+            raise failure from cause
+        scope = dict(real_load=fail, finished=finished, load_errors=errors)
+        exec(compile(ast.Module(body=[load], type_ignores=[]), 'actual-settings-load-wrapper', 'exec'), scope)
+        with self.assertRaises(ValueError) as caught:
+            scope['load']()
+        self.assertIs(caught.exception, failure)
+        self.assertEqual(publication, [True])
+        self.assertEqual(errors, [failure])
+        following = ast.parse("raise KeyError('sample')").body[0]
+        with self.assertRaises(ValueError) as caught:
+            exec(compile(ast.Module(body=[guard, following], type_ignores=[]),
+                         'actual-settings-completion-guard', 'exec'), scope)
+        self.assertIs(caught.exception, failure)
+        self.assertIs(caught.exception.__cause__, cause)
+        self.assertEqual(caught.exception.receipt,
+                         dict(stage='session_inventory', error_class='TimeoutExpired', session_id=41))

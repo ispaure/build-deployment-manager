@@ -98,7 +98,7 @@ class AccessibleFlowTests(unittest.TestCase):
         from build_manager import bridge_process
         from build_manager.settings_ui import SettingsTask
         from settings_load_contract import (BridgeRetirement, TaskCompletions, TimedEvent, budgets, cleanup_fixture,
-                                             completed_call, finish_cleanup, wait_for_event)
+                                             finish_cleanup, wait_for_event)
         for legacy in (False, True):
             # An unverified worker must never race automatic fixture deletion.
             temporary = TemporaryDirectory(delete=False)
@@ -107,6 +107,7 @@ class AccessibleFlowTests(unittest.TestCase):
                 task_finished, tasks = None, TaskCompletions()
                 dialog, primary, attempted, limits = None, None, False, None
                 started = time.monotonic()
+                load_errors = []
                 try:
                     fixture = registry_fixtures.RegistryTests()
                     fixture.root = Path(directory)
@@ -123,8 +124,14 @@ class AccessibleFlowTests(unittest.TestCase):
                     bridge = BridgeRetirement(project.root, [project.root / project.descriptor['interpreter'],
                                                              project.root / project.descriptor['bridge']])
                     bridge_entered, bridge_retired = bridge.entered, bridge.retired
-                    def load(*args, real_load=real_load, finished=finished, **kwargs):
-                        return completed_call(real_load, finished, *args, **kwargs)
+                    def load(*args, real_load=real_load, finished=finished, errors=load_errors, **kwargs):
+                        try:
+                            return real_load(*args, **kwargs)
+                        except BaseException as error:
+                            errors.append(error)
+                            raise
+                        finally:
+                            finished.set()  # Publish only after preserving the owned failure.
                     def task_run(task, real_task=real_task, tasks=tasks):
                         return tasks.call(real_task, task)
                     def bridge_run(*args, real_bridge=real_bridge, bridge=bridge, **kwargs):
@@ -138,6 +145,8 @@ class AccessibleFlowTests(unittest.TestCase):
                     task_finished = tasks.event(dialog.task)
                     wait_for_event(self, finished, limits['worker'], self.app.processEvents,
                                    stage='Real settings request and transport retirement')
+                    if load_errors:
+                        raise load_errors[0]
                     # Keep the original five-second Queue/QTimer/render contract.
                     settings_fixtures.SettingsAsyncTests.wait(self, dialog)
                     self.assertEqual(dialog.controls['sample'].text(), 'loaded')
@@ -148,13 +157,35 @@ class AccessibleFlowTests(unittest.TestCase):
                         stacks = [[dict(file=Path(frame.filename).name, function=frame.name, line=frame.lineno)
                                    for frame in traceback.extract_stack(current, limit=6)]
                                   for current in list(sys._current_frames().values())[:8]]
+                        def relative_completion(event):
+                            value = event.completion_time() if event is not None else None
+                            return None if value is None else round(value-started, 6)
+                        cause, cause_classes, seen = primary, [], set()
+                        while cause is not None and id(cause) not in seen and len(cause_classes) < 4:
+                            seen.add(id(cause))
+                            cause_classes.append(type(cause).__name__)
+                            cause = cause.__cause__ or cause.__context__
+                        receipt = getattr(load_errors[0], 'receipt', None) if load_errors else None
+                        if isinstance(receipt, dict):
+                            receipt = {key:receipt[key] for key in (
+                                'schema','bridge_pid','session_id','stage','error_class','root_exit_code',
+                                'owned_process_count','truncated','session_verified_empty','ownership',
+                                'retry_safe','fallback_error_class') if key in receipt}
+                            members = getattr(load_errors[0], 'receipt').get('last_verified_owned_processes', [])
+                            receipt['last_verified_owned_processes'] = members[:32]
                         state = dict(legacy=legacy, seconds=time.monotonic()-started, limits=limits,
                             load_finished=finished.is_set(), task_finished=task_finished is not None and task_finished.is_set(),
                             bridge_entered=bridge_entered.is_set(), bridge_retired=bridge_retired.is_set(),
-                            active_threads=pool.activeThreadCount(), stacks=stacks)
+                            active_threads=pool.activeThreadCount(), stacks=stacks,
+                            load_error_class=type(load_errors[0]).__name__ if load_errors else None,
+                            transport_receipt=receipt, cause_classes=cause_classes,
+                            completion_seconds=dict(load=relative_completion(finished),
+                                task=relative_completion(task_finished), bridge_entered=relative_completion(bridge_entered),
+                                bridge_retired=relative_completion(bridge_retired)))
                         if dialog is not None:
                             state.update(busy=dialog.busy, queued_results=dialog.results.qsize(),
-                                         timer_active=dialog.timer.isActive())
+                                         timer_active=dialog.timer.isActive(),
+                                         status=dialog.redact(dialog.status.text())[:2048])
                         print('SETTINGS_LOAD_FAILURE=' + json.dumps(state), file=sys.stderr, flush=True)
                     except BaseException as diagnostic_error:
                         primary.add_note('Settings fixture diagnostic failed: ' + type(diagnostic_error).__name__)
