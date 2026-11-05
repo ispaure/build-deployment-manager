@@ -18,6 +18,23 @@ run. Preparing a new plan captures source and settings again.
 Keep the original result directory. A disconnected network does not prove an
 upload failed, and cancellation does not undo completed deliveries.
 
+## Request cancellation from another terminal
+
+Use `python -m build_manager.cli cancel RUN --expect-identity PLAN_SHA --confirm`
+(or `ManagerAPI.cancel_run`) to request cancellation of that exact live saved run.
+The response is **requested**, not finished. Read `status RUN` until the original
+controller finishes its owned cleanup. Completed deliveries are not undone;
+uncertain external outcomes still require reconciliation before retrying.
+
+Each fresh attempt has its own nonce and request file, so an old requester cannot
+cancel a resumed run or overwrite its acknowledged cancellation request.
+`--expect-attempt NONCE` additionally binds automation to an inspected attempt.
+Only admitted controllers advertising this protocol accept requests: a controller
+still waiting for workflow resources, a finished/crashed controller, and older SDK
+controllers fail actionably. Use the original controller's Stop/interrupt while
+waiting for admission. This command never signals arbitrary processes, takes the
+controller's supervisor lock, or edits its result report.
+
 ## Waiting for a device
 
 Adapters can declare a separate connection check before installation. A temporary

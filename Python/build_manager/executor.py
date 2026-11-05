@@ -211,6 +211,8 @@ class Executor:
                 report['phases'] = list(rows.values())
                 report['attempt_started_at'] = recorder.attempt_started_at
                 recorder.save()
+                from .cancellation import cancellable_attempt
+                poll_cancellation = locks.enter_context(cancellable_attempt(output, plan.identity, engine, self.cancelled))
                 pending = [phase for phase in plan.phases if phase.id not in rows]
                 running = {}
                 deferred = set()
@@ -218,6 +220,7 @@ class Executor:
                 retry_history = {row['id']: row['retry_attempts'] for row in previous if row.get('retry_attempts')}
                 with ThreadPoolExecutor(max_workers=plan.max_workers) as pool:
                     while pending or running:
+                        poll_cancellation()
                         changed = False
                         for phase in list(pending):
                             if len(running) >= plan.max_workers:
