@@ -212,13 +212,15 @@ class BridgeInventoryRetryTests(unittest.TestCase):
     def test_short_term_grace_does_not_reset_additional_retirement_budget(self):
         process = Mock(pid=41, returncode=-15)
         clock = [0]
+        signals = SimpleNamespace(SIGTERM=15, SIGKILL=9)
         def inventory(_session, *, deadline):
             self.assertAlmostEqual(deadline, 5.1)
             if clock[0] == 0:
                 clock[0] = .2
                 return {70: [12]}
             raise subprocess.TimeoutExpired('ps', deadline - clock[0])
-        with patch.object(bridge_process, 'STOP_GRACE', .1), \
+        with patch.object(bridge_process, 'signal', signals), \
+                patch.object(bridge_process, 'STOP_GRACE', .1), \
                 patch.object(bridge_process.time, 'monotonic', side_effect=lambda: clock[0]), \
                 patch.object(bridge_process.time, 'sleep'), \
                 patch.object(bridge_process, 'teardown_inventory', side_effect=inventory) as read, \
@@ -226,7 +228,19 @@ class BridgeInventoryRetryTests(unittest.TestCase):
                 patch.object(bridge_process, 'stop_process'):
             with self.assertRaises(subprocess.TimeoutExpired): bridge_process.stop_session(process)
         self.assertEqual(read.call_count, 2)
-        self.assertEqual([call.args[2] for call in signal_owned.call_args_list], [signal.SIGTERM, signal.SIGKILL])
+        self.assertEqual([call.args[2] for call in signal_owned.call_args_list], [signals.SIGTERM, signals.SIGKILL])
+
+    def test_deadline_contract_does_not_require_host_sigkill(self):
+        result = unittest.TestResult()
+        # Windows has SIGTERM but no SIGKILL. This portable deadline contract
+        # owns its simulated signals and never calls an actual host signal API.
+        with patch.object(bridge_process, 'signal', SimpleNamespace(SIGTERM=15)), \
+                patch.dict(globals(), signal=SimpleNamespace(SIGTERM=15)):
+            type(self)('test_short_term_grace_does_not_reset_additional_retirement_budget').run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(result.skipped, [])
 
 
 class BridgeOwnershipUnitTests(unittest.TestCase):
