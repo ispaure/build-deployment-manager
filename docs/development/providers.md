@@ -18,6 +18,38 @@ Future store work requires store-specific policy, implementation and real accept
 before enabling the capability; none is inferred from TestFlight or Firebase success.
 
 
+## GitHub attempt recovery
+
+`github.GitHub.get` retries only transient GET failures within its selected read
+budget. HTTP status, unavailable transport and unusable JSON have distinct safe
+exception types; provider bodies and signed URLs are not included in errors.
+Existing dispatch and wait APIs remain available.
+
+`attempt` and `wait_attempt` require the exact run, attempt, commit, ref and workflow.
+They verify repository identity and use the attempt endpoint rather than trusting
+an older parent-run conclusion. A queued aggregate remains queued even when its
+currently visible jobs have finished. A project may separately verify its own
+fixed workflow's complete terminal-job witness; the generic client does not infer
+that an arbitrary workflow is complete. Cancelling this observation sends no
+provider write.
+
+A caller must persist its reviewed intent before `rerun_failed`. That method
+validates inputs and cancellation before issuing exactly one failed-jobs POST,
+then observes the expected next attempt. An HTTP 500 or lost response can still
+mean the request was accepted. `GitHubOutcomeUnknown` retains the run and expected
+attempt when acceptance cannot be established, including observation timeout or
+cancellation after the write. Resume with GET-only `reconcile_rerun`, never by
+repeating the POST. Source/ref/workflow mismatch remains a policy failure, without
+removing the caller's unresolved intent. Job-failure classification and permission
+to rerun remain project responsibilities; there is no automatic test-failure retry.
+
+`job_log` reads one private job log with a byte cap and total deadline. It accepts
+one HTTPS redirect to approved GitHub Actions/Azure blob storage, using a fresh
+anonymous request without forwarding API authorization. Further redirects,
+chunked transfer framing and streams lacking deadline-aware socket reads fail
+closed. Callers retain only the evidence and redacted classification they need;
+raw logs and signed URLs do not belong in public receipts or documentation.
+
 ## App Store Connect transport
 
 `app_store_connect.AppStoreConnectClient(auth, token_factory=...)` supplies
