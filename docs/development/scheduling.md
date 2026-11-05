@@ -114,6 +114,13 @@ bulk content has gone, so interrupted deletion remains identifiable and retryabl
 Soft failures also preserve the original retention age. Root markers must remain
 ordinary files; linked/missing proof stops removal.
 
+On POSIX hosts, removal can repair a same-owner, non-writable parent directory
+inside the selected owned tree, as required by Go's read-only module caches.
+It adds owner write/execute permission and retries the failed unlink/removal once.
+Linked paths, foreign ownership, parents outside that tree and failures in
+already-writable parents remain errors. Retention eligibility, pins, leases and
+ownership markers keep their existing protection rules.
+
 `run_retirement.retire_run` serializes with the run supervisor, records retirement
 before releasing holds, validates hold paths against the saved plan, and removes
 only that run's owner keys. An interrupted retirement is retryable. Recovery and

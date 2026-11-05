@@ -67,6 +67,27 @@ def _remove_tree_once(path):
     path = native_path(path)
     def readonly(function, name, error):
         target = Path(name)
+        if os.name != 'nt' and isinstance(error, PermissionError) and function in {os.unlink, os.rmdir}:
+            # Go deliberately stores extracted modules in 0555 directories.
+            # POSIX unlink depends on the parent directory, not file write bits.
+            # Repair only our own non-writable parent inside this selected tree;
+            # an ACL, foreign owner, linked path or writable-parent failure stays
+            # a real error rather than triggering broad chmod/retry behavior.
+            boundary = Path(os.path.abspath(path))
+            parent = Path(os.path.abspath(target.parent))
+            try:
+                relative = parent.relative_to(boundary)
+            except ValueError:
+                raise error
+            chain = [boundary, *(boundary.joinpath(*relative.parts[:i]) for i in range(1, len(relative.parts) + 1))]
+            if linked(target) or any(linked(part) for part in chain):
+                raise error
+            mode = parent.stat()
+            if mode.st_uid != os.geteuid() or mode.st_mode & stat.S_IWUSR:
+                raise error
+            parent.chmod(mode.st_mode | stat.S_IWUSR | stat.S_IXUSR)
+            function(name)
+            return
         if (os.name != 'nt' or not isinstance(error, PermissionError) or linked(target)
                 or target.stat().st_mode & stat.S_IWRITE):
             raise error
