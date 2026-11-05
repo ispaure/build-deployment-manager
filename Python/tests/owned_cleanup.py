@@ -1,4 +1,4 @@
-"""Failure-only evidence for private interpreter fixtures; never retry removal."""
+"""First-failure evidence and existing bounded cleanup for owned test fixtures."""
 import ctypes as c
 from ctypes import wintypes as w
 import hashlib
@@ -16,11 +16,29 @@ def _owned_executable(root, target):
     expected = root / '.venv/Scripts/python.exe'
     if target != expected:
         return False
-    for path in (root, root / '.venv', root / '.venv/Scripts', expected):
+    for path in (*root.parents, root, root / '.venv', root / '.venv/Scripts', expected):
         information = path.lstat()
         if stat.S_ISLNK(information.st_mode) or getattr(information, 'st_file_attributes', 0) & 0x400:
             return False  # FILE_ATTRIBUTE_REPARSE_POINT, including junctions.
+        if not (stat.S_ISREG(information.st_mode) if path == expected else stat.S_ISDIR(information.st_mode)):
+            return False
     return root.resolve() == root and expected.is_file()
+
+
+def _owned_fixture_identity(root, target):
+    if not _owned_executable(root, target):
+        raise ValueError('Owned fixture path check failed.')
+    root = Path(root).absolute()
+    identity = tuple((info.st_dev, info.st_ino) for info in
+                     (path.lstat() for path in (root, root / '.venv', root / '.venv/Scripts', Path(target))))
+    if any(inode <= 0 for device, inode in identity):
+        raise ValueError('Owned fixture identity is unavailable.')
+    return identity
+
+
+def _cleanup_receipt(**receipt):
+    # Recovery must leave the original failure visible even when removal succeeds.
+    print('Private interpreter cleanup: ' + json.dumps(receipt, sort_keys=True), file=sys.stderr, flush=True)
 
 
 def _resource_owners(path, library=None):
@@ -106,15 +124,15 @@ def _diagnose_failure(root, target):
 
 
 def cleanup_private_interpreter(temporary):
-    """Preserve the original cleanup exception and add evidence only on failure."""
+    """Diagnose the first failure before applying the existing owned-tree policy."""
     try:
         return temporary.cleanup()
     except PermissionError as error:
-        if os.name == 'nt' and getattr(error, 'winerror', None) == 5 and error.filename:
+        if os.name == 'nt' and getattr(error, 'winerror', None) in (5, 32, 33) and error.filename:
+            identity = None
             try:
-                evidence = (_diagnose_failure(temporary.name, error.filename)
-                    if _owned_executable(temporary.name, error.filename)
-                    else dict(error='owned_path_check_failed'))
+                identity = _owned_fixture_identity(temporary.name, error.filename)
+                evidence = _diagnose_failure(temporary.name, error.filename)
                 note = json.dumps(evidence, sort_keys=True)
             except Exception as diagnostic_error:
                 note = json.dumps(dict(error=type(diagnostic_error).__name__))
@@ -122,6 +140,33 @@ def cleanup_private_interpreter(temporary):
                 error.add_note('Private interpreter cleanup evidence: ' + note)
             except Exception:
                 pass  # Diagnostic annotation must not replace cleanup failure.
+            if identity is not None:
+                try:
+                    _cleanup_receipt(stage='first_failure', error=type(error).__name__,
+                                     errno=error.errno, winerror=error.winerror,
+                                     failed_path=error.filename, evidence=json.loads(note))
+                    if _owned_fixture_identity(temporary.name, error.filename) != identity:
+                        raise ValueError('Owned fixture identity changed during diagnosis.')
+                    from build_manager.retention import remove_tree
+                    remove_tree(Path(temporary.name))
+                    try:
+                        Path(temporary.name).lstat()
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        raise ValueError('Owned fixture removal did not finish.')
+                    _cleanup_receipt(stage='bounded_outcome', outcome='removed', policy_seconds=3)
+                except Exception as recovery_error:
+                    try:
+                        outcome = dict(stage='bounded_outcome', outcome='failed', policy_seconds=3,
+                                       error=type(recovery_error).__name__,
+                                       winerror=getattr(recovery_error, 'winerror', None))
+                        error.add_note('Private interpreter cleanup outcome: ' + json.dumps(outcome, sort_keys=True))
+                        _cleanup_receipt(**outcome)
+                    except Exception:
+                        pass
+                else:
+                    return None
         raise
 
 
