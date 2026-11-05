@@ -169,6 +169,11 @@ def parser_for_cli():
     resume.add_argument('--approve-step', action='append', default=[], metavar='STEP',
                         help='Authorize this named pending action using its verified retained artifacts; requires --confirm. Use --no-retry-failed to preserve other failed branches')
     resume.add_argument('--engine-review-identity', help='Explicitly reviewed old/new engine identity from review; preserves provenance')
+    cancel = sub.add_parser('cancel', help='Request cooperative cancellation of an admitted live run; does not wait for cleanup')
+    cancel.add_argument('output', type=Path)
+    cancel.add_argument('--expect-identity', required=True, help='Reviewed plan SHA256')
+    cancel.add_argument('--expect-attempt', help='Optional previously inspected live attempt nonce')
+    cancel.add_argument('--confirm', action='store_true', help='Authorize stopping this run; completed effects are not undone')
     for name in ('status', 'logs', 'review'):
         command = sub.add_parser(name, help={
             'status': 'Read a compact retained outcome', 'logs': 'Read a bounded step log tail',
@@ -288,6 +293,9 @@ def execute(args, api):
             run_overrides=assignments(args.run_value) if args.run_value else None)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
+    if command == 'cancel':
+        return api.cancel_run(args.output, expected_identity=args.expect_identity,
+            expected_attempt=args.expect_attempt, confirmed=args.confirm)
     if command == 'status':
         return read_status(args.output, full=args.full)
     if command == 'logs':

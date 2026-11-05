@@ -121,6 +121,12 @@ class ManagerAPI:
     def retire_workflow(self, name, *, project=None, confirmed=False):
         return self.retire_run(name, project=project, confirmed=confirmed)
 
+    def cancel_run(self, output, *, expected_identity, confirmed=False, expected_attempt=None):
+        """Request cooperative cancellation; completion remains in the saved result."""
+        from .cancellation import request_cancellation
+        return request_cancellation(output, expected_identity=expected_identity,
+            confirmed=confirmed, expected_attempt=expected_attempt)
+
     def retire_run(self, run_name, *, project=None, confirmed=False):
         from .run_retirement import retire_run
         return retire_run(self._project(project).results_directory, run_name, confirmed=confirmed)
