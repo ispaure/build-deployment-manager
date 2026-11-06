@@ -112,7 +112,8 @@ The headless `build_manager.reporting` module provides `write_junit(path, suite,
 cases)`, `JUnitResult` and `run_suite(suite, output, name, fail_on_skip=True)` for
 project-owned runners. Cases use name, classname, status (passed/failed/error/
 skipped), optional seconds and message. The writer filters XML control bytes and
-standard inherited credentials, and atomically replaces the report. Runners still
+standard inherited credentials, and publishes the report with
+`commonUtils.persistence.atomic_write_bytes`. Runners still
 own their test discovery, isolated interpreters, source identity and native policy.
 Use `python -m build_manager.reporting --start TEST_ROOT --output REPORT.xml
 --suite SUITE_ID --fail-on-skip` for ordinary stdlib unittest discovery. This helper

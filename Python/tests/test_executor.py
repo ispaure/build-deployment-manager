@@ -347,6 +347,35 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reserve_build_number(path, maximum=8)
 
+    def test_build_reservation_leaves_legacy_stage_untouched(self):
+        from build_manager.versions import reserve_build_number
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'counter.json'
+            legacy_stage = path.with_suffix('.tmp')
+            legacy_stage.write_bytes(b'other writer')
+
+            self.assertEqual(reserve_build_number(path, maximum=20), 1)
+
+            self.assertEqual(path.read_bytes(), b'{"schema": 1, "last": 1}' + os.linesep.encode('ascii'))
+            self.assertEqual(legacy_stage.read_bytes(), b'other writer')
+
+    def test_failed_build_reservation_preserves_previous_counter_and_cleans_stage(self):
+        from unittest.mock import patch
+        from build_manager.versions import reserve_build_number
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'counter.json'
+            self.assertEqual(reserve_build_number(path, maximum=20), 1)
+            previous = path.read_bytes()
+            original_paths = list(path.parent.iterdir())
+
+            with patch('commonUtils.persistence.atomic.os.replace', side_effect=OSError('publication failed')):
+                with self.assertRaisesRegex(OSError, 'publication failed'):
+                    reserve_build_number(path, maximum=20)
+
+            self.assertEqual(path.read_bytes(), previous)
+            self.assertCountEqual(path.parent.iterdir(), original_paths)
+            self.assertEqual(reserve_build_number(path, maximum=20), 2)
+
     def test_invalid_boolean_profile_and_build_history_are_actionable(self):
         from build_manager.versions import preview_next_build_number
         with self.assertRaisesRegex(ValueError, 'bool'):

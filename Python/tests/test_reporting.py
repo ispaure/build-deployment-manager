@@ -14,6 +14,31 @@ from build_manager.test_results import read_junit
 
 
 class ReportingTests(unittest.TestCase):
+    def test_write_junit_leaves_legacy_stage_untouched(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / 'cases.xml'
+            legacy_stage = output.with_suffix('.xml.tmp')
+            legacy_stage.write_bytes(b'other writer')
+
+            write_junit(output, 'fixture', [dict(name='case', status='passed')])
+
+            self.assertEqual(read_junit(output)[0]['name'], 'case')
+            self.assertEqual(legacy_stage.read_bytes(), b'other writer')
+            self.assertCountEqual(output.parent.iterdir(), [output, legacy_stage])
+
+    def test_failed_junit_replacement_preserves_previous_report_and_cleans_stage(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / 'cases.xml'
+            write_junit(output, 'previous', [])
+            previous = output.read_bytes()
+
+            with patch('commonUtils.persistence.atomic.os.replace', side_effect=OSError('publication failed')):
+                with self.assertRaisesRegex(OSError, 'publication failed'):
+                    write_junit(output, 'replacement', [])
+
+            self.assertEqual(output.read_bytes(), previous)
+            self.assertCountEqual(output.parent.iterdir(), [output])
+
     def test_real_cases_keep_failures_subtests_expected_failures_and_measurements(self):
         class Fixture(unittest.TestCase):
             def test_pass(self):

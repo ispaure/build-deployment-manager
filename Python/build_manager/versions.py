@@ -1,6 +1,9 @@
 """Local monotonic reservations; remote uniqueness remains provider-owned."""
 import json
+import os
 from pathlib import Path
+
+from commonUtils.persistence import atomic_write_bytes
 
 from .locking import workspace_lock
 
@@ -30,9 +33,8 @@ def reserve_build_number(path, *, existing=(), minimum=1, maximum, override=None
             number = int(selected)
         if number > maximum:
             raise ValueError('Build identifier exceeds the platform limit.')
-        temporary = path.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'schema': 1, 'last': number}) + '\n')
-        temporary.replace(path)
+        record = json.dumps({'schema': 1, 'last': number}) + os.linesep
+        atomic_write_bytes(path, record.encode('ascii'))
         return number
 
 

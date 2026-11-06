@@ -6,6 +6,9 @@ import re
 import time
 import unittest
 import xml.etree.ElementTree as ET
+
+from commonUtils.persistence import atomic_write_bytes
+
 from .test_progress import emit_test_progress
 
 
@@ -39,9 +42,7 @@ def write_junit(path, suite, cases):
             child.text = clean(case.get('message', ''))[:16000]
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + '.tmp')
-    ET.ElementTree(root).write(temporary, encoding='utf-8', xml_declaration=True)
-    temporary.replace(path)
+    atomic_write_bytes(path, ET.tostring(root, encoding='utf-8', xml_declaration=True))
 
 
 def test_ids(suite):

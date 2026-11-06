@@ -21,6 +21,13 @@ its real `Python/commonUtils` submodule. A consumer may have a different pin.
 Changing one checkout does not update the others. Keep `Python/` on the import
 path as a source root: import `build_manager`, never `Python.build_manager`.
 
+JUnit reports and local build-number reservations use
+`commonUtils.persistence.atomic_write_bytes` to stage each write in a unique file
+beside its destination. A failed replacement leaves the previous file intact and
+removes its staging file. Publication preserves existing file modes and uses
+private permissions for new files on POSIX. Build-number reservations hold the
+workspace lock through publication. Remote uniqueness remains provider-owned.
+
 ## Terms you will meet
 
 | Term | Meaning |
