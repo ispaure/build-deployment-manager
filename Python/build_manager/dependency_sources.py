@@ -9,6 +9,7 @@ import re
 import subprocess
 import tarfile
 import zipfile
+from commonUtils.runtime.streams import file_sha256
 
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True, timeout=60).strip()
@@ -110,7 +111,7 @@ def _public_test_files(checkout):
             raise ValueError('Local manager test source must not contain linked inputs: ' + name)
         if path.exists() and not path.is_file():
             raise ValueError('Unsupported local manager test source: ' + name)
-        files[name] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        files[name] = file_sha256(path) if path.is_file() else None
     return files
 
 

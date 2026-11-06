@@ -696,6 +696,7 @@ Explicit local consumer validation can capture uncommitted manager edits through
 `dependency_sources.local_test_identity` and an `archive(..., expected_worktree_fingerprint=...)`
 request bound to that exact identity. A bounded manifest is checked again after
 copy and extraction; the manager base commit and commonUtils pin remain fixed.
+Per-file SHA-256 digests use bounded reads through `commonUtils.runtime.streams.file_sha256`.
 Ordinary `verify` and `archive` calls still reject modified tracked source.
 Consumers must expose this only for local tests, never release or delivery.
 

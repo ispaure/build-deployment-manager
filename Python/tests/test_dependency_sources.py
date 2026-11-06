@@ -1,12 +1,15 @@
 """Exact committed transfer owns mechanics independently of any consumer."""
+import hashlib
 import io
+import json
 from pathlib import Path
 import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 import zipfile
-from build_manager.dependency_sources import archive, verify
+from build_manager.dependency_sources import archive, local_test_identity, verify
 
 
 class DependencySourceTests(unittest.TestCase):
@@ -79,7 +82,7 @@ class DependencySourceTests(unittest.TestCase):
         self.assertFalse(list(scratch.iterdir()))
 
     def test_explicit_local_test_capture_includes_public_edits_and_rejects_tampering(self):
-        from build_manager.dependency_sources import local_test_identity, verify_local_test_source
+        from build_manager.dependency_sources import verify_local_test_source
         (self.manager / 'public.py').write_text('PUBLIC = "working"')
         added = self.manager / 'Python/build_manager/new_test_helper.py'
         added.parent.mkdir(parents=True)
@@ -106,7 +109,28 @@ class DependencySourceTests(unittest.TestCase):
                 archive(self.manager, self.pin, 'tar', scratch, working_tree='0' * 64)
 
     def test_local_test_capture_keeps_commonutils_at_its_committed_pin(self):
-        from build_manager.dependency_sources import local_test_identity
         (self.shared / 'library.py').write_text('SHARED = "unreviewed"')
         with self.assertRaisesRegex(ValueError, 'Commit manager'):
             local_test_identity(self.manager, self.pin)
+
+    def test_local_test_identity_streams_files_and_preserves_fingerprint(self):
+        content = b'\x00\xffbinary input\n' * 8
+        added = self.manager / 'Python/tests/input.bin'
+        added.parent.mkdir(parents=True)
+        added.write_bytes(content)
+        (self.manager / 'public.py').unlink()
+        expected = dict(
+            schema=1,
+            purpose='local-tests-only',
+            commit=self.pin,
+            commonUtils_commit=self.command(self.shared, 'rev-parse', 'HEAD'),
+            files={'Python/tests/input.bin': hashlib.sha256(content).hexdigest(), 'public.py': None},
+        )
+        expected['fingerprint'] = hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
+
+        with patch('commonUtils.runtime.streams.CHUNK_SIZE', 17), patch.object(
+                Path, 'read_bytes', side_effect=AssertionError('Unexpected whole-file read')):
+            actual = local_test_identity(self.manager, self.pin)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(list(actual['files']), list(expected['files']))
