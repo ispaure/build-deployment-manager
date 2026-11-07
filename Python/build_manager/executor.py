@@ -85,7 +85,8 @@ class Executor:
         plan = Plan.from_data(plan.data())
         if not resume and not retry_failed:
             raise ValueError('Retaining failed phases requires resuming an existing run.')
-        if plan.effect in EXTERNAL and not confirmed:
+        requires_confirmation = plan.effect in EXTERNAL or plan.settings.get('authorize_deliveries_at_start') is True
+        if requires_confirmation and not confirmed:
             raise ValueError('This operation requires explicit confirmation after reviewing the plan.')
         engine = capture_engine_source_identity()
         if not engine['manager'].get('commit') or not engine['commonUtils'].get('commit'):

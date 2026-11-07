@@ -17,7 +17,7 @@ def require_build_only(plan):
 
 
 def apply_start_review_policy(plan):
-    """Bind fresh GUI review to selected deliveries/hosted checks, never history."""
+    """Bind fresh plan review to selected deliveries and hosted checks."""
     from dataclasses import replace
     destinations = plan.journey.get('destinations', {})
     dispatches = {step for row in plan.journey.get('executions', {}).values()

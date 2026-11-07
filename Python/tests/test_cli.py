@@ -230,6 +230,41 @@ print(json.dumps(dict(schema=1, result=result)))
         self.assertEqual(failed_marker.read_text(), 'x')
         self.assertEqual(self.invoke('review', output)['approvals'], [])
 
+    def test_confirmed_start_policy_runs_github_while_testflight_waits(self):
+        from dataclasses import replace
+        published = self.root / 'published'
+        wait_for_publication = f'''
+from pathlib import Path
+import time
+
+published = Path({str(published)!r})
+deadline = time.monotonic() + 8
+while not published.exists() and time.monotonic() < deadline:
+    time.sleep(.05)
+assert published.exists()
+'''
+        base, path = self.plan(
+            self.phase('validate', 'pass'),
+            self.phase('testflight', wait_for_publication, dependencies=('validate',),
+                       effect='upload', provider='testflight'),
+            self.phase('github', f'from pathlib import Path; Path({str(published)!r}).touch()',
+                       dependencies=('validate',), effect='publish', provider='github'),
+        )
+        base = replace(base, max_workers=2)
+        with patch.object(ManagerAPI, 'prepare_preset', return_value=base):
+            prepared = self.invoke('plan', '--preset', 'Fixture', '--authorize-deliveries', '--output', path)
+            self.assertTrue(all(not phase.approval_required for phase in Plan.load(path).phases[1:]))
+            output = self.root / 'authorize-at-start'
+            self.invoke('run', path, '--output', output, code=1)
+            self.invoke('start', '--preset', 'Fixture', '--authorize-deliveries', '--output', output, code=1)
+            self.assertFalse(published.exists())
+            self.assertEqual(self.invoke('run', path, '--output', output, '--confirm',
+                                          '--expect-identity', prepared['identity'])['status'], 'passed')
+            published.unlink()
+            self.assertEqual(self.invoke('start', '--preset', 'Fixture', '--authorize-deliveries', '--confirm',
+                                          '--output', self.root / 'confirmed-start')['status'], 'passed')
+        self.assertTrue(published.exists())
+
     def test_named_pending_approval_verifies_inputs_and_rejects_ambiguous_scope(self):
         artifact, delivered = self.root / 'candidate', self.root / 'delivered'
         plan, path = self.plan(

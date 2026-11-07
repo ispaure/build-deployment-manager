@@ -94,6 +94,14 @@ replace matching saved inputs for this plan only; other saved inputs remain and
 the preset is unchanged. Unknown fields and secret values are rejected through
 the normal input validation before project planning.
 
+For an unattended delivery you have already reviewed, add `--authorize-deliveries`
+to `plan`, inspect the resulting plan, and run it with `--confirm` and its
+expected identity. You can also use `start --authorize-deliveries --confirm`
+with a saved preset. This matches the GUI's Start behavior for selected Firebase,
+TestFlight, and GitHub actions. Each action still waits for its own required
+checks and verified artifacts. GitHub publication can run while TestFlight
+waits for Apple. Ordinary plans keep their separate approval steps.
+
 Save choices using the same selection schema as the GUI:
 
 ```sh

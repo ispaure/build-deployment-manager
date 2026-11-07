@@ -1,6 +1,7 @@
 """Argument-based planning, execution and bounded evidence for automation."""
 import argparse
 from contextlib import contextmanager
+from dataclasses import replace
 import json
 from pathlib import Path
 import signal
@@ -69,6 +70,12 @@ def cancellation():
             signal.signal(name, handler)
 
 
+def authorize_deliveries(plan):
+    from .workflows import apply_start_review_policy
+    reviewed = apply_start_review_policy(plan)
+    return replace(reviewed, settings=dict(reviewed.settings, authorize_deliveries_at_start=True))
+
+
 def parser_for_cli():
     parser = Parser(description=__doc__)
     parser.add_argument('--registry', type=Path, help='Explicit private config directory (before command)')
@@ -109,6 +116,8 @@ def parser_for_cli():
     plan = sub.add_parser('plan', help='Prepare a project-owned operation without executing it')
     plan.add_argument('--project')
     plan.add_argument('--preset', help='Use a saved or suggested project preset')
+    plan.add_argument('--authorize-deliveries', action='store_true',
+                      help='Prepare selected Firebase, TestFlight and GitHub deliveries for confirmation at run start')
     plan.add_argument('--operation')
     plan.add_argument('--target')
     plan.add_argument('--backend')
@@ -149,7 +158,9 @@ def parser_for_cli():
     save.add_argument('--project')
     save.add_argument('--file', type=Path, required=True, help='JSON object in the existing saved-selection schema')
     save.add_argument('--replace', action='store_true')
-    start = sub.add_parser('start', help='Prepare and run a saved project preset; delivery still pauses for review')
+    start = sub.add_parser('start', help='Prepare and run a saved project preset; delivery pauses for review by default')
+    start.add_argument('--authorize-deliveries', action='store_true',
+                       help='With --confirm, authorize selected Firebase, TestFlight and GitHub deliveries at start')
     start.add_argument('--project')
     start.add_argument('--preset', required=True)
     start.add_argument('--run-value', action='append', default=[], help='Declared field=value for this run only')
@@ -250,6 +261,8 @@ def execute(args, api):
         prepared = api.prepare_preset(args.preset, project=args.project,
                 run_overrides=assignments(args.run_value) if args.run_value else None,
                 exclude_destinations=args.exclude_destination)
+        if args.authorize_deliveries:
+            prepared = authorize_deliveries(prepared)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity)
     if command == 'plan' and args.exclude_destination:
@@ -265,6 +278,8 @@ def execute(args, api):
                 options['suite'] = args.suite
             prepared = api.prepare_plan(args.operation, args.target, args.backend, project=args.project,
                                         pattern=args.pattern, **options)
+            if args.authorize_deliveries:
+                prepared = authorize_deliveries(prepared)
         else:
             if args.execution:
                 choices = assignments(args.execution)
@@ -305,6 +320,8 @@ def execute(args, api):
             return review_run(args.output, cancelled=cancelled)
     if command in ('run', 'resume', 'start'):
         if command == 'start':
+            if args.authorize_deliveries and not args.confirm:
+                raise ValueError('Authorizing delivery at start requires --confirm.')
             from datetime import datetime, timezone
             from uuid import uuid4
             if args.output is None:
@@ -315,6 +332,8 @@ def execute(args, api):
             prepared = api.prepare_preset(args.preset, project=args.project,
                 run_overrides=assignments(args.run_value) if args.run_value else None,
                 exclude_destinations=args.exclude_destination)
+            if args.authorize_deliveries:
+                prepared = authorize_deliveries(prepared)
         lock = Lock()
         def event(value):
             with lock:
