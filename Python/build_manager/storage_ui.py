@@ -1,6 +1,7 @@
 """Review and remove project-owned outputs without blocking the GUI on disk I/O."""
+from datetime import datetime
 from functools import partial
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from queue import Empty, Queue
 
 from PySide6.QtCore import QRunnable, QThreadPool, QTimer, Qt
@@ -25,6 +26,15 @@ def size_text(value):
 def saved_run_name(path):
     kind = PureWindowsPath if PureWindowsPath(path).is_absolute() else PurePosixPath
     return kind(path).parent.name
+
+
+class EvidenceItem(QTreeWidgetItem):
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn()
+        if column in (2, 3):
+            return (self.data(column, Qt.ItemDataRole.UserRole) or 0) < (
+                other.data(column, Qt.ItemDataRole.UserRole) or 0)
+        return super().__lt__(other)
 
 
 class StorageTask(QRunnable):
@@ -124,6 +134,34 @@ class StorageDialog(QDialog):
         self.retire = QPushButton('Retire selected workflows…')
         self.retire.clicked.connect(self.retire_selected)
         workflow_layout.addWidget(self.retire)
+        self.evidence_loaded = False
+        evidence = QWidget()
+        evidence_layout = QVBoxLayout(evidence)
+        self.evidence_tab = self.tabs.addTab(evidence, 'Test results')
+        evidence_note = QLabel('Free space by deleting logs, screenshots, recordings and copied installers, '
+            'or delete an entire run to remove its local history. Saved and active runs are protected. '
+            'Loose evidence files can be selected alongside runs.')
+        evidence_note.setWordWrap(True)
+        evidence_layout.addWidget(evidence_note)
+        self.evidence = QTreeWidget()
+        self.evidence.setHeaderLabels(['Run or file', 'Outcome', 'Size', 'Bulky files', 'Protection', 'Location'])
+        self.evidence.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.evidence.setAccessibleName('Test results and evidence')
+        self.evidence.setSortingEnabled(True)
+        self.evidence.sortItems(2, Qt.SortOrder.DescendingOrder)
+        self.evidence.itemSelectionChanged.connect(self.update_buttons)
+        evidence_layout.addWidget(self.evidence, 1)
+        actions = QHBoxLayout()
+        self.evidence_refresh = QPushButton('Refresh test results')
+        self.evidence_files = QPushButton('Delete bulky files…')
+        self.evidence_runs = QPushButton('Delete entire runs…')
+        self.evidence_refresh.clicked.connect(self.load_evidence)
+        self.evidence_files.clicked.connect(lambda: self.remove_evidence(False))
+        self.evidence_runs.clicked.connect(lambda: self.remove_evidence(True))
+        for button in (self.evidence_refresh, self.evidence_files, self.evidence_runs):
+            actions.addWidget(style_button(button))
+        evidence_layout.addLayout(actions)
+        self.tabs.currentChanged.connect(self.evidence_tab_changed)
         self.status = QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -140,7 +178,8 @@ class StorageDialog(QDialog):
         self.busy, self.mode = True, mode
         self.update_buttons()
         self.status.setText({'list': 'Reading owned outputs…', 'delete': 'Deleting reviewed outputs…',
-            'retire': 'Retiring selected workflows…', 'enroll': 'Adopting selected disposable storage…'}[mode])
+            'retire': 'Retiring selected workflows…', 'enroll': 'Adopting selected disposable storage…',
+            'evidence': 'Reading test results…', 'delete_evidence': 'Deleting selected test evidence…'}[mode])
         QThreadPool.globalInstance().start(StorageTask(action, self.results))
         self.timer.start()
 
@@ -152,8 +191,8 @@ class StorageDialog(QDialog):
         from .adapter_sdk import supports
         from .run_retirement import list_held_or_retired_runs
         entries = self.project.storage_inventory() if supports(self.project, 'storage_inventory') else []
-        directory = getattr(self.project, 'results_directory', None)
-        runs = list_held_or_retired_runs(directory) if directory else []
+        from .test_storage import result_roots
+        runs = [row for directory in result_roots(self.project) for row in list_held_or_retired_runs(directory)]
         return dict(entries=entries, workflows=runs)
 
     def completed(self):
@@ -188,7 +227,30 @@ class StorageDialog(QDialog):
             self.group.blockSignals(False)
             self.render()
             self.status.setText(str(len(self.rows)) + ' owned outputs. Delete all applies to the displayed category only.')
+        elif self.mode == 'evidence':
+            self.evidence_loaded = True
+            self.evidence.clear()
+            for row in value:
+                item = EvidenceItem([row['name'], row['status'], size_text(row['allocated_bytes']),
+                    size_text(row['bulky_bytes']), row['protected'] or 'Can delete', row['path']])
+                item.setData(0, Qt.ItemDataRole.UserRole, row)
+                item.setData(2, Qt.ItemDataRole.UserRole, row['allocated_bytes'])
+                item.setData(3, Qt.ItemDataRole.UserRole, row['bulky_bytes'])
+                item.setToolTip(4, row['protected'] or 'Can delete')
+                item.setToolTip(5, row['path'])
+                self.evidence.addTopLevelItem(item)
+            for column in range(5):
+                self.evidence.resizeColumnToContents(column)
+                self.evidence.setColumnWidth(column, min(300, self.evidence.columnWidth(column)))
+            self.status.setText(f'{len(value)} test runs and evidence files.')
+        elif self.mode == 'delete_evidence':
+            message = f"Cleaned up {len(value['removed'])} selected entries."
+            if value['skipped']:
+                message += '\nKept: ' + '\n'.join(value['skipped'])
+            QMessageBox.information(self, 'Test results cleanup', message)
+            self.load_evidence()
         elif self.mode == 'retire':
+            self.evidence_loaded = False
             message = str(len(value['retired'])) + ' workflows retired; evidence and outcomes retained.'
             if value['skipped']:
                 message += '\nKept: ' + '\n'.join(value['skipped'])
@@ -206,6 +268,44 @@ class StorageDialog(QDialog):
             QMessageBox.information(self, 'Cleanup result', message)
             self.reload()
         self.update_buttons()
+        if self.mode != 'evidence' and not error:
+            self.evidence_tab_changed(self.tabs.currentIndex())
+
+    def evidence_tab_changed(self, index):
+        if index == self.evidence_tab and not self.evidence_loaded:
+            self.load_evidence()
+
+    def load_evidence(self):
+        from .test_storage import inventory
+        if not self.busy:
+            self.start(partial(inventory, self.project), 'evidence')
+
+    def selected_evidence(self, *, entire):
+        rows = [item.data(0, Qt.ItemDataRole.UserRole) for item in self.evidence.selectedItems()]
+        return [row for row in rows if not row['protected']
+                and (row['kind'] == 'run' if entire else row['bulky_bytes'])]
+
+    def remove_evidence(self, entire):
+        if self.busy:
+            return
+        rows = self.selected_evidence(entire=entire)
+        if not rows:
+            return
+        column = 'allocated_bytes' if entire else 'bulky_bytes'
+        total = size_text(sum(row[column] for row in rows))
+        detail = ('This removes the selected runs from local history, including their reports and receipts.'
+                  if entire else 'This removes selected loose files and bulky files within selected runs. '
+                  'Run outcomes, summaries and receipts are kept.')
+        box = QMessageBox(QMessageBox.Icon.Warning, 'Delete test evidence?',
+            f"Permanently delete {total} from {len(rows)} selected entries? {detail}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        box.setDetailedText('\n'.join(
+            f"{row['path']} · {datetime.fromtimestamp(row['modified']):%Y-%m-%d %H:%M} · {size_text(row[column])}"
+            for row in rows))
+        if box.exec() == QMessageBox.StandardButton.Yes:
+            from .test_storage import delete
+            self.start(partial(delete, self.project, rows, entire=entire), 'delete_evidence')
 
     def visible_rows(self):
         group = self.group.currentText() if self.group.currentIndex() else None
@@ -226,7 +326,6 @@ class StorageDialog(QDialog):
         rows = self.visible_rows()
         # Adapter groups may include both an owned tree and its cache children.
         # Count each allocation once in the overview.
-        from pathlib import Path
         paths = {Path(row['path']) for row in rows}
         unique = [row for row in rows if not any(parent in paths for parent in Path(row['path']).parents)]
         total = sum(row.get('allocated_bytes') or 0 for row in unique)
@@ -258,6 +357,10 @@ class StorageDialog(QDialog):
         self.all.setText('Delete unprotected in ' + category + '…')
         self.selected.setEnabled(not self.busy and bool(deletable))
         self.all.setEnabled(not self.busy and any(not row['protected'] for row in self.visible_rows()))
+        self.evidence_refresh.setEnabled(not self.busy)
+        self.evidence.setEnabled(not self.busy)
+        self.evidence_files.setEnabled(not self.busy and bool(self.selected_evidence(entire=False)))
+        self.evidence_runs.setEnabled(not self.busy and bool(self.selected_evidence(entire=True)))
         self.close_buttons.setEnabled(not self.busy)
 
     def remove(self, all_visible=False):
@@ -266,7 +369,6 @@ class StorageDialog(QDialog):
         rows = self.visible_rows() if all_visible else [item.data(0, Qt.ItemDataRole.UserRole)
                                                        for item in self.table.selectedItems()]
         rows = [row for row in rows if not row['protected']]
-        from pathlib import Path
         selected_paths = {Path(row['path']) for row in rows}
         rows = [row for row in rows if not any(parent in selected_paths for parent in Path(row['path']).parents)]
         if not rows:
@@ -299,12 +401,16 @@ class StorageDialog(QDialog):
         if box.exec() != QMessageBox.StandardButton.Yes:
             return
         def retire():
-            from pathlib import Path
             from .run_retirement import retire_run
+            from .test_storage import result_roots
+            roots = result_roots(self.project)
             result = dict(retired=[], skipped=[])
             for row in rows:
                 try:
-                    result['retired'].append(retire_run(self.project.results_directory, Path(row['path']).parent.name, confirmed=True))
+                    run = Path(row['path']).parent
+                    if run.parent not in roots:
+                        raise ValueError('Run storage has changed. Refresh before retiring.')
+                    result['retired'].append(retire_run(run.parent, run.name, confirmed=True))
                 except (OSError, ValueError, RuntimeError) as error:
                     result['skipped'].append(row['path'] + ': ' + str(error))
             return result

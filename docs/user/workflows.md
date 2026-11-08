@@ -163,6 +163,22 @@ explicit `.keep` pins remain protected. Delete newly unprotected outputs from
 the build outputs tab after reviewing their paths.
 
 
+## Clear local test evidence
+
+Open **More → Manage build storage… → Test results**. Click the **Size** or
+**Bulky files** column to sort, then select the runs or loose files to review.
+
+- **Delete bulky files…** removes raw logs, screenshots, recordings and copied
+  installers from selected runs, and removes selected loose evidence files.
+  Run outcomes, structured test reports and delivery receipts remain.
+- **Delete entire runs…** also removes those runs from local history, including
+  reports and receipts.
+
+The confirmation shows the locations, dates and sizes. Active runs, runs held
+for review or continuation, pinned evidence and unresolved delivery outcomes
+are protected. A project can include older evidence folders in this view.
+This cleanup is separate from the build output cleanup and runs only on request.
+
 ## Remote-controller cleanup grace
 
 A VM controller can declare up to 300 seconds of bounded cooperative shutdown

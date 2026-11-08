@@ -64,6 +64,15 @@ checks separate from installation, and retain identity/signature/approval checks
 immediately before the actual effect. Unused retry fields are omitted from plan
 serialization to preserve legacy hashes.
 
+### Test evidence folders
+
+The storage dialog lists saved runs in the descriptor's `results` directory.
+Projects can declare a `test_evidence` list of checkout-relative folders to
+include older saved runs and loose logs, screenshots or recordings. Declare
+only generated evidence folders. The manager inspects direct entries, requires
+matching plan and result records for runs, and refuses linked locations.
+Loose files have a one-day age guard. Test evidence deletion is manual.
+
 ### Opt-in test infrastructure recovery
 
 `Phase.infrastructure_recovery` opts an explicit `effect='test', kind='test'`

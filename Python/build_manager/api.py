@@ -321,7 +321,8 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
         from .profiles import save_json
         try:
             with workspace_lock(output / 'supervisor.lock'):
-                save_json(output / 'storage-maintenance.json', result)
+                if (output / 'result.json').is_file():
+                    save_json(output / 'storage-maintenance.json', result)
         except (OSError, RuntimeError):
             pass  # A resumed supervisor owns the report; never overwrite it.
         report = dict(report, storage_maintenance=result)

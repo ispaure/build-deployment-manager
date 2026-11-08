@@ -36,6 +36,13 @@ def read_project_descriptor(root):
         raise ValueError('Unsupported project/adapter schema; API 1 is required.')
     if 'adapter_actions' in data and (not isinstance(data['adapter_actions'], list) or any(not isinstance(v, str) or not v for v in data['adapter_actions'])):
         raise ValueError('Adapter actions must be a list of supported action names.')
+    evidence = data.get('test_evidence', [])
+    if not isinstance(evidence, list) or any(not isinstance(value, str) or not value for value in evidence):
+        raise ValueError('Test evidence must list checkout-relative folders.')
+    if evidence:
+        from .test_storage import evidence_root
+        for value in evidence:
+            evidence_root(root, value)
     if 'commands' in data:
         from .command_project import normalize
         if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name')):
