@@ -130,3 +130,9 @@ independently of the display graph. Plan serialization and identity remain in
 - [Validation scope](validation.md): dated acceptance and platform limitations.
 
 [Developer guide](development.md)
+
+## SQLite shared-library boundary
+
+The manager pins commonUtils `30b334cba266c5304a10f6ffba624eb8649d20e7`, which provides bounded SQLite reads and explicit atomic edit transactions. Manager has no SQLite store caller or shared file-resource browser workflow; its workflow tree remains a plan/results interface. No database editor is added to ManagerWindow. Projects decide whether their own browsers can offer the shared editor.
+
+`Python/tests/test_sqlite_compatibility.py` verifies that imports resolve through this checkout's real submodule, exercises read/filter/save/reopen on a disposable database with the manager interpreter, and launches the normal empty app with a disposable registry. Existing `test_ui.py`, `test_workflow_ui.py` and `test_onboarding_ui.py` exercise the normal Qt/workflow paths. These are portable/offscreen host checks; they do not certify native device, VM or provider behavior.
