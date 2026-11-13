@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
-from .ui_components import SelectionSummary, ActionStrip, style_tabs, AdaptiveSplitter, WrappingLayout
+from .ui_components import SelectionSummary, ActionStrip, style_tabs, AdaptiveSplitter
 from .configuration_delivery_ui import DeliveryOptionsView, delivery_tab_label
 
 
@@ -78,43 +78,62 @@ class ConfigurationView(QWidget):
         guidance.setWordWrap(True)
         guidance.hide()
         self.goal = QComboBox(self)
-        self.goal.setAccessibleName('What would you like to do?')
-        self.goal.addItem('Validate — run checks only', 'validate')
-        self.goal.addItem('Build only — prepare artifacts', 'build')
-        self.goal.addItem('Validate and deliver', 'deliver')
-        self.goal.addItem('Advanced operation — project workflow or single operation', 'advanced')
-        # The combo remains the selection model for persisted/legacy requests.
-        # Visible, exclusive choices use the same signals and invalidation path.
-        self.goal.hide()
-        self.intent_header = QWidget()
-        header = QVBoxLayout(self.intent_header)
-        header.setContentsMargins(0, 0, 0, 0)
-        self.goal_row = WrappingLayout()
+        self.goal.setAccessibleName('Work type')
+        self.preset = QComboBox(self)
+        self.preset.setAccessibleName('Run preset')
+        self.preset.setMinimumContentsLength(10)
+        self.preset.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.preset.addItem('Custom run')
+        self.preset_menu = QToolButton(self)
+        self.preset_menu.setText('⋯')
+        self.preset_menu.setAccessibleName('Run preset actions')
+        self.preset_menu.hide()
+        preset_row = QHBoxLayout()
+        preset_label = QLabel('&Preset')
+        preset_label.setBuddy(self.preset)
+        preset_row.addWidget(preset_label)
+        preset_row.addWidget(self.preset, 1)
+        preset_row.addWidget(self.preset_menu)
+        self.editor_layout.insertLayout(0, preset_row)
+
+        self.preset_work_type = QLabel(self)
+        self.preset_work_type.setWordWrap(True)
+        self.preset_work_type.hide()
+        self.override_goal = QPushButton('Override work type', self)
+        self.override_goal.hide()
+        work_row = QHBoxLayout()
+        work_label = QLabel('&Work type')
+        work_label.setBuddy(self.goal)
+        work_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        work_row.addWidget(work_label)
+        work_row.addWidget(self.goal, 1)
+        work_row.addWidget(self.preset_work_type, 1)
+        work_row.addWidget(self.override_goal)
+        self.editor_layout.insertLayout(1, work_row)
+        self.preset_note = QLabel('Overrides for this run', self)
+        self.preset_note.setAccessibleName('Preset override status')
+        self.preset_note.hide()
+        self.editor_layout.insertWidget(2, self.preset_note)
+
+        # Keep programmatic callers on the same goal selection model.
         self.goal_group = QButtonGroup(self)
         self.goal_buttons = {}
-        for value, text in (('validate', 'Run checks'), ('build', 'Build only'), ('deliver', 'Prepare and deliver'), ('advanced', 'Project operation…')):
-            button = QToolButton() if value == 'advanced' else QPushButton()
+        for value, text in (('validate', 'Run checks'), ('build', 'Build only'),
+                            ('deliver', 'Prepare and deliver'), ('advanced', 'Project operation')):
+            self.goal.addItem(text, value)
+            button = QPushButton(self)
             button.setText(text)
-            button.setAccessibleName(text)
             button.setCheckable(True)
-            button.setStyleSheet('''QPushButton, QToolButton { min-height: 20px; padding: 6px 12px;
-                border: 1px solid palette(mid); border-radius: 6px; background: palette(button); font-weight: 600; }
-                QPushButton:checked, QToolButton:checked { border: 2px solid palette(highlight);
-                    padding: 5px 11px; background: palette(alternate-base); color: palette(text); }
-                QPushButton:focus, QToolButton:focus { border: 2px dashed palette(highlight); padding: 5px 11px; }
-                QPushButton:disabled, QToolButton:disabled { color: palette(mid); }''')
+            button.hide()
             self.goal_group.addButton(button)
             self.goal_buttons[value] = button
             button.clicked.connect(lambda checked=False, value=value: self.choose_goal(value))
-            self.goal_row.addWidget(button)
-        self.goal_row.addStretch()
-        header.addLayout(self.goal_row)
+        self.goal.activated.connect(lambda _: self.open_goal_section())
         self.blocker_strip = ActionStrip()
         self.blocker_strip.setAccessibleName('Resolve workflow requirements')
         self.blocker_strip.hide()
         self.blocker_actions, self.current_blockers = {}, ()
         self.body_layout.addWidget(self.blocker_strip)
-        self.body_layout.insertWidget(0, self.intent_header)
         self.config_tabs = QTabWidget()
         self.config_tabs.setAccessibleName('Workflow configuration')
         self.config_tabs.setUsesScrollButtons(True)
@@ -173,7 +192,7 @@ class ConfigurationView(QWidget):
                 self.platform_table.setCellWidget(index, 1, location)
             self.size_platform_rows()
         else:
-            note = QLabel('This project supports one platform per run. Advanced operation exposes its project workflows.')
+            note = QLabel('This project supports one platform per run. Choose Project operation to select a project workflow.')
             note.setWordWrap(True)
             guided_layout.addWidget(note)
         platforms.body.addWidget(self.guided)
@@ -182,15 +201,6 @@ class ConfigurationView(QWidget):
         legacy_layout.setContentsMargins(0, 0, 0, 0)
         self.legacy_form = form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        self.preset = QComboBox()
-        self.preset.addItem('Custom operation')
-        self.preset.addItems(getattr(project, 'workflow_presets', {}))
-        form.addRow('Suggested workflow', self.preset)
-        self.preset_note = QLabel('Choose a suggested workflow or configure an advanced operation.')
-        self.preset_note.setWordWrap(True)
-        form.addRow(self.preset_note)
-        self.restore_preset = QPushButton('Restore suggested workflow')
-        form.addRow(self.restore_preset)
         self.operation, self.platform, self.backend, self.suite = (QComboBox() for _ in range(4))
         self.operation.addItems(project.operations)
         self.platform.addItems(project.platforms)
@@ -288,7 +298,10 @@ class ConfigurationView(QWidget):
 
     def choose_goal(self, value):
         self.goal.setCurrentIndex(self.goal.findData(value))
-        if value in {'advanced', 'build'}:
+        self.open_goal_section()
+
+    def open_goal_section(self):
+        if self.goal.currentData() in {'advanced', 'build'}:
             self.open_section('platforms')
 
     def choose_source(self, *_):
@@ -317,8 +330,7 @@ class ConfigurationView(QWidget):
         integrated = bool(self.platform_checks) and self.goal.currentData() in {'validate', 'deliver'}
         self.guided.setVisible(self.goal.currentData() in {'validate', 'deliver'})
         self.legacy.setVisible(not integrated)
-        for control in (self.preset, self.preset_note, self.restore_preset, self.operation):
-            self.legacy_form.setRowVisible(control, self.goal.currentData() == 'advanced')
+        self.legacy_form.setRowVisible(self.operation, self.goal.currentData() == 'advanced')
         self.sections['validation'].setVisible(self.goal.currentData() in {'validate', 'deliver'} and bool(self.platform_checks))
         self.sections['delivery'].setVisible(self.goal.currentData() == 'deliver')
         self.config_tabs.setTabEnabled(self.config_tabs.indexOf(self.config_pages['delivery']), self.goal.currentData() == 'deliver')
@@ -528,20 +540,39 @@ class ConfigurationView(QWidget):
         }
         return choices
 
+    def preset_overrides(self, saved, choices):
+        explicit = saved.get('run_overrides', {})
+        inherited = {row['id']: row.get('default', '') for row in self.run_fields.fields if row.get('workflow_option')}
+        return {
+            key: value for key, value in choices['run_overrides'].items()
+            if key in explicit or (key in self.run_fields.edited and (key not in inherited or value != inherited[key]))
+        }
+
     def preset_matches(self, saved):
         choices = self.preset_snapshot()
-        saved = dict(saved)
-        saved.setdefault('run_overrides', {})
-        inherited = {row['id']: row.get('default', '') for row in self.run_fields.fields
-                     if row.get('workflow_option') and row['id'] not in saved['run_overrides']}
-        choices['run_overrides'] = {
-            key: value for key, value in choices['run_overrides'].items()
-            if key in saved['run_overrides'] or (key in self.run_fields.edited
-                and (key not in inherited or value != inherited[key]))
-        }
+        choices['run_overrides'] = self.preset_overrides(saved, choices)
+        saved = dict(saved, run_overrides={key: value for key, value in saved.get('run_overrides', {}).items()
+                                          if key in self.run_fields.controls})
         for name in ('platform_backends', 'run_options'):
             choices[name] = {key: choices[name].get(key) for key in saved.get(name, {})}
         return all(choices.get(key) == value for key, value in saved.items())
+
+    def update_preset(self, saved, baseline, choices):
+        """Save edited fields while retaining the inheritance of a sparse preset."""
+        updated = dict(saved)
+        for name, value in choices.items():
+            if name in {'platform_backends', 'run_options'}:
+                edited = {key: item for key, item in value.items() if key in saved.get(name, {})
+                          or item != baseline[name].get(key)}
+                if edited or name in saved:
+                    updated[name] = {**saved.get(name, {}), **edited}
+            elif name == 'run_overrides':
+                overrides = self.preset_overrides(saved, choices)
+                if overrides or name in saved:
+                    updated[name] = {**saved.get(name, {}), **overrides}
+            elif name in saved or value != baseline.get(name):
+                updated[name] = value
+        return updated
 
     def defaults_loading(self):
         return self.run_fields.timer.isActive()

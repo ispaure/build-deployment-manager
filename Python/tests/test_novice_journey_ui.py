@@ -66,7 +66,8 @@ class NoviceJourneyTests(unittest.TestCase):
         self.window.resize(1024, 700)
         self.window.show()
         self.app.processEvents()
-        view.goal_buttons['deliver'].click()
+        self.assertEqual(panel.preset.currentText(), 'Custom run')
+        view.goal.setCurrentIndex(view.goal.findData('deliver'))
         for control in panel.platform_checks.values():
             control.setChecked(False)
         view.blocker_actions['platforms'].click()
@@ -104,10 +105,16 @@ class NoviceJourneyTests(unittest.TestCase):
         self.capture('06-history')
         panel.history.setCurrentItem(panel.history.topLevelItem(0))
         panel.view_history_button.click()
-        self.assertEqual(panel.run_view.outcome, 'passed')
-        self.assertEqual(panel.run_view.results_workspace.flow.pages.currentIndex(), 0)
-        self.assertFalse(panel.continue_run.isEnabled())
+        self.panel = self.window.panel
+        self.wait_idle()
+        self.assertIsNot(self.panel, panel)
+        self.assertEqual(self.panel.run_view.outcome, 'passed')
+        self.assertEqual(self.panel.run_view.results_workspace.flow.pages.currentIndex(), 0)
+        self.assertFalse(self.panel.continue_run.isEnabled())
         self.capture('07-reopened')
+        self.panel.current_run.click()
+        self.assertIs(self.window.panel, panel)
+        self.assertEqual(panel.result, original)
 
     def test_failed_gate_leads_to_its_evidence_without_running_deliveries(self):
         fixture = fixtures.ToolbarGoalTests()
@@ -119,7 +126,7 @@ class NoviceJourneyTests(unittest.TestCase):
         panel.project.make_journey = lambda *args, **kwargs: integrated(fixture.root, fail_gate=True)
         self.window.resize(1024, 700)
         self.window.show()
-        panel.configuration.goal_buttons['deliver'].click()
+        panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
         for control in (*panel.platform_checks.values(), *panel.destination_checks.values()):
             control.setChecked(True)
         panel.prepare.click()

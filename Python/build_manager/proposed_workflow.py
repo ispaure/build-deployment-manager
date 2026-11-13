@@ -17,6 +17,7 @@ class ProposedStep:
     backend: str = ''
     recipient: str = ''
     approval_required: bool = True
+    category: str = ''
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
     if goal in {'advanced', 'build'} or not capability:
         nodes.append(ProposedStep('operation', 'Build only' if goal == 'build' else operation or 'Choose an operation',
             ' · '.join(filter(None, (platform, backend))), ('source',), 'platforms',
-            platforms=(platform,), backend=backend))
+            platforms=(platform,), backend=backend, category='build' if goal == 'build' else ''))
         messages.append('Prepare build artifacts without running tests or delivery actions.' if goal == 'build' else
                         'This project defines the operation’s internal steps and effects during Review.')
         return ProposedWorkflow(tuple(nodes), tuple(messages), blockers=tuple(blockers))
@@ -108,7 +109,8 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                 nodes[index] = replace(node, dependencies=dependencies, issue=node.issue or issue)
                 return node_id
         nodes.append(ProposedStep(node_id, row['label'], row.get('description', ''),
-            dependencies, 'delivery', destination, issue, platforms=tuple(row['platforms'])))
+            dependencies, 'delivery', destination, issue, platforms=tuple(row['platforms']),
+            category='build' if row.get('stage') in {'build', 'package'} else ''))
         return node_id
 
     if goal == 'deliver':
@@ -128,7 +130,7 @@ def propose(*, capability, goal, revision, platforms, destinations, backends,
                 prepare = add_package(package, name)
             else:
                 prepare = 'prepare.' + name
-                nodes.append(ProposedStep(prepare, 'Prepare package', label + ' package · project resolves build steps during Review',
+                nodes.append(ProposedStep(prepare, 'Preparation', label + ' · project resolves prerequisites during Review',
                     required or ('source',), 'delivery', name, bool(missing), platforms=tuple(row['platforms'])))
             people = (recipients or {}).get(row.get('recipient_field'), [])
             if row.get('recipient_field') and not people:

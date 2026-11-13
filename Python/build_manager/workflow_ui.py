@@ -91,9 +91,12 @@ class StageBrowser(QTreeWidget):
 class WorkflowGraphView(QWidget):
     phase_selected = Signal(str)
 
-    def __init__(self, parent=None, *, graph_only=False):
+    def __init__(self, parent=None, *, graph_only=False, lazy_canvas=False):
         super().__init__(parent)
         self.graph_only = graph_only
+        self.lazy_canvas = lazy_canvas
+        self._canvas_pending = False
+        self._canvas_scope = None
         self.plan, self.facts, self.selected, self.preview = None, {}, '', False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -122,8 +125,8 @@ class WorkflowGraphView(QWidget):
         self.guidance = QLabel('Read left to right. Arrows show prerequisites. Branches can overlap when workers and resources allow. Select a card for details.')
         self.guidance.setWordWrap(True)
         layout.addWidget(self.guidance)
-        self.canvas = FlowCanvas()
-        self.scroll = FitMapView(self.canvas)
+        self._canvas = FlowCanvas()
+        self.scroll = FitMapView(self._canvas)
         self.orientation = orientation_picker(self.scroll)
         self.follow_mouse = pointer_follow_picker(self.scroll)
         from .ui_components import map_view_options
@@ -145,14 +148,34 @@ class WorkflowGraphView(QWidget):
         self.legend = legend = QLabel('Blue: running · Teal-green: passed · Orange-red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
         legend.setWordWrap(True)
         layout.addWidget(legend)
-        self.canvas.selected.connect(self.select)
+        self._canvas.selected.connect(self.select)
         self.center_timer = QTimer(self)
         self.center_timer.setSingleShot(True)
         self.center_timer.timeout.connect(self.center_map)
 
+    @property
+    def canvas(self):
+        # Earlier callers can still explicitly inspect the exact graph.
+        self._materialize_canvas()
+        return self._canvas
+
+    def _materialize_canvas(self):
+        if self._canvas_pending:
+            self._canvas_pending = False
+            self._canvas.reset(self.plan, self._canvas_scope)
+            self._canvas.update_facts(self.plan, self.facts, self.selected, self.preview)
+            self.update_guidance()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._materialize_canvas()
+
     def reset(self, plan, preview=False):
         self.plan, self.facts, self.selected, self.preview = plan, {}, '', preview
-        self.canvas.reset(plan)
+        self._canvas_scope = None
+        self._canvas_pending = self.lazy_canvas
+        if not self.lazy_canvas:
+            self._canvas.reset(plan)
         self.scroll.reset_view()
         proposed = getattr(plan, 'proposed', False)
         self.guidance.setVisible(not proposed and not self.graph_only)
@@ -178,7 +201,15 @@ class WorkflowGraphView(QWidget):
         # Card inspection already has its own back-to-overview navigation.
         self.whole.hide()
         self.selected = ''
-        self.canvas.reset(self.plan, keys)
+        scope = tuple(keys)
+        if not self.lazy_canvas or scope != self._canvas_scope:
+            self._canvas_scope = scope
+            self._canvas_pending = self.lazy_canvas
+            if not self.lazy_canvas or self.isVisible():
+                if self.lazy_canvas:
+                    self._materialize_canvas()
+                else:
+                    self._canvas.reset(self.plan, scope)
         self.scroll.reset_view()
         self.set_facts(self.facts)
         self.center_timer.start(0)
@@ -202,7 +233,7 @@ class WorkflowGraphView(QWidget):
             self.legend.setText('Statuses reflect execution. Select a step to inspect results, approval requirements or blockers.')
         else:
             self.legend.setText('Blue: running · Teal-green: passed · Orange-red: failed · Amber: approval\nMuted cards: blocked or skipped; select them to see why.')
-        if self.views.currentIndex() == 1 and self.canvas.order_edges:
+        if self.views.currentIndex() == 1 and not self._canvas_pending and self._canvas.order_edges:
             self.legend.setText(self.legend.text() + '\nDotted arrows: wait for completion, not success.')
         if self.views.currentIndex() == 0:
             self.guidance.setText(f'{len(self.plan.phases)} execution steps grouped by purpose. '
@@ -229,7 +260,8 @@ class WorkflowGraphView(QWidget):
         self.facts = facts
         if self.plan:
             self.whole.setChecked(not self.selected)
-            self.canvas.update_facts(self.plan, facts, self.selected, self.preview)
+            if not self._canvas_pending:
+                self._canvas.update_facts(self.plan, facts, self.selected, self.preview)
             if not getattr(self.plan, 'proposed', False) and not self.graph_only:
                 self.browser.update_facts(self.plan, facts, self.selected, self.preview)
             self.center_timer.start(0)

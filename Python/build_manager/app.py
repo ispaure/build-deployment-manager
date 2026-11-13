@@ -2,6 +2,13 @@
 from .adapter_sdk import supports
 import argparse
 from pathlib import Path
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SavedRunRequest:
+    key: str
+    project: object
 
 
 def main(argv=None):
@@ -49,6 +56,13 @@ class ManagerWindow(QWidget):
         self.run_workspace = None
         self.run_number = 0
         self.close_pending = False
+        self.close_timer = QTimer(self)
+        self.close_timer.setSingleShot(True)
+        self.close_timer.timeout.connect(self.close)
+        from .selection_persistence_ui import SelectionPersistence
+        self.selection_store = SelectionPersistence(registry, self)
+        self.selection_store.failed.connect(self.selection_save_failed)
+        self.selection_store.settled.connect(self.recheck_close)
         self.setWindowTitle('Build Deployment Manager')
         self.resize(1200,850)
         self.layout = QVBoxLayout(self)
@@ -143,6 +157,8 @@ class ManagerWindow(QWidget):
         picker.setToolTip(picker.itemData(picker.currentIndex(), Qt.ItemDataRole.ToolTipRole) or '')
 
     def new_run_tab(self, workspace):
+        if self.close_pending:
+            return None
         source = workspace.active_view
         key = source.project_key if source is not None else self.registry.read().get('selected')
         return workspace.add_view(key or '')
@@ -189,6 +205,9 @@ class ManagerWindow(QWidget):
             self.show_status(str(error), view)
 
     def show_status(self, text, view=None):
+        from shiboken6 import isValid
+        if view is not None and not isValid(view):
+            view = None
         view = view or self.current_view
         view.status.setText(view.redact(text) if hasattr(view, 'redact') else text)
         view.status.show()
@@ -203,6 +222,8 @@ class ManagerWindow(QWidget):
 
     def select(self, view=None, *, selected=_CURRENT_PROJECT, force=False):
         view = view or self.current_view
+        if self.close_pending:
+            return
         key = view.projects.currentData() if selected is _CURRENT_PROJECT else selected
         if getattr(view, 'is_busy', False):
             self.refresh_picker(view)
@@ -224,7 +245,7 @@ class ManagerWindow(QWidget):
         # detached window and sibling tabs; its replacement owns a fresh session.
         if hasattr(view, 'idle'):
             view.idle.disconnect()
-            view.idle.connect(lambda: self.close() if self.close_pending else None)
+            view.idle.connect(self.recheck_close)
         view.hide()
         dock.setWidget(replacement)
         view.setParent(self)
@@ -240,7 +261,7 @@ class ManagerWindow(QWidget):
         replacement.show()
         self.activate_run(replacement)
         if key:
-            self.guarded(lambda: self.registry.select(key), replacement)
+            self.selection_store.after_flush(lambda: self.guarded(lambda: self.registry.select(key), replacement))
         self.set_active(False)
 
     def connect_run_workspace(self, workspace):
@@ -255,6 +276,9 @@ class ManagerWindow(QWidget):
         self.set_active(False)
 
     def create_run(self, key=None, *, run_number=None):
+        supplied_project = key.project if isinstance(key, SavedRunRequest) else None
+        if supplied_project is not None:
+            key = key.key
         if key is None and run_number is None and self.panel is not None:
             key = self.panel.project_key
         key = key or None
@@ -265,28 +289,30 @@ class ManagerWindow(QWidget):
         project, load_error = None, ''
         if key:
             try:
-                project = ProjectBridge(self.registry, key)
+                project = supplied_project or ProjectBridge(self.registry, key)
             except (OSError, ValueError, RuntimeError, KeyError) as error:
                 if replacing:
                     raise
                 load_error = str(error)
         if project is not None:
             panel = ManagerPanel(project, self)
+            panel.is_retained_view = supplied_project is not None
             panel.app_settings.hide()
             panel.identity.hide()
             panel.settings.hide()
             panel.applying_preset = True
             try:
-                panel.configuration.restore_choices(project.row.get('selections', {}))
+                panel.configuration.restore_choices(self.selection_store.choices(key, project.row.get('selections', {})))
             finally:
                 panel.applying_preset = False
-            panel.selection_changed.connect(lambda choices: self.guarded(
-                lambda: self.registry.save_selections(key, choices), panel))
+            if supplied_project is None:
+                panel.selection_changed.connect(lambda choices: self.selection_store.submit(key, choices))
             self.install_presets(key, panel)
             panel.busy_changed.connect(self.set_active)
+            panel.busy_changed.connect(self.recheck_close)
             panel.history_in_tabs = True
             panel.retained_run_requested.connect(lambda item: self.open_retained_run(item, panel))
-            panel.idle.connect(lambda: self.close() if self.close_pending else None)
+            panel.idle.connect(self.recheck_close)
             panel.settings_saved.connect(lambda: self.project_settings_saved(panel))
         else:
             panel = QWidget(self)
@@ -309,11 +335,32 @@ class ManagerWindow(QWidget):
         return panel
 
     def open_retained_run(self, item, source=None):
+        if self.close_pending:
+            return
         source = source or self.panel
         dock = next((dock for dock in self.run_workspace.all_docks if dock.widget() is source), None)
         workspace = dock.workspace if dock is not None else self.run_workspace
-        panel = workspace.add_view(source.project_key)
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        for saved_dock in self.run_workspace.all_docks:
+            if getattr(saved_dock.widget(), 'saved_history_path', None) == path:
+                saved_dock.raise_()
+                saved_dock.workspace._activate(saved_dock)
+                return
+        panel = workspace.add_view(SavedRunRequest(source.project_key, source.project))
         if panel is not None:
+            panel.saved_history_path = path
+            def return_to_run():
+                if dock in self.run_workspace.all_docks:
+                    dock.raise_()
+                    dock.workspace._activate(dock)
+                    source.return_to_current_run()
+                else:
+                    panel.status.setText('The current run tab was closed. Use + to open a new run.')
+            panel.saved_run_origin = return_to_run
+            panel.current_run.setText('Back to current run')
+            panel.current_run.show()
+            saved_dock = next(d for d in workspace.docks if d.widget() is panel)
+            saved_dock.setWindowTitle(getattr(source.project, 'row', {}).get('name', 'Project') + ' · Saved evidence')
             panel.open_history(item, in_tab=True)
 
     def activate_run(self, view):
@@ -328,21 +375,19 @@ class ManagerWindow(QWidget):
         self.add_project = view.menu_actions['Add project…']
         self.app_settings = view.menu_actions['App settings…']
         if self.panel is not None:
-            view.refresh_saved_presets()
             self.saved_presets = view.saved_presets
             self.preset_actions = view.preset_actions
             self.preset_menu = view.preset_menu
         self.set_active(False)
 
     def install_presets(self, key, panel):
-        from .presets_ui import PresetController
-        panel.preset_controller = PresetController(self.registry, key, panel, self.guarded)
+        panel.preset_controller.bind_registry(self.registry, key, self.guarded, self.selection_store.after_flush, self)
 
     def project_settings_saved(self, origin):
         for dock in self.run_workspace.all_docks:
             view = dock.widget()
             if view is not origin and view.project_key == origin.project_key and view.project is not None:
-                view.invalidate()
+                view.invalidate(persist=False)
         self.show_status('Project settings saved. Review a fresh plan before running.', origin)
 
     def update_setup(self, view=None):
@@ -355,8 +400,11 @@ class ManagerWindow(QWidget):
                 'Add a project to this run tab. Other tabs keep their own project and choices.')
             view.setup_action.setText('Locate moved checkout…' if error else 'Add your first project…')
             return
+        if getattr(view, 'is_retained_view', False):
+            return
         from .project_setup_ui import interpreter_path
-        row, descriptor = self.registry.resolve(view.project_key)
+        row, descriptor = ((view.project.row, view.project.descriptor) if hasattr(view.project, 'descriptor')
+                           else self.registry.resolve(view.project_key))
         python = interpreter_path(row['root'], descriptor)
         from .onboarding import readiness
         ready = readiness(row['root'], descriptor)
@@ -386,13 +434,14 @@ class ManagerWindow(QWidget):
     def update_project_actions(self, view):
         busy = getattr(view, 'is_busy', False)
         available = bool(view.project_key)
-        view.projects.setEnabled(not busy)
+        view.projects.setEnabled(not busy and not getattr(view, 'is_retained_view', False))
         view.more.setEnabled(not busy)
         view.setup_action.setEnabled(not busy)
         view.project_settings.setEnabled(not busy and view.project is not None)
         for label in ('Locate moved checkout…', 'Remove registration', 'Accounts…', 'Check connections and settings…'):
             view.menu_actions[label].setEnabled(available and not busy)
-        view.menu_actions['Check connections and settings…'].setEnabled(not busy and view.project is not None and supports(view.project, 'verification'))
+        view.menu_actions['Check connections and settings…'].setEnabled(not busy and view.project is not None
+            and not getattr(view, 'is_retained_view', False) and supports(view.project, 'verification'))
         view.menu_actions['Manage build storage…'].setEnabled(not busy and view.project is not None)
         if 'Project tooling…' in view.menu_actions:
             view.menu_actions['Project tooling…'].setEnabled(not busy and view.project is not None and supports(view.project, 'tooling_status'))
@@ -408,20 +457,22 @@ class ManagerWindow(QWidget):
         from .project_setup_ui import AddProjectDialog
         dialog = AddProjectDialog(view.window())
         if dialog.exec():
+            root, name = dialog.root, dialog.registration_name.text().strip() or None
             def register():
-                key = self.registry.add(dialog.root, name=dialog.registration_name.text().strip() or None)
+                key = self.registry.add(root, name=name)
                 self.registry.select(key)
                 self.refresh(view=view, selected=key)
-            self.guarded(register, view)
+            self.selection_store.after_flush(lambda: self.guarded(register, view))
 
     def locate(self, view=None):
         view = view or self.current_view
         path = QFileDialog.getExistingDirectory(view.window(), 'Locate moved project checkout')
         if path:
+            key = view.project_key
             def relocate():
-                self.registry.locate(view.project_key, path)
-                self.refresh(view=view, selected=view.project_key, force=True)
-            self.guarded(relocate, view)
+                self.registry.locate(key, path)
+                self.refresh(view=view, selected=key, force=True)
+            self.selection_store.after_flush(lambda: self.guarded(relocate, view))
 
     def accounts(self, view=None):
         view = view or self.current_view
@@ -433,7 +484,7 @@ class ManagerWindow(QWidget):
             if AccountsDialog(SettingsStore(self.registry.directory), descriptor['project_id'], view.window(),
                     providers=descriptor['capabilities'].get('providers', ())).exec():
                 if view.project:
-                    view.invalidate()
+                    view.invalidate(persist=False)
         if key:
             self.guarded(show, view)
 
@@ -448,26 +499,71 @@ class ManagerWindow(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             def remove():
+                if any(dock.widget().project_key == key and getattr(dock.widget(), 'is_busy', False)
+                       for dock in self.run_workspace.all_docks):
+                    raise ValueError('This project is running in another tab. Wait before removing its registration.')
                 self.registry.remove(key)
                 self.refresh(view=view, selected=self.registry.read().get('selected'))
-            self.guarded(remove, view)
+            self.selection_store.after_flush(lambda: self.guarded(remove, view))
 
     def test_machines(self, view=None):
         view = view or self.current_view
         from .vm_ui import VMDialog
         VMDialog(view.window()).exec()
 
+    def recheck_close(self, *_):
+        if self.close_pending:
+            self.close_timer.start(0)
+
+    def set_close_pending(self, pending):
+        self.close_pending = pending
+        self.setEnabled(not pending)
+        if self.run_workspace is not None:
+            for dock in self.run_workspace.all_docks:
+                dock.widget().close_requested = pending
+            for window in self.run_workspace.detached_windows:
+                window.setEnabled(not pending)
+
+    def selection_save_failed(self, message):
+        if self.close_pending:
+            self.close_timer.stop()
+            self.set_close_pending(False)
+            message += ' The window remains open.'
+        self.show_status(message)
+
     def closeEvent(self,event):
         busy_panels = [dock.widget() for dock in self.run_workspace.all_docks
                        if getattr(dock.widget(), 'is_busy', False)] if self.run_workspace else []
-        if busy_panels:
+        if busy_panels and not self.close_pending:
             if QMessageBox.question(self,'Cancel active operations?',
                 'Cancel and finish owned cleanup before closing?',
                 QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)==QMessageBox.StandardButton.Yes:
+                self.set_close_pending(True)
                 for panel in busy_panels:
                     panel.cancel_operation()
-                    panel.busy_changed.connect(lambda busy: self.close() if not self.active else None)
+                self.recheck_close()
+            event.ignore()
+            return
+        if busy_panels:
+            event.ignore()
+            return
+        if self.selection_store.unsaved:
+            choice = QMessageBox.question(self, 'Run choices were not saved',
+                'Retry saving, close without the unsaved run choices, or keep the window open?',
+                QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Retry)
+            if choice == QMessageBox.StandardButton.Cancel:
+                self.set_close_pending(False)
+                event.ignore()
+                return
+            if choice == QMessageBox.StandardButton.Discard:
+                self.selection_store.discard_unsaved()
+            else:
+                self.selection_store.flush(retry=True)
+        if not self.close_pending:
+            self.set_close_pending(True)
+        if not self.selection_store.flush():
             event.ignore()
             return
         if self.retired_panels:

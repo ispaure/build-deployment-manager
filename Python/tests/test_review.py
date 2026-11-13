@@ -50,6 +50,13 @@ class ReviewTests(unittest.TestCase):
             time.sleep(.005)
             self.assertLess(time.monotonic(), deadline)
 
+    def wait_retained(self, panel):
+        deadline = time.monotonic() + 5
+        while panel.retained_job is not None:
+            self.app.processEvents()
+            time.sleep(.005)
+            self.assertLess(time.monotonic(), deadline)
+
     def test_gui_continuation_reviews_and_forwards_changed_engine_identity(self):
         from PySide6.QtWidgets import QMessageBox
         from build_manager.identity import capture_engine_source_identity, engine_review_identity
@@ -125,6 +132,7 @@ class ReviewTests(unittest.TestCase):
         item = QTreeWidgetItem()
         item.setData(0, Qt.ItemDataRole.UserRole, str(result))
         panel.open_history(item, in_tab=True)
+        self.wait_retained(panel)
         self.assertEqual(panel.result, result)
         self.assertIn('Viewing retained run:', panel.status.text())
         self.assertEqual(panel.run_view.plan.project, plan.project)
@@ -150,6 +158,7 @@ class ReviewTests(unittest.TestCase):
         item = QTreeWidgetItem()
         item.setData(0, Qt.ItemDataRole.UserRole, str(result))
         panel.open_history(item, in_tab=True)
+        self.wait_retained(panel)
         self.assertTrue(panel.continue_run.isEnabled())
         self.assertEqual(panel.continue_run.text(), 'Continue independent steps…')
         with patch.object(panel, 'confirm_continuation', return_value=('upload',)), \

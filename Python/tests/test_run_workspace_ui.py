@@ -1,5 +1,6 @@
 """Independent run documents use the pinned commonUtils docking lifecycle."""
 import json
+import time
 import unittest
 from unittest.mock import patch
 
@@ -64,6 +65,11 @@ class RunWorkspaceTests(unittest.TestCase):
         self.assertEqual(len(window.run_workspace.docks), 2)
         self.assertIsNone(first.result)
         self.assertEqual(first.revision.text(), 'keep-this-draft')
+        deadline = time.monotonic() + 5
+        while window.panel.retained_job is not None:
+            self.app.processEvents()
+            time.sleep(.002)
+            self.assertLess(time.monotonic(), deadline)
         self.assertEqual(window.panel.result, result)
         self.assertEqual(window.panel.stages.currentIndex(), 2)
         self.assertEqual(window.panel.stage_tabs.currentIndex(), 2)

@@ -18,6 +18,20 @@ run. Preparing a new plan captures source and settings again.
 Keep the original result directory. A disconnected network does not prove an
 upload failed, and cancellation does not undo completed deliveries.
 
+## A plan is still preparing
+
+Review plan prepares source and prerequisites before execution. Its phase and
+elapsed time describe preparation only. **Cancel preparation** requests cleanup;
+wait until it says cancelled before preparing again. Legacy adapters may have to
+finish their request before cancellation completes. Changed choices or project
+settings supersede a pending request, including any late error. Prepare a new
+review for those choices. Failed preparation keeps the draft and its error details.
+
+You can open **Project History** while waiting. Saved evidence opens separately;
+**Current run** or **Back to current run** returns to the draft or active run.
+Reading evidence never starts or resumes execution. Closing during preparation
+requests cleanup and prevents the result from opening a late review.
+
 ## Request cancellation from another terminal
 
 Use `python -m build_manager.cli cancel RUN --expect-identity PLAN_SHA --confirm`

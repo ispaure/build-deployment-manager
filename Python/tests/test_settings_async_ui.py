@@ -5,7 +5,7 @@ from pathlib import Path
 from threading import Event
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from PySide6.QtCore import QTimer, QThreadPool
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox
 from build_manager.settings_ui import SettingsDialog
@@ -25,6 +25,13 @@ class SettingsAsyncTests(unittest.TestCase):
         while dialog.busy:
             self.app.processEvents(); time.sleep(.005)
             self.assertLess(time.monotonic(), deadline)
+
+    def wait_for_preparation(self, panel):
+        deadline = time.monotonic() + 5
+        while panel.preparing:
+            self.app.processEvents()
+            time.sleep(.005)
+            self.assertLess(time.monotonic(), deadline, panel.status.text())
 
     def test_dialog_visible_during_slow_load_and_close_discards_late_reply(self):
         entered, release = Event(), Event()
@@ -64,32 +71,46 @@ class SettingsAsyncTests(unittest.TestCase):
         with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Yes):
             dialog.reject(); self.assertTrue(dialog.closed)
 
-    def test_goal_selection_conflict_and_modified_preset_are_clear(self):
+    def test_goal_selection_conflict_and_preset_overrides_are_clear(self):
         with TemporaryDirectory() as folder:
             project = OtherProject(Path(folder)); project.platforms = ('android', 'ios')
             project.journey_capability = CAPABILITY
-            project.make_journey = lambda *a, **kw: integrated(Path(folder))
+            project.make_journey = Mock(side_effect=lambda *a, **kw: integrated(Path(folder)))
             panel = ManagerPanel(project)
+            self.addCleanup(panel.close)
             panel.goal.setCurrentIndex(panel.goal.findData('deliver'))
             panel.platform_checks['ios'].setChecked(True)
             panel.destination_checks['firebase'].setChecked(True)
-            panel.request_plan_preparation(); self.assertFalse(panel.preparing); self.assertIn('requires: android', panel.status.text())
+            panel.request_plan_preparation()
+            self.assertTrue(panel.preparing)
+            self.assertFalse(panel.start.isEnabled())
+            self.wait_for_preparation(panel)
+            self.assertEqual(panel.preparation_state, 'failed')
+            self.assertIn('requires: android', panel.status.text())
+            project.make_journey.assert_not_called()
             panel.platform_checks['android'].setChecked(True)
             panel.destination_checks['testflight'].setChecked(True)
             panel.request_plan_preparation()
-            deadline = time.monotonic() + 5
-            while panel.preparing:
-                self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
+            self.wait_for_preparation(panel)
             self.assertIsNotNone(panel.plan); self.assertEqual(panel.start.text(), 'Start reviewed workflow')
             self.assertIn('firebase:fixture', panel.overview.toPlainText())
             panel.platform_checks['android'].setChecked(False)
-            self.assertIsNone(panel.plan); self.assertTrue(panel.destination_checks['firebase'].isChecked())
+            self.assertIsNone(panel.plan)
+            self.assertFalse(panel.start.isEnabled())
+            self.assertTrue(panel.destination_checks['firebase'].isChecked())
             panel.close()
             project.workflow_presets = {'Firebase workflow': dict(platform='android', operation='Test', backend='Local fixture')}
-            panel = ManagerPanel(project); panel.preset.setCurrentText('Firebase workflow')
+            panel = ManagerPanel(project)
+            self.addCleanup(panel.close)
+            panel.preset.setCurrentText('Firebase workflow')
             panel.platform.setCurrentText('ios')
             self.assertEqual(panel.preset.currentText(), 'Firebase workflow')
-            self.assertIn('Modified', panel.preset_note.text()); panel.close()
+            self.assertFalse(panel.preset_note.isHidden())
+            self.assertEqual(panel.preset_note.text(), 'Overrides for this run')
+            panel.preset_actions['Reset overrides'].trigger()
+            self.assertEqual(panel.platform.currentText(), 'android')
+            self.assertTrue(panel.preset_note.isHidden())
+            panel.close()
 
     def test_real_gui_integrated_start_authorizes_selected_destinations(self):
         import json
@@ -138,11 +159,13 @@ class SettingsAsyncTests(unittest.TestCase):
             self.assertEqual(panel.backend.currentText(), 'Android host')
             panel.platform.setCurrentText('ios')
             self.assertEqual(panel.backend.currentText(), 'Android host')
-            panel.request_plan_preparation(); self.assertFalse(panel.preparing)
+            panel.request_plan_preparation()
+            self.assertTrue(panel.preparing)
+            self.assertFalse(panel.start.isEnabled())
+            self.wait_for_preparation(panel)
+            self.assertEqual(panel.preparation_state, 'failed')
             self.assertIn('choices are retained', panel.status.text())
             panel.backend.setCurrentText('iOS host')
             panel.request_plan_preparation()
-            deadline = time.monotonic() + 5
-            while panel.preparing:
-                self.app.processEvents(); time.sleep(.005); self.assertLess(time.monotonic(), deadline)
+            self.wait_for_preparation(panel)
             self.assertIsNotNone(panel.plan)

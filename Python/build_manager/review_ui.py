@@ -1,13 +1,14 @@
 """One review map and a persistent, synchronized task/evidence inspector."""
-import shlex
 import json
-from PySide6.QtCore import QEvent, Qt, Signal, QTimer
+import shlex
+from PySide6.QtCore import QElapsedTimer, QEvent, QSignalBlocker, Qt, Signal, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QHBoxLayout, QLabel, QPlainTextEdit,
     QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from .grouped_workflow_ui import GroupedFlowView
-from .plan_summary import captured_choices, phase_title, summary_rows, destination_label_for_phase
+from .plan_summary import phase_title, destination_label_for_phase
+from .review_presentation import review_data, retained_artifact_provenance
 from .workflow_ui import WorkflowGraphView
 from .workflow_presentation import blocking_prerequisite, display_states, state_label, format_step_time
 from .test_tree_ui import update_test_children, time_share
@@ -62,8 +63,27 @@ class Disclosure(QWidget):
         self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
 
 
-def text_view(name):
-    view = QPlainTextEdit()
+class DeferredTextView(QPlainTextEdit):
+    """Install large technical text only on selection or an explicit text read."""
+
+    def defer(self, render):
+        self.clear()
+        self.pending_text = render
+
+    def materialize(self):
+        if self.pending_text is not None:
+            text, self.pending_text = self.pending_text, None
+            self.setPlainText(text())
+
+    def toPlainText(self):
+        self.materialize()
+        return super().toPlainText()
+
+
+def text_view(name, *, deferred=False):
+    view = DeferredTextView() if deferred else QPlainTextEdit()
+    if deferred:
+        view.pending_text = None
     view.setReadOnly(True)
     view.setAccessibleName(name)
     view.setMinimumHeight(140)
@@ -72,6 +92,9 @@ def text_view(name):
 
 class ReviewPlanView(QWidget):
     phase_selected = Signal(str)
+    rendering_finished = Signal()
+    _ROW_BATCH_SIZE = 32
+    _ROW_SLICE_MS = 6
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -105,7 +128,7 @@ class ReviewPlanView(QWidget):
         self.splitter = AdaptiveSplitter(sizes=(450, 550), minimums=(300, 400))
         self.splitter.setChildrenCollapsible(False)
         self.flow = GroupedFlowView(graph_mode=True, inspect_single_cards=True, nested_navigation=False)
-        self.graph = WorkflowGraphView(graph_only=True)
+        self.graph = WorkflowGraphView(graph_only=True, lazy_canvas=True)
         self.flow.attach_inspector(self.graph)
         self.flow.group_selected.connect(self.select_group)
         self.graph.phase_selected.connect(self.select_step)
@@ -244,8 +267,8 @@ class ReviewPlanView(QWidget):
         self.inspector_tabs.addTab(self.command, 'Technical · Command')
         self.plan_tabs = EvidenceGroup(self.inspector_tabs, prefix='Technical · ')
         self.plan_tabs.setAccessibleName('Complete plan summary, dependencies and data')
-        self.overview = text_view('Readable complete plan')
-        self.plan_data = text_view('Complete redacted plan data')
+        self.overview = text_view('Readable complete plan', deferred=True)
+        self.plan_data = text_view('Complete redacted plan data', deferred=True)
         self.board = QTreeWidget()
         self.board.setHeaderLabels(['Planned work', 'Starts after', 'What happens'])
         self.board.setMinimumHeight(140)
@@ -253,6 +276,7 @@ class ReviewPlanView(QWidget):
         for label, widget in [('Summary', self.overview), ('Dependencies', self.board), ('Data', self.plan_data)]:
             self.plan_tabs.addTab(widget, label)
         self.technical_section = self.plan_tabs
+        self.inspector_tabs.currentChanged.connect(self.materialize_evidence)
         self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([450, 550])
         self.splitter.setStretchFactor(0, 45)
@@ -263,6 +287,14 @@ class ReviewPlanView(QWidget):
         self._task_size_targets = (self.tasks, self.tasks.header())
         self._task_size_observer_active = False
         self._connect_task_size_refresh()
+        self.rendering = False
+        self._staged_data = None
+        self._task_work = None
+        self._dependency_work = None
+        self._requested_phase = ''
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self.render_slice)
 
     def _connect_task_size_refresh(self):
         if not self._task_size_observer_active:
@@ -300,49 +332,56 @@ class ReviewPlanView(QWidget):
         super().hideEvent(event)
 
     def closeEvent(self, event):
+        self.cancel_rendering()
         self._disconnect_task_size_refresh()
         super().closeEvent(event)
 
-    def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='', preview=True):
-        self.plan, self.fields, self.summary = plan, fields, summary
-        from .workflow_presentation import plan_overview
-        self.overview.setPlainText(plan_overview(plan))
-        self.plan_data.setPlainText(json.dumps(plan.data() if hasattr(plan, 'data') else vars(plan),
-                                                default=vars, indent=2))
+    def materialize_evidence(self, _):
+        page = self.inspector_tabs.currentWidget()
+        if page in (self.overview, self.plan_data):
+            page.materialize()
+
+    def cancel_rendering(self):
+        self._render_timer.stop()
+        self._task_work = self._dependency_work = None
+        self._requested_phase = ''
+        self.rendering = False
+        self.tasks.setEnabled(True)
+        self.flow.setEnabled(True)
+
+    def stage_prepared(self, data):
+        """Supply worker data to the enclosing view's next reset of this display plan."""
+        self._staged_data = data
+
+    def reset(self, plan, fields=(), *, capability=None, proposal=None, summary='', inputs='',
+              preview=True, prepared=None):
+        self.cancel_rendering()
+        staged, self._staged_data = self._staged_data, None
+        if prepared is None and staged is not None and staged.plan is plan:
+            prepared = staged
+        data = prepared if prepared is not None else review_data(plan, fields, capability, proposal)
+        self.presentation = data
+        self.plan, self.fields, self.summary = data.plan, fields, summary
+        self.overview.defer(lambda: data.overview)
+        self.plan_data.defer(lambda: json.dumps(
+            data.plan.data() if hasattr(data.plan, 'data') else vars(data.plan), default=vars, indent=2))
         self.board.clear()
-        for phase in plan.phases:
-            parents = ', '.join(phase.dependencies) or 'Ready to start'
-            if getattr(phase, 'waits_for', ()):
-                parents += '; completion only: ' + ', '.join(phase.waits_for)
-            effect = phase.effect if phase.effect != 'inherit' else plan.effect
-            approval = effect in {'upload', 'deploy', 'publish', 'dispatch'} and getattr(phase, 'approval_required', True)
-            row = QTreeWidgetItem([phase_title(phase), parents,
-                                   effect + (' · separate approval' if approval else '')])
-            row.setToolTip(0, phase.id)
-            self.board.addTopLevelItem(row)
-        self.phases = {phase.id: phase for phase in plan.phases}
+        self._dependency_work = iter(data.dependency_rows)
+        self.phases = data.phases
+        self.task_owners, self.task_names = data.task_owners, data.task_names
+        self._overview_nodes = {node.id: node for node in data.grouped.phases}
+        self._card_details = getattr(data.grouped, 'card_details', None) or {}
         self.selected, self.facts, self.detail_selection = '', {}, None
-        self.captured.setText('\n\n'.join(name + ': ' + value for name, value in captured_choices(plan)) +
+        self.captured.setText('\n\n'.join(name + ': ' + value for name, value in data.captured_choices) +
                               ('\n\nCaptured notes and recipients:\n' + inputs if inputs else ''))
-        source = plan.source.get('commit') or plan.source.get('fingerprint') or plan.source.get('revision', 'Captured source')
-        choices = captured_choices(plan)
-        destinations = [row['identity'] for row in getattr(plan, 'journey', {}).get('destinations', {}).values()]
-        mode = str(plan.source.get('selection') or 'Captured source')
-        if plan.source.get('dirty'):
-            mode += ' · includes edits'
-        self.captured_summary.setText('Source: ' + mode + ' · ' + str(source)[:16] + '\n'
-            + 'Runs on: ' + choices[1][1].replace('\n', '; ') + '\n'
-            + ('Destinations: ' + '; '.join(destinations[:3]) +
-               (f'; +{len(destinations) - 3} more in captured choices' if len(destinations) > 3 else '')
-               if destinations else 'Goal: ' + plan.operation))
+        self.captured_summary.setText(data.captured_summary)
         self.source_details.toggle.setText('Captured choices · full identity, notes and recipients')
         self.source_details.toggle.setChecked(False)
-        self.inspector_tabs.setCurrentIndex(0)
-        self.plan_tabs.setCurrentIndex(0)
         self.inspector_tabs.setCurrentWidget(self.details_scroll)
-        self.graph.reset(plan, preview=preview)
+        self.plan_tabs.last = 0
+        self.graph.reset(self.plan, preview=preview)
         # Reserve the same status space before and after Start.
-        self.flow.reset(plan, fields, preview=preview, capability=capability, proposal=proposal, reserve_activity=True)
+        self.flow.reset(self.plan, fields, preview=preview, reserve_activity=True, overview=data.grouped)
         self.problems.hide()
         self.select_group('')
 
@@ -365,58 +404,114 @@ class ReviewPlanView(QWidget):
         if not key:
             self.flow.selected = ''
         self.selected = ''
+        self._requested_phase = ''
         keys = self.scope_keys()
         expanded = bool(key and self.flow.pages.currentIndex() == 1)
         if expanded:
             self.graph.set_scope(keys)
             self.graph.setVisible(bool(keys))
+            extra = len(set(keys) - set(self.flow.group_keys(key)))
             self.task_heading.setText(self.flow.heading.text() +
-                (f'\n{len(set(keys) - set(self.flow.group_keys(key)))} prerequisite steps from other cards'
-                 if set(keys) - set(self.flow.group_keys(key)) else ''))
+                                      (f'\n{extra} prerequisite steps from other cards' if extra else ''))
         else:
             self.task_heading.setText(self.flow.heading.text() if key else 'Workflow cards · ' + str(len(keys)) + ' execution steps')
-        self.tasks.blockSignals(True)
-        self.tasks.clear()
-        self.rows = {}
-        self.card_rows = {}
+        with QSignalBlocker(self.tasks):
+            self.tasks.clear()
+        self.rows, self.card_rows = {}, {}
         members = set(self.flow.grouped.members.get(key, ()) or self.flow.group_keys(key)) if key else set(keys)
-        self.task_owners = {phase_id: group for group, phases in self.flow.grouped.members.items() for phase_id in phases}
-        self.task_names = {}
-        for group in dict.fromkeys(self.task_owners.get(phase_id, '__unassigned__') for phase_id in keys):
-            self.task_names.update(self.short_names([phase_id for phase_id in keys
-                if self.task_owners.get(phase_id, '__unassigned__') == group]))
-        nodes = {node.id: node for node in self.flow.grouped.phases}
+        states = (display_states(self.plan, self.facts) if self.facts else self.presentation.preview_states)
+        self._task_work = (key, keys, iter(keys), members, states, expanded)
+        large_dependencies = self._dependency_work is not None and len(self.phases) > self._ROW_BATCH_SIZE
+        if len(keys) > self._ROW_BATCH_SIZE or large_dependencies:
+            self.rendering = True
+            self.tasks.setEnabled(False)
+            if large_dependencies:
+                # Establish the complete initial task list before allowing a
+                # card click to replace its scope.
+                self.flow.setEnabled(False)
+            self.render_details()
+            self._render_timer.start(1)
+        else:
+            self.render_slice(synchronous=True)
 
-        def card_row(group):
-            if group not in self.card_rows:
-                node = nodes.get(group)
-                card = QTreeWidgetItem([node.label if node else 'Other execution steps', '', ''])
-                card.setData(0, Qt.ItemDataRole.UserRole + 3, group)
-                card.setExpanded(True)
-                self.tasks.addTopLevelItem(card)
-                self.card_rows[group] = card
-                card.setExpanded(True)
-            return self.card_rows[group]
+    def render_slice(self, *, synchronous=False):
+        elapsed = QElapsedTimer()
+        elapsed.start()
 
-        for phase_id in keys:
-            phase = self.phases[phase_id]
-            row = QTreeWidgetItem([self.task_names[phase_id], '', ''])
-            row.setData(0, Qt.ItemDataRole.UserRole, phase_id)
-            row.setToolTip(0, phase_title(phase) + '\nStep identity: ' + phase_id + ('\nPrerequisite from another card' if phase_id not in members else ''))
-            card_row(self.task_owners.get(phase_id, '__unassigned__')).addChild(row)
-            self.rows[phase_id] = row
-        if key and not keys:
-            card_row(key)
-        self.tasks.blockSignals(False)
+        def available(index):
+            return synchronous or (index < self._ROW_BATCH_SIZE and
+                                   (index == 0 or elapsed.elapsed() < self._ROW_SLICE_MS))
+
+        index = 0
+        if self._task_work is not None:
+            key, keys, pending, members, states, expanded = self._task_work
+            with QSignalBlocker(self.tasks):
+                while available(index):
+                    phase_id = next(pending, None)
+                    if phase_id is None:
+                        self._task_work = None
+                        if key and not keys:
+                            self.card_row(key)
+                        break
+                    self.add_task_row(phase_id, members, states)
+                    index += 1
+            if self._task_work is None:
+                self.finish_task_rows(key, keys, members, expanded)
+        if self._dependency_work is not None:
+            while available(index):
+                row_data = next(self._dependency_work, None)
+                if row_data is None:
+                    self._dependency_work = None
+                    break
+                key, columns = row_data
+                row = QTreeWidgetItem(list(columns))
+                row.setToolTip(0, key)
+                self.board.addTopLevelItem(row)
+                index += 1
+        if self._task_work is not None or self._dependency_work is not None:
+            self._render_timer.start(1)
+        elif self.rendering:
+            self.rendering = False
+            self.tasks.setEnabled(True)
+            self.flow.setEnabled(True)
+            self.rendering_finished.emit()
+
+    def card_row(self, group):
+        if group not in self.card_rows:
+            node = self._overview_nodes.get(group)
+            card = QTreeWidgetItem([node.label if node else 'Other execution steps', '', ''])
+            card.setData(0, Qt.ItemDataRole.UserRole + 3, group)
+            self.tasks.addTopLevelItem(card)
+            card.setExpanded(True)
+            self.card_rows[group] = card
+        return self.card_rows[group]
+
+    def add_task_row(self, phase_id, members, states):
+        row = QTreeWidgetItem([self.task_names[phase_id], '', ''])
+        row.setData(0, Qt.ItemDataRole.UserRole, phase_id)
+        row.setToolTip(0, self.presentation.titles[phase_id] + '\nStep identity: ' + phase_id +
+                       ('\nPrerequisite from another card' if phase_id not in members else ''))
+        self.card_row(self.task_owners.get(phase_id, '__unassigned__')).addChild(row)
+        self.rows[phase_id] = row
+        self.refresh_task_row(phase_id, row, states, 0)
+
+    def finish_task_rows(self, key, keys, members, expanded):
         self.size_task_list(False)
-        self.refresh_rows()
-        chosen = next((phase_id for phase_id in keys if phase_id in members and self.is_problem(phase_id)), '')
+        if self.facts:
+            self.refresh_rows()
+        else:
+            self.refresh_card_rows(self.presentation.preview_states, {})
+        chosen = self._requested_phase
+        if key and not chosen:
+            chosen = next((phase_id for phase_id in keys
+                           if phase_id in members and self.is_problem(phase_id)), '')
         if key and not chosen:
             chosen = next((phase_id for phase_id in keys if phase_id in members), '')
+        self._requested_phase = ''
         if expanded:
             self.graph.select(chosen)
         else:
-            self.select_step(chosen if key else '')
+            self.select_step(chosen)
 
     def size_task_list(self, error_visible):
         # The vertical splitter owns space allocation; the tree scrolls itself.
@@ -455,12 +550,14 @@ class ReviewPlanView(QWidget):
     def inspect_phase(self, key):
         if key not in self.phases:
             return
-        if self.flow.pages.currentIndex() == 0 and key in self.rows:
-            self.select_step(key)
+        if key not in self.rows:
+            if self._task_work is not None and key in self._task_work[1]:
+                self._requested_phase = key
+                return
+            self.flow.open_group(self.task_owners.get(key, '__unassigned__'))
+        if key not in self.rows and self._task_work is not None:
+            self._requested_phase = key
             return
-        if key not in self.rows or key not in self.graph.canvas.cards:
-            group = next((group for group in self.flow.grouped.members if key in self.flow.group_keys(group)), '__unassigned__')
-            self.flow.open_group(group)
         if self.flow.pages.currentIndex() == 0:
             self.select_step(key)
         else:
@@ -492,45 +589,57 @@ class ReviewPlanView(QWidget):
             case.get('status') in {'failed', 'error'} for case in fact.get('tests', ()))
 
     def refresh_rows(self, *, force_tests=False):
-        self.tasks.blockSignals(True)
-        total = sum(fact.get('seconds') or 0 for fact in self.facts.values() if not fact.get('reused'))
-        card_totals = {group: sum(self.facts.get(key, {}).get('seconds') or 0 for key in self.rows
-                      if self.task_owners.get(key, '__unassigned__') == group and not self.facts.get(key, {}).get('reused')) for group in self.card_rows}
-        states = display_states(self.plan, self.facts, preview=not bool(self.facts))
-        for key, row in self.rows.items():
-            state, reason = states[key]
-            fact = self.facts.get(key, {})
-            row.setText(1, 'Reused' if fact.get('reused') else {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
-            if fact.get('recovery', {}).get('status') == 'recovered':
-                row.setText(1, 'Passed after recovery')
-            elapsed = format_step_time(self.facts.get(key, {}), state) or 'Not recorded'
-            row.setText(2, '—' if elapsed in {'Not started', 'Not recorded'} else elapsed)
-            row.setToolTip(1, reason)
-            row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
-                if self.is_problem(key) else self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
-            update_test_children(row, key, fact, self.phases[key], force=force_tests)
-            time_share(self.tasks, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
-                       card_totals.get(self.task_owners.get(key, '__unassigned__')), reused=fact.get('reused', False))
-            if fact.get('seconds') is None and not fact.get('reused'):
-                row.setToolTip(2, elapsed)
-            cases = fact.get('tests') or fact.get('live_tests', ())
-            if cases:
-                row.setToolTip(1, row.text(1) + f' · {len(cases)} reported tests')
-            if fact.get('current_test'):
-                row.setToolTip(1, 'Running: ' + fact['current_test']['name'])
-        for group, card in self.card_rows.items():
-            keys = [key for key in self.rows if self.task_owners.get(key, '__unassigned__') == group]
-            seconds = [self.facts[key]['seconds'] for key in keys if self.facts.get(key, {}).get('seconds') is not None and not self.facts[key].get('reused')]
-            time_share(self.tasks, card, sum(seconds) if seconds else None, total)
-            statuses = {states[key][0] for key in keys}
-            state = next((value for value in ('failed', 'error', 'running', 'awaiting_review', 'blocked', 'queued', 'planned') if value in statuses), next(iter(statuses), 'planned'))
-            card.setText(1, state_label(state))
-        self.tasks.blockSignals(False)
+        if self._task_work is not None:
+            return
+        with QSignalBlocker(self.tasks):
+            groups = {}
+            for key in self.rows:
+                group = self.task_owners.get(key, '__unassigned__')
+                fact = self.facts.get(key, {})
+                groups[group] = groups.get(group, 0) + (0 if fact.get('reused') else fact.get('seconds') or 0)
+            states = display_states(self.plan, self.facts) if self.facts else self.presentation.preview_states
+            for key, row in self.rows.items():
+                self.refresh_task_row(key, row, states, groups.get(self.task_owners.get(key, '__unassigned__')),
+                                      force_tests=force_tests)
+            self.refresh_card_rows(states, groups)
         current = self.tasks.currentItem()
         if current is not None and current.data(0, Qt.ItemDataRole.UserRole + 1):
             self.show_case_detail(current)
         else:
             self.case_detail.hide()
+
+    def refresh_task_row(self, key, row, states, group_seconds, *, force_tests=False):
+        state, reason = states[key]
+        fact = self.facts.get(key, {})
+        row.setText(1, 'Reused' if fact.get('reused') else {'awaiting_review': 'Approval', 'waiting_resource': 'Waiting'}.get(state, state.replace('_', ' ').capitalize()))
+        if fact.get('recovery', {}).get('status') == 'recovered':
+            row.setText(1, 'Passed after recovery')
+        elapsed = format_step_time(fact, state) or 'Not recorded'
+        row.setText(2, '—' if elapsed in {'Not started', 'Not recorded'} else elapsed)
+        row.setToolTip(1, reason)
+        row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
+            if self.is_problem(key) else self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        update_test_children(row, key, fact, self.phases[key], force=force_tests)
+        time_share(self.tasks, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
+                   group_seconds, reused=fact.get('reused', False))
+        if fact.get('seconds') is None and not fact.get('reused'):
+            row.setToolTip(2, elapsed)
+        cases = fact.get('tests') or fact.get('live_tests', ())
+        if cases:
+            row.setToolTip(1, row.text(1) + f' · {len(cases)} reported tests')
+        if fact.get('current_test'):
+            row.setToolTip(1, 'Running: ' + fact['current_test']['name'])
+
+    def refresh_card_rows(self, states, groups):
+        total = sum(fact.get('seconds') or 0 for fact in self.facts.values() if not fact.get('reused'))
+        statuses = {group: set() for group in self.card_rows}
+        for key in self.rows:
+            statuses[self.task_owners.get(key, '__unassigned__')].add(states[key][0])
+        priority = ('failed', 'error', 'running', 'awaiting_review', 'blocked', 'queued', 'planned')
+        for group, card in self.card_rows.items():
+            time_share(self.tasks, card, groups.get(group) or None, total)
+            state = next((value for value in priority if value in statuses[group]), next(iter(statuses[group]), 'planned'))
+            card.setText(1, state_label(state))
 
     def set_facts(self, facts):
         if self.plan is None:
@@ -554,17 +663,6 @@ class ReviewPlanView(QWidget):
             self.inspector_tabs.setCurrentWidget(self.details_scroll)
             self.details.setFocus()
             self.details_scroll.ensureWidgetVisible(self.error_summary)
-
-    def short_names(self, keys):
-        parts = {key: phase_title(self.phases[key]).split(' · ') for key in keys}
-        names = {}
-        for key, segments in parts.items():
-            for count in range(1, len(segments) + 1):
-                name = ' · '.join(segments[-count:])
-                if not any(name == ' · '.join(other[-count:]) for other_key, other in parts.items() if other_key != key):
-                    break
-            names[key] = name[:1].upper() + name[1:]
-        return names
 
     def set_fact(self, label, text):
         self.fact_values[label].setText(text)
@@ -613,14 +711,22 @@ class ReviewPlanView(QWidget):
             if self.flow.selected == 'source':
                 self.selection_heading.setText('Captured source')
                 self.selection_heading.show()
-                self.context_info.setText(captured_choices(self.plan)[0][1] +
+                self.context_info.setText(self.presentation.captured_choices[0][1] +
                     '\n\nNo executable source subtasks were declared.' if not self.flow.group_keys('source')
-                    else captured_choices(self.plan)[0][1])
+                    else self.presentation.captured_choices[0][1])
                 self.context_info.show()
+            elif group in self._overview_nodes:
+                node = self._overview_nodes[group]
+                category, description = self._card_details.get(group, (node.category, node.description))
+                if category == 'build':
+                    self.selection_heading.setText(node.label)
+                    self.selection_heading.show()
+                    self.context_info.setText(description)
             self.set_detail_text('', key)
             return
         phase, fact = self.phases[key], self.facts.get(key, {})
-        state, reason = display_states(self.plan, self.facts, preview=not bool(self.facts))[key]
+        states = display_states(self.plan, self.facts) if self.facts else self.presentation.preview_states
+        state, reason = states[key]
         self.selection_heading.setText(self.task_names.get(key, phase_title(phase)))
         self.selection_heading.setToolTip(phase_title(phase) + '\n' + key)
         if problem:
@@ -670,17 +776,19 @@ class ReviewPlanView(QWidget):
         if effect in {'upload', 'deploy', 'publish', 'dispatch'} and getattr(phase, 'approval_required', True):
             delivery += ('\n' if delivery else '') + 'Separate approval required'
         self.set_fact('Delivery', delivery)
-        _, later, shared = summary_rows(self.plan, self.fields)
         notes = []
+        owner = self.task_owners.get(key)
+        node = self._overview_nodes.get(owner)
+        category = self._card_details.get(owner, (node.category if node else '', ''))[0]
+        if category == 'build' and node and node.platforms:
+            notes.append('Build targets: ' + ', '.join(filter(None, node.platforms)) + '.')
+        if category == 'build' and retained_artifact_provenance(self.plan):
+            notes.append('Uses verified artifacts from the saved run.')
         recovery = getattr(phase, 'infrastructure_recovery', {})
         if recovery:
             notes.append('One infrastructure recovery attempt is authorized for this repeatable test on ' + recovery['target'] + '.')
-        for row in later:
-            if key in row['keys']:
-                for line in row['detail'].splitlines():
-                    if not line.startswith(('Upload', 'Deliver', 'Publish', 'Launch', 'Destination:', 'Requires platforms:', 'Waits for:')):
-                        notes.append(line)
-        self.set_fact('Notes', '\n'.join([*notes, *shared]))
+        notes.extend(self.presentation.later_notes.get(key, ()))
+        self.set_fact('Notes', '\n'.join([*notes, *self.presentation.shared_notes]))
         parents = tuple(dict.fromkeys((*phase.dependencies, *getattr(phase, 'waits_for', ()))))
         if parents:
             heading = QLabel('Prerequisites')

@@ -71,7 +71,17 @@ class ProjectBridge:
         from .adapter_sdk import backend_options
         return backend_options(self.descriptor, target, operation)
 
-    def call(self, action, *, cancelled=lambda: False, timeout=300, **values):
+    def with_cancellation(self, cancelled):
+        """A request-local bridge; concurrent UI/default reads keep their own lifetime."""
+        from copy import copy
+        request = copy(self)
+        request._request_cancelled = cancelled
+        return request
+
+    def call(self, action, *, cancelled=None, timeout=300, **values):
+        cancelled = cancelled or getattr(self, '_request_cancelled', lambda: False)
+        if cancelled():
+            raise ValueError('Project request cancelled.')
         row, descriptor = self.registry.resolve(self.key, trusted=True)
         if row['root'] != str(self.root) or descriptor != self.descriptor:
             raise ValueError('Adapter registration changed; select this project again.')

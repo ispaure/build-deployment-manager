@@ -33,6 +33,7 @@ class ActionHierarchyTests(unittest.TestCase):
         project = OtherProject(self.root)
         project.journey_capability = deepcopy(CAPABILITY)
         project.row = dict(trusted=True, selections={})
+        project.workflow_presets = {'Project checks': dict(platform='example', operation='Test', backend='Local fixture')}
         return project
 
     def test_primary_action_uses_current_palette_accent(self):
@@ -122,7 +123,7 @@ class ActionHierarchyTests(unittest.TestCase):
         self.assertEqual([frame for frame in window.findChildren(QFrame, 'actionFooter') if frame.isVisible()],
                          [window.panel.action_footer])
 
-    def test_large_native_font_keeps_goals_presets_and_map_controls_in_viewport(self):
+    def test_large_native_font_keeps_preset_and_work_type_controls_in_viewport(self):
         window = self.window()
         panel = window.panel
         panel.present_plan(self.plan)
@@ -150,9 +151,21 @@ class ActionHierarchyTests(unittest.TestCase):
             self.assertEqual(window.width(), 1024, stage)
         panel.stages.setCurrentIndex(0)
         self.app.processEvents()
-        for control in (*panel.configuration.goal_buttons.values(), panel.saved_presets, panel.preset_menu):
+        self.assertEqual(panel.saved_presets.currentText(), 'Custom run')
+        self.assertIs(panel.saved_presets, panel.preset)
+        for control in (panel.goal, panel.saved_presets, panel.preset_menu):
             self.assertTrue(control.isVisible())
             self.assertTrue(window.rect().contains(control.rect().translated(control.mapTo(window, QPoint()))))
+        panel.saved_presets.setCurrentText('Project checks')
+        self.app.processEvents()
+        override = panel.configuration.override_goal
+        self.assertFalse(panel.goal.isVisible())
+        self.assertTrue(override.isVisible())
+        self.assertTrue(window.rect().contains(override.rect().translated(override.mapTo(window, QPoint()))))
+        override.click()
+        self.app.processEvents()
+        self.assertTrue(panel.goal.isVisible())
+        self.assertTrue(window.rect().contains(panel.goal.rect().translated(panel.goal.mapTo(window, QPoint()))))
 
     def test_failure_without_case_reports_opens_failed_step_directly(self):
         view = self.view()

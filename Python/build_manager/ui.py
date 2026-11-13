@@ -10,37 +10,13 @@ from PySide6.QtCore import Qt, QElapsedTimer, QProcess, QRunnable, QThreadPool, 
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QInputDialog,
-    QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QTreeWidget,
+    QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget, QTreeWidget, QProgressBar,
     QTreeWidgetItem, QTabBar, QTabWidget, QStackedWidget, QSplitter, QSizePolicy, QFrame,
 )
 from .settings_ui import SettingsDialog
 from .approval_ui import EffectReviewDialog
 from .ui_components import style_button, style_dialog_buttons, ViewportStack, CurrentPageStack, HeadingLabel, WrappingLayout, install_font_refresh
-
-
-class PreparationFailure(str):
-    def __new__(cls, message, details):
-        failure = super().__new__(cls, message)
-        failure.details = details
-        return failure
-
-
-class PreparePlan(QRunnable):
-    """Only plain project data crosses the worker boundary; Qt stays on the UI thread."""
-    def __init__(self, prepare, results):
-        super().__init__()
-        self.prepare, self.results = prepare, results
-
-    def run(self):
-        try:
-            from .models import Plan
-            plan = self.prepare()
-            if not isinstance(plan, Plan):
-                raise ValueError('The project adapter did not return an operation plan.')
-            self.results.put((plan, None))
-        except Exception as error:
-            import traceback
-            self.results.put((None, PreparationFailure(str(error), traceback.format_exc())))
+from .preparation_ui import PreparePlan, PreparationFailure, ReadRetainedRun
 
 
 class ReadHistory(QRunnable):
@@ -70,6 +46,12 @@ class ManagerPanel(QWidget):
         install_font_refresh(QApplication.instance())
         self.project, self.plan, self.result = project, None, None
         self.preparing = False
+        self.preparation_job = None
+        self.preparation_state = 'idle'
+        self.preparation_render = None
+        self.prepared_display = None
+        self.current_run_stage = 0
+        self.close_requested = False
         self.applying_preset, self.preset_error = False, ''
         self.selection_revision = 0
         self.prepared = Queue()
@@ -113,19 +95,26 @@ class ManagerPanel(QWidget):
         self.stage_tabs = QTabBar()
         self.stage_tabs.setExpanding(False)
         self.stage_tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        history_separator = QLabel('  |  ')
-        self.stage_tabs.setAccessibleName('Run steps and history')
-        for title in ('Choose work', 'Review plan', 'Progress && results', 'History'):
+        self.stage_tabs.setAccessibleName('Current run steps')
+        for title in ('Choose work', 'Review plan', 'Progress && results'):
             self.stage_tabs.addTab(title)
-        self.stage_tabs.setTabButton(3, QTabBar.ButtonPosition.LeftSide, history_separator)
         self.stage_tabs.setTabEnabled(1, False)
         self.stage_tabs.setTabEnabled(2, False)
-        layout.addWidget(self.stage_tabs)
+        navigation = QHBoxLayout()
+        navigation.addWidget(self.stage_tabs)
+        navigation.addStretch()
+        self.current_run = QPushButton('Current run', self)
+        self.current_run.clicked.connect(self.return_to_current_run)
+        self.current_run.hide()
+        navigation.addWidget(self.current_run)
+        self.past_runs = QPushButton('Project History', self)
+        self.past_runs.clicked.connect(lambda: self.stages.setCurrentIndex(3))
+        navigation.addWidget(self.past_runs)
+        layout.addLayout(navigation)
         # Keep action handles for callers that navigate programmatically.
         self.new_run = QPushButton('Choose work', self)
-        self.past_runs = QPushButton('History', self)
         self.view_run = QPushButton('Progress & results', self)
-        for button, index in ((self.new_run, 0), (self.past_runs, 3), (self.view_run, 2)):
+        for button, index in ((self.new_run, 0), (self.view_run, 2)):
             button.hide()
             button.clicked.connect(lambda checked=False, index=index: self.stages.setCurrentIndex(index))
         self.view_run.setEnabled(False)
@@ -149,9 +138,7 @@ class ManagerPanel(QWidget):
             control.currentTextChanged.connect(self.invalidate)
         for control in self.configuration.run_fields.controls.values():
             control.textChanged.connect(self.invalidate)
-        self.configuration.run_fields.defaults_loaded.connect(self.invalidate)
-        self.configuration.preset.currentTextChanged.connect(self.select_preset)
-        self.configuration.restore_preset.clicked.connect(lambda: self.select_preset(self.configuration.preset.currentText()))
+        self.configuration.run_fields.defaults_loaded.connect(lambda: self.invalidate(persist=False))
         self.configuration.platform.currentTextChanged.connect(self.refresh_operations)
         self.configuration.platform.currentTextChanged.connect(self.refresh_backends)
         self.configuration.operation.currentTextChanged.connect(self.refresh_backends)
@@ -191,6 +178,16 @@ class ManagerPanel(QWidget):
         self.preparation_error_section = Disclosure('Error details · full traceback', self.preparation_error)
         self.preparation_error_section.hide()
         configuration_layout.addWidget(self.preparation_error_section)
+        self.preparation_progress = QProgressBar()
+        self.preparation_progress.setRange(0, 0)
+        self.preparation_progress.setAccessibleName('Plan preparation in progress')
+        self.preparation_progress.setMaximumHeight(10)
+        self.preparation_progress.hide()
+        configuration_layout.addWidget(self.preparation_progress)
+        self.cancel_preparation = QPushButton('Cancel preparation')
+        self.cancel_preparation.clicked.connect(self.cancel_operation)
+        self.cancel_preparation.hide()
+        configuration_layout.addWidget(self.cancel_preparation)
         self.verify.hide()
         self.storage_button.hide()
         self.prepare.setDefault(True)
@@ -207,6 +204,7 @@ class ManagerPanel(QWidget):
         review_layout.addWidget(self.review_state)
         from .review_ui import ReviewPlanView
         self.review_workspace = ReviewPlanView()
+        self.review_workspace.rendering_finished.connect(self.review_rendered)
         review_layout.addWidget(self.review_workspace, 1)
         self.review_choices = self.review_workspace
         self.review_flow = self.review_workspace.graph
@@ -234,6 +232,7 @@ class ManagerPanel(QWidget):
         run_layout.setContentsMargins(6, 4, 6, 4)
         run_layout.setSpacing(4)
         self.run_view = RunView()
+        self.run_view.flow.lazy_canvas = True
         self.run_view.actions_in_footer = True
         run_layout.addWidget(self.run_view, 1)
         self.preview = self.run_view.log
@@ -308,6 +307,11 @@ class ManagerPanel(QWidget):
         self.history_timer = QTimer(self)
         self.history_timer.setInterval(50)
         self.history_timer.timeout.connect(self.history_loaded)
+        self.retained_results = Queue()
+        self.retained_job = None
+        self.retained_timer = QTimer(self)
+        self.retained_timer.setInterval(25)
+        self.retained_timer.timeout.connect(self.retained_loaded)
         self.status = QLabel('')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -338,6 +342,8 @@ class ManagerPanel(QWidget):
             if self.configuration.platform_checks else 'Choose the checks or workflow you want, then review your plan.')
         self.status.clear()
         self.update_run_actions()
+        from .presets_ui import PresetController
+        self.preset_controller = PresetController(None, None, self, lambda action, panel: action())
 
 
     # Compatibility handles for existing callers; configuration owns these widgets.
@@ -429,10 +435,9 @@ class ManagerPanel(QWidget):
         self.preset_error = ''
         if not choices:
             return
-        self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
-        self.configuration.preset_note.setText('Suggested workflow: ' + name + '. Changes will be marked Modified.')
         self.applying_preset = True
         try:
+            self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
             if self.configuration.platform.findText(choices['platform']) < 0:
                 raise ValueError('This workflow platform is unavailable in the selected project.')
             self.configuration.platform.setCurrentText(choices['platform'])
@@ -441,7 +446,7 @@ class ManagerPanel(QWidget):
                 raise ValueError('This workflow operation is unavailable on the selected platform.')
             self.configuration.operation.setCurrentText(choices['operation'])
             if choices['backend'] not in self.project.backend_options(choices['platform'], choices['operation']):
-                raise ValueError('This workflow backend is unavailable on this host. Choose a supported workflow or Custom operation.')
+                raise ValueError('This workflow backend is unavailable on this host. Choose a supported preset or Custom run.')
             self.configuration.backend.setCurrentText(choices['backend'])
             index = self.configuration.suite.findData(choices.get('suite', ''))
             if index < 0:
@@ -455,6 +460,7 @@ class ManagerPanel(QWidget):
         finally:
             self.applying_preset = False
             self.selection_changed.emit(self.choices())
+        return not self.preset_error
 
     def refresh_operations(self, *_):
         factory=getattr(self.project,'operations_for',None)
@@ -522,24 +528,32 @@ class ManagerPanel(QWidget):
     def choices(self):
         return self.configuration.choices()
 
-    def invalidate(self, *_, preserve_preset=False):
+    def invalidate(self, *_, preserve_preset=False, persist=True):
         self.selection_revision += 1
+        self.prepared_display = None
+        job = self.preparation_job
+        if job is not None:
+            job.reason = 'superseded'
+            job.cancelled.set()
+            self.cancel_preparation.setEnabled(False)
+            self.review_workspace.cancel_rendering()
+            if self.preparation_render is not None:
+                self.finish_preparation('superseded')
         self.plan = None
         self.start.setEnabled(False)
         self.stage_tabs.setTabEnabled(1, False)
         if hasattr(self, 'review_state'):
             self.review_state.setText('Choices or settings changed. Return to choices and prepare a fresh plan.')
-        if not self.applying_preset and not preserve_preset:
-            self.preset_error = ''
-            if self.configuration.preset.currentIndex():
-                self.configuration.preset_note.setText(self.configuration.preset.currentText() + ' · Modified. Review the updated plan before running.')
-        if not self.applying_preset:
+        if persist and not self.applying_preset and not getattr(self, 'is_retained_view', False):
             self.selection_changed.emit(self.choices())
         if hasattr(self, 'status'):
-            self.status.clear()
+            self.status.setText('Choices changed; stopping the previous preparation…' if self.preparing else '')
             self.plan_feedback.setText('Choices changed. Choose Next: review plan to check them before starting.')
             self.plan_feedback.hide()
             self.preparation_error_section.hide()
+            if self.preparing:
+                self.plan_feedback.setText('Choices changed. Waiting for the previous preparation to stop; then review the current choices.')
+                self.plan_feedback.show()
         if not self.applying_preset and self.configuration.platform_checks and self.configuration.goal.currentData() in {'validate', 'deliver'}:
             from .journeys import build_journey_intent
             try:
@@ -556,7 +570,11 @@ class ManagerPanel(QWidget):
             self.review_live_dirty = False
         self.stage_heading.setVisible(index not in (1, 2))
         self.stage_tabs.blockSignals(True)
-        self.stage_tabs.setCurrentIndex(index)
+        if index < 3:
+            self.current_run_stage = index
+            self.stage_tabs.setCurrentIndex(index)
+        self.current_run.setVisible(index == 3 or bool(getattr(self, 'saved_run_origin', None)))
+        self.past_runs.setEnabled(index != 3)
         self.stage_tabs.blockSignals(False)
         if hasattr(self, 'footer_pages'):
             self.footer_pages.setCurrentIndex(index)
@@ -564,8 +582,16 @@ class ManagerPanel(QWidget):
             '<b>Choose work</b><br>Choose source, platforms and destinations.',
             'Review captured source, work and destinations.',
             'Follow progress and inspect evidence.',
-            '<b>History</b><br>Open a saved run to see its original results. Open another run with the + tab button.'
+            '<b>Project History</b><br>Inspect past evidence in a separate tab. Current run returns to your draft or active run.'
         )[index])
+
+    def return_to_current_run(self):
+        origin = getattr(self, 'saved_run_origin', None)
+        if origin is not None:
+            origin()
+        else:
+            index = self.current_run_stage
+            self.stages.setCurrentIndex(index if self.stage_tabs.isTabEnabled(index) else 0)
 
     def update_run_actions(self):
         if not hasattr(self, 'run_problems'):
@@ -600,7 +626,7 @@ class ManagerPanel(QWidget):
         try:
             dialog = SettingsDialog(self.project, self)
             if dialog.exec():
-                self.invalidate()
+                self.invalidate(persist=False)
                 self.settings_saved.emit()
                 self.preparation_message('Project settings saved. Review a fresh plan to use these values.')
         except Exception as error:
@@ -611,14 +637,9 @@ class ManagerPanel(QWidget):
         StorageDialog(self.project, self).exec()
 
     def request_plan_preparation(self):
-        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if (self.closing or self.close_requested or self.preparing or self.reviewing or getattr(self, 'is_retained_view', False)
+                or self.process.state() != QProcess.ProcessState.NotRunning):
             return
-        if hasattr(self.project, 'registry'):
-            try:
-                self.project.registry.resolve(self.project.key)
-            except (OSError, ValueError, KeyError) as error:
-                self.preparation_message('Could not open this project. ' + self.redact(str(error)))
-                return
         if not self.configuration.revision.text().strip():
             self.configuration.open_section('source')
             self.preparation_message('Choose a source revision, or select Current files or Latest commit in Source. No plan has been prepared.')
@@ -631,31 +652,69 @@ class ManagerPanel(QWidget):
             self.configuration.open_section('delivery', next(iter(row.get('destinations', [])), ''))
             self.preparation_message(self.configuration.run_fields.missing_selection())
             return
-        from functools import partial
         from .preparation import preparation_request, validate_gui_selection
         selection = self.configuration.selection()
         integrated = bool(self.configuration.platform_checks) and selection.goal in {'validate', 'deliver'}
-        try:
-            validate_gui_selection(self.project, selection, integrated=integrated)
-        except ValueError as error:
-            self.preparation_message(str(error))
-            if integrated:
-                self.configuration.readiness.setText(str(error))
-            return
         request = preparation_request(selection, integrated=integrated,
                                       include_backends=self.configuration.selectable_backends)
-        prepare = partial(request.prepare, self.project)
-        self.preparing_proposal = self.configuration.current_proposal
-        self.invalidate(preserve_preset=True)
+        project = self.project
+        def prepare(cancelled, progress):
+            progress('Checking project registration and selected work')
+            if hasattr(project, 'registry'):
+                project.registry.resolve(project.key)
+            if cancelled():
+                raise ValueError('Plan preparation cancelled.')
+            validate_gui_selection(project, selection, integrated=integrated)
+            source = {'working-tree': 'Current files', 'HEAD': 'Latest commit'}.get(selection.revision, selection.revision)
+            progress('Waiting for the project to prepare source and prerequisites · ' + source)
+            return request.prepare(project, cancelled=cancelled)
+        self.begin_preparation(prepare, goal=selection.goal, proposal=self.configuration.current_proposal)
+
+    def begin_preparation(self, prepare, *, goal='advanced', proposal=None,
+                          verification=False, retained_delivery=False, device_retry=False):
+        if self.closing or self.close_requested:
+            return
+        from copy import deepcopy
+        from .review_presentation import prepare_review_data
+        from .workflows import apply_start_review_policy, require_build_only
+        fields = deepcopy(getattr(self.project, 'run_fields', ()))
+        capability = deepcopy(getattr(self.project, 'journey_capability', None))
+        proposal = deepcopy(proposal)
+        def transform(plan):
+            if not retained_delivery and goal == 'build':
+                require_build_only(plan)
+            plan = apply_start_review_policy(plan)
+            if not verification and goal == 'validate':
+                effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
+                if effects & {'deploy', 'upload', 'publish'} or 'test' not in effects:
+                    raise ValueError('Validation needs a checks-only plan with test steps and no delivery actions. Choose Project operation for other work.')
+            return plan, prepare_review_data(plan, fields=fields, capability=capability, proposal=proposal)
+        # Invalidation for a new request is not a changed user selection and
+        # must not perform another remembered-choice disk write.
+        self.plan = None
+        self.start.setEnabled(False)
+        self.stage_tabs.setTabEnabled(1, False)
+        self.review_workspace.cancel_rendering()
         self.preparation_revision = self.selection_revision
+        job = PreparePlan(lambda: prepare(job.cancelled.is_set, job.report), self.prepared, transform=transform)
+        job.revision, job.request_id = self.selection_revision, uuid4().hex
+        job.goal, job.proposal = goal, proposal
+        job.device_retry, job.retained_delivery = device_retry, retained_delivery
+        self.preparation_job = job
+        self.preparing_proposal = proposal
+        self.preparing_verification = verification
         self.preparing = True
-        self.preparing_verification = False
+        self.preparation_state = 'preparing'
         self.set_busy(True)
-        self.session.current_phase = 'Inspecting source and prerequisites'
+        self.session.current_phase = 'Checking project registration and selected work'
         self.session.phase_elapsed.start()
+        self.preparation_error_section.hide()
+        self.plan_feedback.show()
+        self.preparation_progress.show()
+        self.cancel_preparation.show()
+        self.cancel_preparation.setEnabled(True)
         self.show_elapsed()
-        QThreadPool.globalInstance().start(PreparePlan(
-            prepare, self.prepared))
+        QThreadPool.globalInstance().start(job)
         self.preparation_timer.start()
 
     def preparation_message(self, text, *, details=''):
@@ -668,75 +727,108 @@ class ManagerPanel(QWidget):
         self.configuration.ensureWidgetVisible(self.plan_feedback)
 
     def plan_prepared(self):
+        job = self.preparation_job
+        if job is not None:
+            while not job.progress.empty():
+                message = job.progress.get_nowait()
+                if not job.cancelled.is_set():
+                    self.session.current_phase = message
+                    self.show_elapsed()
         try:
-            plan, error = self.prepared.get_nowait()
+            result = self.prepared.get_nowait()
         except Empty:
             return
+        if result.job is not job:
+            return
         self.preparation_timer.stop()
-        device_retry = getattr(self, 'preparing_device_retry', False)
-        self.preparing_device_retry = False
-        retained_delivery = getattr(self, 'preparing_retained_delivery', False)
-        self.preparing_retained_delivery = False
-        self.preparing = False
-        self.set_busy(False)
-        if error is not None:
+        if self.closing or job.cancelled.is_set() or job.revision != self.selection_revision:
+            reason = job.reason or ('closed' if self.closing else 'superseded')
+            self.finish_preparation(reason)
+            return
+        if result.error is not None:
+            error = result.error
+            self.finish_preparation('failed')
             message = str(error).strip().splitlines()
             self.preparation_message('Could not prepare the plan. ' + self.redact(message[-1] if message else 'Unknown error'),
                 details=self.redact(getattr(error, 'details', str(error))))
             if 'committed' in error.lower() and ('source' in error.lower() or 'revision' in error.lower()):
                 self.configuration.show_source_blocker()
                 self.configuration.open_section('source')
-                requirements = [message for message in self.configuration.current_proposal.messages if 'requires committed source' in message]
-                self.configuration.source_summary.setText('\n'.join(requirements) if requirements else 'Choose Latest commit or a specific revision to use committed source.')
+                requirements = [text for text in self.configuration.current_proposal.messages
+                                if 'requires committed source' in text]
+                self.configuration.source_summary.setText('\n'.join(requirements) if requirements else
+                    'Choose Latest commit or a specific revision to use committed source.')
                 self.configuration.source_summary.show()
             return
-        if self.selection_revision != self.preparation_revision:
-            self.preparation_message('Selection changed during preparation; inspect a fresh plan.')
+        self.plan = result.plan
+        self.prepared_display = (result.plan, result.review)
+        self.preparation_render = result
+        self.preparation_state = 'rendering'
+        self.session.current_phase = 'Building the review · no work has started'
+        self.show_elapsed()
+        self.present_plan(self.plan, proposal=job.proposal, prepared=result.review)
+        # Navigation away is safe. Do not pull someone out of project History.
+        if self.stages.currentIndex() != 3:
+            self.stages.setCurrentIndex(1)
+        if not self.review_workspace.rendering:
+            self.review_rendered()
+
+    def review_rendered(self):
+        result = self.preparation_render
+        if result is None:
             return
-        from .workflows import apply_start_review_policy, require_build_only
-        if not retained_delivery and self.configuration.goal.currentData() == 'build':
-            try:
-                require_build_only(plan)
-            except ValueError as error:
-                self.plan = None
-                self.preparation_message(str(error))
-                return
-        plan = apply_start_review_policy(plan)
-        self.plan = plan
-        if not self.preparing_verification and self.configuration.goal.currentData() == 'validate':
-            effects = [(phase.effect if phase.effect != 'inherit' else plan.effect) for phase in plan.phases]
-            if any(effect in {'deploy', 'upload', 'publish'} for effect in effects) or 'test' not in effects:
-                self.plan = None
-                self.preparation_message('Validation needs a checks-only plan with test steps and no delivery actions. Choose Advanced operation for other work.')
-                return
-        from .redaction import Redactor
-        self.redact = Redactor(os.environ.get(name) for name in self.plan.secret_environment)
-        self.present_plan(self.plan, proposal=self.preparing_proposal)
-        self.stages.setCurrentIndex(1)
-        self.start.setEnabled(True)
+        job = result.job
+        if self.closing or job.cancelled.is_set() or job.revision != self.selection_revision:
+            self.plan = None
+            self.finish_preparation(job.reason or 'superseded')
+            return
+        plan = result.plan
         effects = {phase.effect if phase.effect != 'inherit' else plan.effect for phase in plan.phases}
-        self.start.setText('Start reviewed workflow' if retained_delivery or plan.journey and plan.journey['goal'] == 'deliver'
-                           else 'Start build' if self.configuration.goal.currentData() == 'build'
-                           else 'Start validation' if self.configuration.goal.currentData() == 'validate'
+        self.start.setText('Start reviewed workflow' if job.retained_delivery or plan.journey and plan.journey['goal'] == 'deliver'
+                           else 'Start build' if job.goal == 'build'
+                           else 'Start validation' if job.goal == 'validate'
                            else 'Start checks' if effects <= {'test', 'inspect'} else 'Start reviewed workflow')
-        self.status.clear()
-        if device_retry:
+        retry = job.device_retry
+        self.finish_preparation('ready')
+        self.start.setEnabled(True)
+        self.review_state.setText('Ready to start · ' + str(len(plan.phases)) + ' execution steps · ' + plan.project)
+        if retry:
             self.run_plan()
 
+    def finish_preparation(self, state):
+        self.preparation_state = state
+        self.preparation_job = self.preparation_render = None
+        self.preparing = False
+        self.preparation_timer.stop()
+        self.preparation_progress.hide()
+        self.cancel_preparation.hide()
+        self.set_busy(False)
+        messages = {
+            'ready': 'Plan ready to review. No checks, builds or delivery have started.',
+            'cancelled': 'Preparation cancelled. Your choices are retained; review again when ready.',
+            'superseded': 'Choices or settings changed during preparation. Review a fresh plan for the current choices.',
+            'failed': 'Plan preparation failed. Your choices are retained.',
+            'closed': 'Preparation stopped; closing.',
+        }
+        if state != 'ready':
+            self.plan = None
+            self.start.setEnabled(False)
+            self.stage_tabs.setTabEnabled(1, False)
+        self.preparation_message(messages.get(state, state))
+        if self.closing:
+            self.idle.emit()
+
     def request_connection_check_plan(self):
-        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if (self.closing or self.close_requested or getattr(self, 'is_retained_view', False) or self.retained_job is not None
+                or self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning):
             return
-        self.preparing_proposal = None
-        self.invalidate(preserve_preset=True)
-        self.preparation_revision = self.selection_revision
-        self.preparing, self.preparing_verification = True, True
-        self.set_busy(True)
-        self.status.setText('Preparing connection checks. Review the plan before starting them.')
-        QThreadPool.globalInstance().start(PreparePlan(self.project.verification_plan, self.prepared))
-        self.preparation_timer.start()
+        from .preparation import cancellable_project
+        project = self.project
+        self.begin_preparation(lambda cancelled, progress: cancellable_project(project, cancelled).verification_plan(),
+                               verification=True)
 
     def run_plan(self):
-        if self.plan is None or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.plan is None or self.preparing or self.reviewing or self.closing or self.close_requested or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         confirmed = self.plan.effect in {'deploy', 'upload', 'publish', 'dispatch'}
         separate_approval = any(phase.approval_required for phase in self.plan.phases
@@ -766,10 +858,9 @@ class ManagerPanel(QWidget):
         self.session.launch(self.project.interpreter, path, run, confirmed=confirmed)
 
     def retry_device_install(self, step=None):
-        from functools import partial
         from .device_retry import candidates, prepare
         from .history import load_run
-        if getattr(self, 'is_busy', False) or not self.result:
+        if self.closing or self.close_requested or getattr(self, 'is_busy', False) or not self.result:
             return
         try:
             plan, report = load_run(self.result)
@@ -787,22 +878,16 @@ class ManagerPanel(QWidget):
                 accepted = step in labels
             if not accepted:
                 return
-            self.preparing_device_retry = True
-            self.preparation_revision = self.selection_revision
-            self.preparing_proposal = None
-            self.preparing, self.preparing_verification = True, True
-            self.set_busy(True)
-            self.status.setText('Verifying the prepared app for a separate device retry…')
-            QThreadPool.globalInstance().start(PreparePlan(partial(prepare, self.result.parent, step, authorized=True), self.prepared))
-            self.preparation_timer.start()
+            directory = self.result.parent
+            self.begin_preparation(lambda cancelled, progress: prepare(directory, step, authorized=True),
+                                   verification=True, device_retry=True)
         except (OSError, ValueError, RuntimeError, KeyError) as error:
             self.status.setText(self.redact(str(error)))
 
     def request_retained_delivery(self):
-        from functools import partial
         from .retained_delivery import prepare
         from .retained_delivery_ui import RetainedDeliveryDialog
-        if getattr(self, 'is_busy', False) or not self.result:
+        if self.closing or self.close_requested or getattr(self, 'is_busy', False) or not self.result:
             return
         if not supports(self.project, 'retained_delivery_plan'):
             self.status.setText('This project does not offer delivery from a saved run.')
@@ -813,19 +898,14 @@ class ManagerPanel(QWidget):
             dialog.deleteLater()
             return
         choices = dialog.choices(); dialog.deleteLater()
-        self.preparing_retained_delivery = True
-        self.preparing_proposal = None
-        self.preparation_revision = self.selection_revision
-        self.preparing, self.preparing_verification = True, True
-        self.set_busy(True)
-        self.status.setText('Verifying saved inputs and preparing a new delivery plan…')
-        QThreadPool.globalInstance().start(PreparePlan(
-            partial(prepare, self.project, directory, **choices), self.prepared))
-        self.preparation_timer.start()
+        from .preparation import cancellable_project
+        project = self.project
+        self.begin_preparation(lambda cancelled, progress: prepare(cancellable_project(project, cancelled), directory, **choices),
+                               verification=True, retained_delivery=True)
 
     def resume_workflow(self, retained=None):
         from pathlib import Path
-        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if self.closing or self.close_requested or self.preparing or self.reviewing or self.retained_job is not None or self.process.state() != QProcess.ProcessState.NotRunning:
             return
         if retained and not isinstance(retained, bool):
             path = str(retained)
@@ -851,7 +931,7 @@ class ManagerPanel(QWidget):
         self.review_timer.stop()
         self.reviewing = False
         self.set_busy(False)
-        if self.closing or self.review_job.cancelled.is_set() or revision != self.selection_revision:
+        if self.closing or self.close_requested or self.review_job.cancelled.is_set() or revision != self.selection_revision:
             self.status.setText('Review cancelled or selection changed; inspect the intended run again.')
             return
         if error is not None:
@@ -967,35 +1047,63 @@ class ManagerPanel(QWidget):
     def set_busy(self, busy):
         self.is_busy = busy
         self.session.set_busy(busy)
-        self.stage_tabs.setEnabled(not busy)
-        for control in (self.configuration.source_mode, self.view_run, self.new_run, self.past_runs, self.back, self.app_settings, self.prepare, self.start, self.settings, self.verify, self.storage_button, self.resume, self.configuration.operation,
-                        self.configuration.platform, self.configuration.backend, self.configuration.preset, self.configuration.suite, self.configuration.revision, self.configuration.pattern, self.configuration.build_override, self.configuration.release_tag,
-                        self.refresh_history_button, self.view_history_button, self.history, self.history_view.search, self.history_view.filter, self.continue_run,
-                        self.configuration.goal, self.configuration.blocker_strip, *self.configuration.goal_buttons.values(), *self.configuration.platform_checks.values(), *self.configuration.platform_backends.values(), *self.configuration.destination_checks.values(), *self.configuration.run_controls.values(), *self.configuration.run_fields.controls.values()):
+        editable = not busy or bool(self.preparing and not self.preparing_verification and not self.closing)
+        for control in (self.configuration.source_mode, self.configuration.operation,
+                        self.configuration.platform, self.configuration.backend, self.configuration.preset,
+                        self.configuration.suite, self.configuration.revision, self.configuration.pattern,
+                        self.configuration.build_override, self.configuration.release_tag, self.configuration.goal,
+                        self.configuration.blocker_strip, *self.configuration.goal_buttons.values(),
+                        *self.configuration.platform_checks.values(), *self.configuration.platform_backends.values(),
+                        *self.configuration.destination_checks.values(), *self.configuration.run_controls.values(),
+                        *self.configuration.run_fields.controls.values()):
+            control.setEnabled(editable)
+        for control in (self.app_settings, self.settings, self.verify, self.storage_button,
+                        self.resume, self.prepare, self.start, self.continue_run):
             control.setEnabled(not busy)
+        # Browsing does not authorize execution or mutate the selected checkout.
+        self.stage_tabs.setEnabled(True)
+        self.new_run.setEnabled(True)
+        self.back.setEnabled(True)
+        self.past_runs.setEnabled(self.stages.currentIndex() != 3)
+        self.view_run.setEnabled(self.run_view.plan is not None)
+        self.refresh_history_button.setEnabled(True)
+        self.history.setEnabled(True)
+        self.history_view.search.setEnabled(True)
+        self.history_view.filter.setEnabled(True)
+        self.history_selection_changed()
         if not busy:
             self.configuration.update_mode()
-        self.view_run.setEnabled(not busy and self.run_view.plan is not None)
-        self.storage_button.setEnabled(not busy)
         self.start.setEnabled(not busy and self.plan is not None)
         self.continue_run.setEnabled(not busy and bool(getattr(self, 'resumable', False)))
         self.continue_run.setVisible(not busy and bool(getattr(self, 'resumable', False)))
-        self.view_history_button.setEnabled(not busy and self.history.currentItem() is not None)
-        self.cancel.setEnabled(busy and not self.preparing)
+        self.cancel.setEnabled(busy and not (self.preparation_job and self.preparation_job.cancelled.is_set()))
         self.cancel.setVisible(busy)
-        if not busy:
-            self.cancel.setText('Cancel active work')
+        self.cancel.setText('Cancel preparation' if self.preparing else 'Cancel active work')
+        if getattr(self, 'is_retained_view', False):
+            self.configuration.setEnabled(False)
+            self.prepare.setEnabled(False)
+            self.stage_tabs.setTabEnabled(0, False)
         self.update_run_actions()
         self.busy_changed.emit(busy)
 
     def show_elapsed(self):
+        if self.preparing:
+            seconds = self.session.phase_elapsed.elapsed() / 1000 if self.session.phase_elapsed.isValid() else 0
+            job = self.preparation_job
+            if job and job.cancelled.is_set():
+                phase = ('Choices changed; stopping previous preparation' if job.reason == 'superseded'
+                         else 'Cancellation requested; waiting for preparation cleanup')
+            else:
+                phase = self.session.current_phase
+            text = f'{phase} · {seconds:.0f}s. No checks, builds or delivery have started.'
+            self.status.setText(text)
+            self.plan_feedback.setText(text)
+            return
         self.run_view.tick()
         if self.review_workspace.plan is not None and self.stages.currentIndex() == 1:
             self.review_workspace.set_facts(self.run_view.live_facts())
         phase = self.session.phase_elapsed.elapsed()/1000 if self.session.phase_elapsed.isValid() else 0
         self.status.setText(f'{self.session.current_phase}; phase {phase:.0f}s; total {self.session.elapsed.elapsed()/1000:.0f}s')
-        if self.preparing:
-            self.plan_feedback.setText(f'Preparing your plan… {phase:.0f}s. Checking source and prerequisites; no tests have started.')
 
     def read_output(self):
         self.output_timer.stop()
@@ -1079,13 +1187,16 @@ class ManagerPanel(QWidget):
         data['phases'] = [SimpleNamespace(**phase) for phase in data['phases']]
         return SimpleNamespace(**data)
 
-    def present_plan(self, plan, proposal=None):
+    def present_plan(self, plan, proposal=None, *, prepared=None):
         self.review_live_dirty = False
         self.stage_tabs.setTabEnabled(1, True)
         from .redaction import Redactor
         self.redact = Redactor(os.environ.get(name) for name in plan.secret_environment)
-        plan_view = self.redacted_plan_view(plan)
-        if proposal is not None:
+        plan_view = prepared.plan if prepared is not None else self.redacted_plan_view(plan)
+        if prepared is not None:
+            proposal = prepared.proposal
+            self.card_proposals[prepared.identity] = proposal
+        if proposal is not None and prepared is None:
             from dataclasses import asdict
             from .proposed_workflow import ProposedStep, ProposedWorkflow
             nodes = []
@@ -1097,7 +1208,7 @@ class ManagerPanel(QWidget):
             self.card_proposals[plan.identity] = ProposedWorkflow(tuple(nodes))
             if len(self.card_proposals) > 8:
                 self.card_proposals.pop(next(iter(self.card_proposals)))
-        proposal = self.card_proposals.get(plan.identity)
+        proposal = self.card_proposals.get(prepared.identity if prepared is not None else plan.identity)
         journey = getattr(plan_view, 'journey', {})
         platforms = ', '.join(journey.get('platforms', ())) or str(plan_view.adapter.get('platform') or plan_view.settings.get('platform', plan_view.source.get('platform', 'Not specified by this project')))
         destinations = '\n'.join('• ' + name + ': ' + row['identity'] + ' (requires: ' + ', '.join(row.get('platforms', list(journey.get('platforms', {})))) + ')' for name, row in journey.get('destinations', {}).items())
@@ -1140,12 +1251,12 @@ class ManagerPanel(QWidget):
         self.review_context.setText(f'{plan_view.project} · {platforms} · {source}')
         self.review_workspace.reset(plan_view, getattr(self.project, 'run_fields', ()),
             capability=getattr(self.project, 'journey_capability', None), proposal=proposal,
-            summary=self.review_summary.text(), inputs=self.review_run_inputs.toPlainText())
+            summary=self.review_summary.text(), inputs=self.review_run_inputs.toPlainText(), prepared=prepared)
         self.start.setToolTip(scope)
         effects = {phase.effect if phase.effect != 'inherit' else plan_view.effect for phase in plan_view.phases}
         self.review_help.setText(scope)
         self.review_help.setVisible(bool(self.review_help.text()))
-        self.review_state.setText('Ready to start · ' + str(len(plan_view.phases)) + ' execution steps · ' + plan_view.project)
+        self.review_state.setText(('Building the review · ' if self.preparing else 'Ready to start · ') + str(len(plan_view.phases)) + ' execution steps · ' + plan_view.project)
 
     def inspect_review_phase(self, key):
         self.review_workspace.inspect_phase(key)
@@ -1153,9 +1264,14 @@ class ManagerPanel(QWidget):
     def review_step(self, key):
         self.review_workspace.inspect_phase(key) if key else self.review_flow.select('')
 
-    def initialize_results_workspace(self, plan, previous=()):
-        plan_view = self.redacted_plan_view(plan)
-        self.run_view.reset(plan_view, self.redacted_data(previous), fields=getattr(self.project, 'run_fields', ()), capability=getattr(self.project, 'journey_capability', None), proposal=self.card_proposals.get(plan.identity))
+    def initialize_results_workspace(self, plan, previous=(), *, prepared=None):
+        if prepared is None and self.prepared_display is not None and self.prepared_display[0] is plan:
+            prepared = self.prepared_display[1]
+        plan_view = prepared.plan if prepared is not None else self.redacted_plan_view(plan)
+        if prepared is not None:
+            self.run_view.results_workspace.stage_prepared(prepared)
+        identity = prepared.identity if prepared is not None else plan.identity
+        self.run_view.reset(plan_view, self.redacted_data(previous), fields=getattr(self.project, 'run_fields', ()), capability=getattr(self.project, 'journey_capability', None), proposal=self.card_proposals.get(identity))
         workspace = self.run_view.results_workspace
         if self.review_workspace.plan == plan_view:
             workspace.splitter.setSizes(self.review_workspace.splitter.sizes())
@@ -1174,15 +1290,23 @@ class ManagerPanel(QWidget):
         self.stage_tabs.setTabEnabled(2, True)
 
     def prepare_close(self):
+        if self.preparing:
+            self.closing = True
+            self.cancel_operation()
+            if self.preparing:
+                return False
         if getattr(self, 'is_busy', False):
             return False
+        self.review_workspace.cancel_rendering()
+        self.run_view.results_workspace.cancel_rendering()
         self.configuration.run_fields.stop()
         self.closing = True
         self.history_timer.stop()
         self.review_timer.stop()
+        self.retained_timer.stop()
         self.history_refresh_pending = False
         pending = False
-        for job in (self.review_job, self.history_job):
+        for job in (self.review_job, self.history_job, self.retained_job):
             if job is not None:
                 job.cancelled.set()
                 pending |= not job.done.is_set()
@@ -1223,26 +1347,58 @@ class ManagerPanel(QWidget):
         self.history_view.set_rows(self.redacted_data(rows))
 
     def history_selection_changed(self, *_):
-        self.view_history_button.setEnabled(self.history.currentItem() is not None and not self.preparing
-            and not self.reviewing and self.process.state() == QProcess.ProcessState.NotRunning)
+        can_view = getattr(self, 'history_in_tabs', False) or not getattr(self, 'is_busy', False)
+        self.view_history_button.setEnabled(self.history.currentItem() is not None and can_view)
 
     def open_history(self, item, column=0, *, in_tab=False):
-        if item is None or self.preparing or self.process.state() != QProcess.ProcessState.NotRunning:
+        if item is None or self.closing:
             return
         if not in_tab and getattr(self, 'history_in_tabs', False):
             self.retained_run_requested.emit(item)
             return
+        if self.preparing or self.reviewing or self.process.state() != QProcess.ProcessState.NotRunning:
+            return
         from pathlib import Path
-        from PySide6.QtCore import Qt
-        from .history import load_run
+        if self.retained_job is not None:
+            return
+        path = Path(item.data(0, Qt.ItemDataRole.UserRole))
+        self.is_retained_view = True
+        self.plan = None
+        self.start.setEnabled(False)
+        self.stage_tabs.setTabEnabled(1, False)
+        self.configuration.setEnabled(False)
+        self.prepare.setEnabled(False)
+        self.stage_tabs.setTabEnabled(0, False)
+        self.status.setText('Reading saved evidence… The current run remains in its own tab.')
+        from copy import deepcopy
+        self.retained_job = ReadRetainedRun(path, self.retained_results,
+            fields=deepcopy(getattr(self.project, 'run_fields', ())),
+            capability=deepcopy(getattr(self.project, 'journey_capability', None)))
+        self.retained_timer.start()
+        QThreadPool.globalInstance().start(self.retained_job)
+
+    def retained_loaded(self):
         try:
-            path = Path(item.data(0, Qt.ItemDataRole.UserRole))
-            plan, report = load_run(path)
+            job, plan, report, error = self.retained_results.get_nowait()
+        except Empty:
+            return
+        if job is not self.retained_job:
+            return
+        self.retained_job = None
+        self.retained_timer.stop()
+        if self.closing or job.cancelled.is_set():
+            self.idle.emit()
+            return
+        if error is not None:
+            self.status.setText('Cannot read retained run: ' + self.redact(error))
+            return
+        try:
+            path = job.path
             self.plan = None
             self.start.setEnabled(False)
             self.result = path
-            self.present_plan(plan)
-            self.initialize_results_workspace(plan, report['phases'])
+            self.present_plan(plan, prepared=job.review)
+            self.initialize_results_workspace(plan, report['phases'], prepared=job.review)
             self.run_view.complete(report)
             self.run_view.saved_context.setText('Saved run · ' + path.parent.name +
                 (' · ' + str(report['started_at']) if report.get('started_at') else ''))
@@ -1287,6 +1443,19 @@ class ManagerPanel(QWidget):
         self.run_view.append_output(None, text)
 
     def cancel_operation(self):
+        if self.preparing and self.preparation_job is not None:
+            job = self.preparation_job
+            job.reason = 'closed' if self.closing or self.close_requested else 'cancelled'
+            job.cancelled.set()
+            self.preparation_state = 'cancelling'
+            self.cancel_preparation.setEnabled(False)
+            self.cancel.setEnabled(False)
+            self.review_workspace.cancel_rendering()
+            self.show_elapsed()
+            if self.preparation_render is not None:
+                self.plan = None
+                self.finish_preparation(job.reason)
+            return
         if self.reviewing:
             self.review_job.cancelled.set()
             self.status.setText('Cancelling artifact verification…')

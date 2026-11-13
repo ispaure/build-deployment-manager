@@ -35,7 +35,8 @@ project or its results. Descriptor updates retain access; invalid descriptors an
 
 ## Run a focused check, then broaden it
 
-In Choose work, select **Run checks** and choose supported platforms. Projects with
+In Choose work, choose a preset or **Custom run**, then set Work type to
+**Run checks** and choose supported platforms. Projects with
 combined workflow support offer several platform checkboxes; older projects show
 one platform per run. Use **Project operation** for a project's
 specialist operation and backend selection.
@@ -64,13 +65,15 @@ run inputs, option toggles and build-number overrides. Project defaults remain
 owned by the project; remembered inputs override them for your next run.
 Saved device selections do not prove that a device is currently connected.
 
-Use the preset menu's **Save preset** action to name the current choices.
-Selecting a preset restores its choices; **Delete preset** removes it.
-Editing choices marks the preset Modified. Newly introduced options inherit their
-declared defaults without marking an older preset Modified. Saving with an
-existing name replaces that preset.
-Presets belong to each registered checkout. Loading one invalidates the old plan;
-review a new plan before starting. It never restores execution approvals.
+The **Preset** picker includes private presets, project suggestions and
+**Custom run** for one-off work. A preset supplies the work type; use **Override
+work type** to change it explicitly. Other edits are **Overrides for this run**.
+**Reset overrides** restores the preset. **Save as new preset…** keeps a new
+private copy; **Save changes to selected preset…** explicitly replaces a selected
+private preset after confirmation. Project suggestions cannot be overwritten.
+**Delete preset** removes the private preset while keeping the draft.
+Newly introduced fields retain the established project-default inheritance.
+Loading choices invalidates the old review and never restores execution approval.
 
 Open **More → App settings → Open configuration folder** to find the shared iOS and Android device catalogs, per-checkout registrations and account references. The [configuration files guide](configuration-files.md) covers the folder layout, hand edits, backup and migration.
 
@@ -141,8 +144,9 @@ and why old approvals are not silently restored after restart.
 
 ## Return to an earlier run
 
-Open Past runs, select the original run and choose View selected run for read-only
-inspection. Compare its source and destination with today's selection. Resume
+Open **Project History**, select the original run and choose **View selected run**
+for evidence inspection in a separate tab. **Back to current run** returns to the
+original draft or active run without replacing it. Compare its source and destination with today's selection. Resume
 retained workflow continues that run separately; viewing history does not execute it.
 Active time accumulates execution attempts and excludes time waiting between
 attempts for human review. Individual phase durations remain attached to the run.
@@ -184,7 +188,8 @@ native paths from unavailable platforms.
 
 ## Build artifacts without delivery
 
-Choose **Build only**, then a supported platform and execution host. Review the
+Choose **Custom run → Build only**, or a saved build preset, then a supported
+platform and execution host. Review the
 plan and choose **Start build**. This uses the project’s existing `Build` operation;
 platforms without that operation report an unsupported combination. Build-only
 review accepts build and inspection steps and rejects tests, installation, upload,

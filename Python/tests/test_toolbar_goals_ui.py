@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from build_manager.app import ManagerWindow
 from build_manager.registry import Registry
@@ -28,6 +28,7 @@ class ToolbarGoalTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.tooling_enabled = False
+        self.suggestions = {}
         self.data = dict(projects={key: dict(name=key, root=str(self.root / key), presets={})
             for key in ('one', 'two')}, selected='one')
         owner = self
@@ -41,11 +42,16 @@ class ToolbarGoalTests(unittest.TestCase):
                 Registry.validate_selections(choices)
                 owner.data['projects'][key]['presets'][name.strip()] = deepcopy(choices)
             def delete_preset(self, key, name): owner.data['projects'][key]['presets'].pop(name)
+            def mutate(self, update): return update(owner.data)
         def bridge(store, key):
             project = OtherProject(self.root)
             project.journey_capability = deepcopy(CAPABILITY)
             project.journey_capability['platforms']['ios']['label'] = 'iOS'
             project.row = deepcopy(self.data['projects'][key])
+            project.workflow_presets = deepcopy(self.suggestions)
+            project.operations = ('Test', 'Package')
+            project.test_suites = [dict(id='package-checks', label='Package checks', tier='portable',
+                                       platforms=['example'], operations=['Package'])]
             project.make_plan = Mock(side_effect=AssertionError('Intent must not start planning'))
             project.make_journey = Mock(side_effect=AssertionError('Intent must not start planning'))
             project.verification_plan = Mock(side_effect=AssertionError('Intent must not start verification'))
@@ -92,23 +98,25 @@ class ToolbarGoalTests(unittest.TestCase):
         self.window.show(); self.app.processEvents()
         font = QFont(original); font.setPointSize(18); self.app.setFont(font)
         for _ in range(5): self.app.processEvents()
-        for widget in (self.panel, self.view, self.view.source_mode, self.view.goal_buttons['deliver']):
+        for widget in (self.panel, self.view, self.view.source_mode, self.view.goal, self.panel.preset):
             self.assertEqual(widget.font().pointSizeF(), 18)
 
-    def test_visible_goals_share_existing_selection_and_keyboard_invalidation(self):
+    def test_custom_run_work_types_share_existing_selection_and_keyboard_invalidation(self):
         panel, view = self.panel, self.view
         panel.plan = integrated(self.root)
         panel.start.setEnabled(True)
         self.window.show(); self.app.processEvents()
-        view.goal_buttons['deliver'].setFocus()
-        QTest.keyClick(view.goal_buttons['deliver'], Qt.Key.Key_Space)
+        self.assertEqual(panel.preset.currentText(), 'Custom run')
+        self.assertTrue(view.goal.isVisible())
+        self.assertTrue(all(button.isHidden() for button in view.goal_buttons.values()))
+        view.goal.setFocus()
+        QTest.keyClick(view.goal, Qt.Key.Key_Down)
+        QTest.keyClick(view.goal, Qt.Key.Key_Down)
         self.assertEqual(panel.choices()['goal'], 'deliver')
         self.assertIsNone(panel.plan)
         self.assertFalse(panel.start.isEnabled())
-        self.assertTrue(view.goal_buttons['deliver'].isChecked())
-        self.assertFalse(view.goal_buttons['validate'].isChecked())
-        view.goal_buttons['advanced'].click()
-        self.assertTrue(view.goal_buttons['advanced'].isChecked())
+        QTest.keyClick(view.goal, Qt.Key.Key_Down)
+        self.assertEqual(panel.choices()['goal'], 'advanced')
         self.assertTrue(view.legacy.isVisible())
         panel.project.make_plan.assert_not_called()
         panel.project.make_journey.assert_not_called()
@@ -147,12 +155,14 @@ class ToolbarGoalTests(unittest.TestCase):
         panel.start.setEnabled(True)
         expected = panel.choices()
         with patch('build_manager.app.QInputDialog.getText', return_value=('Checks', True)):
-            window.preset_actions['Save preset…'].trigger()
+            window.preset_actions['Save as new preset…'].trigger()
+        self.flush_selections()
         self.assertIs(panel.plan, plan)
         self.assertEqual(window.saved_presets.currentText(), 'Checks')
         panel.platform_checks['ios'].setChecked(True)
-        self.assertIn('Modified', window.saved_presets.currentText())
-        window.saved_presets.activated.emit(window.saved_presets.currentIndex())
+        self.assertTrue(panel.preset_note.isVisible())
+        self.assertEqual(panel.preset_note.text(), 'Overrides for this run')
+        window.preset_actions['Reset overrides'].trigger()
         self.assertEqual(panel.choices(), expected)
         self.assertIsNone(panel.plan)
         self.assertEqual(window.saved_presets.currentText(), 'Checks')
@@ -167,7 +177,7 @@ class ToolbarGoalTests(unittest.TestCase):
         view, panel = self.view, self.panel
         self.window.show(); self.app.processEvents()
         self.assertTrue(view.config_tabs.tabBar().isVisible())
-        self.assertEqual(view.goal_buttons['advanced'].text(), 'Project operation…')
+        self.assertEqual(view.goal.itemText(view.goal.findData('advanced')), 'Project operation')
         self.assertEqual(view.config_tabs.tabText(3), 'Options')
         for index, key in enumerate(view.config_pages):
             if key == 'delivery':
@@ -189,12 +199,45 @@ class ToolbarGoalTests(unittest.TestCase):
         panel.project.make_plan.assert_not_called()
         panel.project.make_journey.assert_not_called()
 
+    def test_project_suggestion_uses_its_exact_operation_and_can_only_be_copied(self):
+        suggestion = dict(platform='example', operation='Package', backend='Local fixture', suite='package-checks')
+        self.suggestions['Package with checks'] = suggestion
+        window = ManagerWindow(self.window.registry)
+        self.addCleanup(window.close)
+        panel = window.panel
+        panel.preset.setCurrentText('Package with checks')
+        self.assertEqual(panel.choices()['goal'], 'advanced')
+        self.assertEqual({key: panel.choices()[key] for key in suggestion}, suggestion)
+        self.assertEqual(panel.configuration.preset_work_type.text(), 'Project operation')
+        self.assertTrue(panel.goal.isHidden())
+        self.assertFalse(window.preset_actions['Save changes to selected preset…'].isEnabled())
+        self.assertFalse(window.preset_actions['Delete preset'].isEnabled())
+        panel.configuration.override_goal.click()
+        self.assertFalse(panel.goal.isHidden())
+        panel.goal.setCurrentIndex(panel.goal.findData('build'))
+        panel.goal.activated.emit(panel.goal.currentIndex())
+        self.assertFalse(panel.preset_note.isHidden())
+        window.preset_actions['Reset overrides'].trigger()
+        self.assertTrue(panel.preset_note.isHidden())
+        self.assertEqual({key: panel.choices()[key] for key in suggestion}, suggestion)
+        with patch('build_manager.app.QInputDialog.getText', return_value=('Package with checks', True)):
+            window.preset_actions['Save as new preset…'].trigger()
+        self.flush_selections(window)
+        self.assertEqual(panel.project.workflow_presets['Package with checks'], suggestion)
+        self.assertTrue(window.preset_actions['Delete preset'].isEnabled())
+        panel.preset.setCurrentIndex(panel.preset.count() - 1)
+        self.assertEqual(panel.preset.currentText(), 'Package with checks')
+        self.assertFalse(window.preset_actions['Delete preset'].isEnabled())
+        panel.project.make_plan.assert_not_called()
+        panel.project.make_journey.assert_not_called()
+
     def test_busy_state_locks_new_controls_and_project_switch_isolates_presets(self):
         panel, window = self.panel, self.window
         with patch('build_manager.app.QInputDialog.getText', return_value=('Only one', True)):
-            window.preset_actions['Save preset…'].trigger()
+            window.preset_actions['Save as new preset…'].trigger()
+        self.flush_selections()
         panel.set_busy(True)
-        self.assertTrue(all(not button.isEnabled() for button in self.view.goal_buttons.values()))
+        self.assertFalse(self.view.goal.isEnabled())
         self.assertFalse(window.saved_presets.isEnabled())
         self.assertFalse(window.preset_actions['Delete preset'].isEnabled())
         self.assertFalse(window.more.isEnabled())
@@ -204,6 +247,30 @@ class ToolbarGoalTests(unittest.TestCase):
         self.assertEqual(window.saved_presets.count(), 1)
         self.assertFalse(window.preset_actions['Delete preset'].isEnabled())
         self.assertTrue(window.more.isEnabled())
+
+    def test_sibling_preset_edit_keeps_existing_run_overrides_until_reselected(self):
+        window, panel = self.window, self.panel
+        with patch('build_manager.app.QInputDialog.getText', return_value=('Checks', True)):
+            window.preset_actions['Save as new preset…'].trigger()
+        sibling = window.run_workspace.add_view(panel.project_key)
+        sibling.revision.setText('HEAD')
+        with patch('build_manager.presets_ui.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+            sibling.preset_actions['Save changes to selected preset…'].trigger()
+        self.flush_selections()
+        self.assertEqual(panel.revision.text(), 'working-tree')
+        self.assertFalse(panel.preset_actions['Delete preset'].isEnabled())
+        self.assertIn('Saved choices changed', panel.preset.toolTip())
+        panel.preset.activated.emit(panel.preset.currentIndex())
+        self.assertEqual(panel.revision.text(), 'HEAD')
+        self.assertTrue(panel.preset_actions['Delete preset'].isEnabled())
+
+    def flush_selections(self, window=None):
+        window = window or self.window
+        for _ in range(200):
+            if window.selection_store.flush() and not window.selection_store.callbacks:
+                return
+            QTest.qWait(10)
+        self.fail('Remembered selections and preset writes did not settle.')
 
     def test_long_selection_labels_keep_header_and_footer_inside_laptop_window(self):
         window, panel = self.window, self.panel

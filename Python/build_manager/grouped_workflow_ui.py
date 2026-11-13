@@ -144,9 +144,10 @@ class GroupedFlowView(QWidget):
         if inspector is not None:
             inspector.show()
 
-    def reset(self, plan, fields=(), *, preview=True, capability=None, proposal=None, reserve_activity=None):
+    def reset(self, plan, fields=(), *, preview=True, capability=None, proposal=None, reserve_activity=None,
+              overview=None):
         self.plan, self.fields, self.preview = plan, fields, preview
-        self.grouped = group_workflow(plan, capability, proposal)
+        self.grouped = overview if overview is not None else group_workflow(plan, capability, proposal)
         self.phases = {phase.id: phase for phase in plan.phases}
         self.additional.setText(f'Other resolved subtasks ({len(self.grouped.unassigned)})…')
         self.additional.setVisible(bool(self.grouped.unassigned))

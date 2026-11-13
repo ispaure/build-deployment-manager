@@ -8,7 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMessageBox
 from build_manager.app import ManagerWindow
 from build_manager.registry import Registry
 import test_recipient_ui
@@ -18,6 +19,13 @@ class RunPresetTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def flush_selections(self, window):
+        for _ in range(200):
+            if window.selection_store.flush() and not window.selection_store.callbacks:
+                return
+            QTest.qWait(10)
+        self.fail('Remembered selections and preset writes did not settle.')
 
     def test_restart_presets_and_late_defaults_preserve_specific_devices(self):
         with TemporaryDirectory() as directory:
@@ -54,10 +62,12 @@ class RunPresetTests(unittest.TestCase):
                     panel.run_fields.results.put(({}, None))
                     panel.run_fields.loaded()
                     with patch('build_manager.app.QInputDialog.getText', return_value=('Phones', True)):
-                        window.preset_actions['Save preset…'].trigger()
+                        window.preset_actions['Save as new preset…'].trigger()
+                    self.flush_selections(window)
                     self.assertIn('Phones', registry.read()['projects'][key]['presets'])
                     picker.items.item(0).setCheckState(Qt.CheckState.Unchecked)
-                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
+                    window.preset_actions['Reset overrides'].trigger()
+                    self.flush_selections(window)
                     self.assertEqual(panel.choices(), expected)
                     self.assertIsNone(panel.plan)
                     self.assertFalse(panel.start.isEnabled())
@@ -69,7 +79,7 @@ class RunPresetTests(unittest.TestCase):
                     panel = window.panel
                     self.assertEqual(panel.choices(), expected)
                     self.assertEqual(window.saved_presets.currentData(), 'Phones')
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(panel.preset_note.isHidden())
                     panel.run_fields.results.put(({'phones': '["tablet-1"]'}, None))
                     panel.run_fields.loaded()
                     panel.run_fields.controls['phones'].set_choices([dict(id='tablet-1', label='Tablet')])
@@ -79,8 +89,9 @@ class RunPresetTests(unittest.TestCase):
                     self.assertEqual(window.panel.run_fields.controls['phones'].text(), '[]')
                     window.projects.setCurrentIndex(0)
                     self.assertEqual(window.panel.run_fields.controls['phones'].text(), '["phone-1"]')
-                    window.saved_presets.setCurrentIndex(1)
+                    window.saved_presets.setCurrentIndex(window.saved_presets.findData('Phones'))
                     window.preset_actions['Delete preset'].trigger()
+                    self.flush_selections(window)
                     self.assertEqual(registry.read()['projects'][key]['presets'], {})
                     self.assertFalse((root / 'one' / 'registry.json').exists())
                     if os.name != 'nt':
@@ -123,18 +134,36 @@ class RunPresetTests(unittest.TestCase):
                 window = ManagerWindow(registry)
                 try:
                     window.saved_presets.setCurrentIndex(window.saved_presets.findData('Phones'))
-                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(window.panel.preset_note.isHidden())
+                    self.flush_selections(window)
                 finally:
                     window.close()
                     self.app.processEvents()
                 window = ManagerWindow(Registry(registry.directory))
                 try:
                     self.assertEqual(window.saved_presets.currentData(), 'Phones')
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(window.panel.preset_note.isHidden())
                     window.panel.revision.setText('another-revision')
-                    self.assertIn('Modified', window.saved_presets.currentText())
+                    self.assertFalse(window.panel.preset_note.isHidden())
                     self.assertEqual(registry.read()['projects'][key]['presets']['Phones'], choices)
+                    window.panel.run_fields.results.put(({}, None))
+                    window.panel.run_fields.loaded()
+                    with patch('build_manager.app.QInputDialog.getText', return_value=(' Phones ', True)):
+                        window.preset_actions['Save as new preset…'].trigger()
+                    self.flush_selections(window)
+                    self.assertIn('already exists', window.panel.status.text())
+                    self.assertEqual(registry.read()['projects'][key]['presets']['Phones'], choices)
+                    with patch('build_manager.presets_ui.QMessageBox.question',
+                               return_value=QMessageBox.StandardButton.No):
+                        window.preset_actions['Save changes to selected preset…'].trigger()
+                    self.assertEqual(registry.read()['projects'][key]['presets']['Phones'], choices)
+                    with patch('build_manager.presets_ui.QMessageBox.question',
+                               return_value=QMessageBox.StandardButton.Yes):
+                        window.preset_actions['Save changes to selected preset…'].trigger()
+                    self.flush_selections(window)
+                    self.assertEqual(registry.read()['projects'][key]['presets']['Phones'],
+                                     dict(choices, revision='another-revision'))
+                    self.assertTrue(window.panel.preset_note.isHidden())
                 finally:
                     window.close()
                     self.app.processEvents()
@@ -159,9 +188,8 @@ class RunPresetTests(unittest.TestCase):
                     window.panel.run_fields.results.put(({}, None))
                     window.panel.run_fields.loaded()
                     with patch('build_manager.app.QInputDialog.getText', return_value=('Phones', True)):
-                        window.preset_actions['Save preset…'].trigger()
-                    # Select the saved preset as in the reported quit/reopen sequence.
-                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
+                        window.preset_actions['Save as new preset…'].trigger()
+                    self.flush_selections(window)
                 finally:
                     window.close()
                     self.app.processEvents()
@@ -171,16 +199,17 @@ class RunPresetTests(unittest.TestCase):
                 try:
                     panel = window.panel
                     self.assertEqual(window.saved_presets.currentData(), 'Phones')
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(panel.preset_note.isHidden())
                     while not panel.run_fields.results.empty():
                         panel.run_fields.loaded()
                     panel.run_fields.results.put(({'connection': 'wifi'}, None))
                     panel.run_fields.loaded()
                     self.assertEqual(panel.run_fields.controls['connection'].text(), 'wifi')
                     self.assertEqual(window.saved_presets.currentData(), 'Phones')
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(panel.preset_note.isHidden())
                     panel.run_fields.controls['connection'].setText('usb')
-                    self.assertIn('Modified', window.saved_presets.currentText())
+                    self.assertFalse(panel.preset_note.isHidden())
+                    self.flush_selections(window)
                     self.assertEqual(registry.read()['projects'][key]['selections']['run_overrides']['connection'], 'usb')
                 finally:
                     window.close()
@@ -193,7 +222,7 @@ class RunPresetTests(unittest.TestCase):
                     window.close()
                     self.app.processEvents()
 
-    def test_sparse_preset_inherits_new_workflow_option_without_modified_label(self):
+    def test_sparse_preset_inherits_new_workflow_option_until_overridden(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'build-project.json').write_text(json.dumps(dict(schema=1, adapter_api=1,
@@ -213,13 +242,12 @@ class RunPresetTests(unittest.TestCase):
                 window = ManagerWindow(registry)
                 try:
                     window.saved_presets.setCurrentIndex(window.saved_presets.findData('Older'))
-                    window.saved_presets.activated.emit(window.saved_presets.currentIndex())
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(window.panel.preset_note.isHidden())
                     control = window.panel.run_fields.controls['reuse']
                     control.setText('off')
-                    self.assertIn('Modified', window.saved_presets.currentText())
+                    self.assertFalse(window.panel.preset_note.isHidden())
                     control.setText('on')
-                    self.assertNotIn('Modified', window.saved_presets.currentText())
+                    self.assertTrue(window.panel.preset_note.isHidden())
                 finally:
                     window.close()
                     self.app.processEvents()

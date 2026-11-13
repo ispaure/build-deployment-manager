@@ -40,7 +40,11 @@ class PreparationRequest:
     options: Mapping[str, Any]
     journey: bool = False
 
-    def prepare(self, project):
+    def prepare(self, project, *, cancelled=None):
+        if cancelled is not None:
+            if cancelled():
+                raise ValueError('Plan preparation cancelled.')
+            project = cancellable_project(project, cancelled)
         selection = self.selection
         if self.journey:
             destinations = list(selection.selected_destinations) if selection.goal == 'deliver' else []
@@ -48,6 +52,12 @@ class PreparationRequest:
                                         destinations, **self.options)
         operation = 'Build' if selection.goal == 'build' else selection.operation
         return project.make_plan(operation, selection.platform, selection.backend, **self.options)
+
+
+def cancellable_project(project, cancelled):
+    """Keep legacy adapters usable; manager bridges own cancellable processes."""
+    factory = getattr(type(project), 'with_cancellation', None)
+    return factory(project, cancelled) if callable(factory) else project
 
 
 def preparation_request(selection: WorkflowSelection, *, integrated=False,

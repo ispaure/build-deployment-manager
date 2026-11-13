@@ -22,6 +22,13 @@ class GuidedUITests(unittest.TestCase):
         self.addCleanup(panel.close)
         return panel
 
+    def wait_retained(self, panel):
+        deadline = time.monotonic() + 5
+        while panel.retained_job is not None:
+            self.app.processEvents()
+            time.sleep(.002)
+            self.assertLess(time.monotonic(), deadline)
+
     def test_project_switch_hides_retired_panel_before_deferred_deletion(self):
         from build_manager.app import ManagerWindow
         class Registry:
@@ -141,6 +148,7 @@ class GuidedUITests(unittest.TestCase):
         self.wait_history(panel)
         self.assertEqual(panel.history.topLevelItemCount(), 1)
         panel.open_history(panel.history.topLevelItem(0))
+        self.wait_retained(panel)
         self.assertIsNone(panel.plan)
         self.assertFalse(panel.start.isEnabled())
         self.assertEqual(view.tests.topLevelItemCount(), 3)
@@ -210,6 +218,7 @@ class GuidedUITests(unittest.TestCase):
         self.wait_history(panel)
         self.assertEqual(panel.history.topLevelItem(0).text(2), 'unreadable')
         panel.open_history(panel.history.topLevelItem(0))
+        self.wait_retained(panel)
         self.assertIn('Cannot read', panel.status.text())
         self.assertFalse(panel.start.isEnabled())
 

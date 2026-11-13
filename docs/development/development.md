@@ -29,7 +29,7 @@ results before adding native checks or delivery.
 | Execute it | `executor.py`, `resources.py`, `locking.py` | Process ownership, dependency gates, bounded concurrency, cleanup |
 | Keep and resume evidence | `history.py`, `workflows.py`, `retention.py` | Checksums, original plan, unknown outcomes and durable holds |
 | Present it | `configuration_ui.py`, `ui.py`, `run_ui.py`, `settings.py` | Selection values, Qt-thread ownership and explicit review |
-| Retain a GUI run/review | `run_session.py`, `continuation_review_ui.py` | Parented process/timers and cancellable verification; stale selections cannot approve work |
+| Retain a GUI run/review | `run_session.py`, `preparation_ui.py`, `continuation_review_ui.py` | Parented process/timers and cancellable verification; stale selections cannot approve work |
 | Retain interactive deployment launchers | `deployment_commands.py`, `deployment_commands_ui.py` | Project commands/policy; explicit input, target retention and sequential compatibility execution |
 | Reach another host | `parallels.py`, `windows_guest.py`, `guest.py` and platform adapters | Owned guest work, durable outcomes and actual native acceptance |
 
@@ -87,7 +87,11 @@ For GUI changes, retain native Qt parents and signals while moving responsibilit
 The panel already delegates its board to `RunView`; an extraction should expose
 clear inputs/events rather than let a new mixin read all panel attributes.
 Run focused UI lifecycle checks after changing ownership, including closing during
-preparation/history reads and normal process completion.
+preparation/history reads and normal process completion. Preparation acceptance
+separates total adapter time from GUI heartbeat gaps. Exercise slow registry and
+remembered-choice writes, large resolved plans, repeated clicks, superseded
+success/error, cancellation and History navigation; do not interpret a plan
+preview as native execution acceptance.
 
 Workflow card icons live in `Python/build_manager/assets/icons/` and are included
 as package data. These six unmodified Font Awesome Free 6.7.2 SVGs are licensed

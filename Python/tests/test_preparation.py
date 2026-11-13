@@ -68,8 +68,35 @@ class PreparationTests(unittest.TestCase):
 
     def test_new_core_modules_import_without_qt_or_project_code(self):
         code = '''import sys
-from build_manager import preparation, run_state, workflow_graph, workflow_presentation, scheduling, run_recording
+from build_manager import preparation, review_presentation, run_state, workflow_graph, workflow_presentation, scheduling, run_recording
 assert not any(name.startswith(('PySide6', 'Python.', 'mobile.', 'features.')) for name in sys.modules)
 '''
         result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cancellation_is_request_local_and_never_adapter_protocol_data(self):
+        from build_manager.bridge import ProjectBridge
+        from threading import Event
+        original = ProjectBridge.__new__(ProjectBridge)
+        original.operations_for = lambda _: ['Test']
+        original.backend_options = lambda *_: ['Local']
+        original.platforms, original.test_suites, original.run_fields = ['host'], [], []
+        original.descriptor = {'project_id': 'fixture'}
+        original.row, original.root = {'descriptor': 'digest'}, '/fixture'
+        from build_manager import Phase, Plan
+        plan = Plan('Fixture', 'Test', {}, (Phase('check', ('fixture',), '/fixture'),), '/workspace')
+        seen = []
+        def call(project, action, **values):
+            seen.append((project, values))
+            return plan.data()
+        cancelled = Event()
+        request = preparation_request(WorkflowSelection(operation='Test', platform='host', backend='Local'))
+        with patch.object(ProjectBridge, 'call', call):
+            request.prepare(original, cancelled=cancelled.is_set)
+        self.assertIsNot(seen[0][0], original)
+        self.assertNotIn('cancelled', seen[0][1])
+        self.assertFalse(hasattr(original, '_request_cancelled'))
+        cancelled.set()
+        self.assertTrue(seen[0][0]._request_cancelled())
+        with self.assertRaisesRegex(ValueError, 'cancelled'):
+            request.prepare(original, cancelled=cancelled.is_set)

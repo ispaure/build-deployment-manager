@@ -28,9 +28,11 @@ The last attached run stays in the main window. Active work must finish before
 its tab can close; closing the app offers to cancel active operations and finish
 cleanup across all tabs.
 
-Each run has Choose work, Review plan, Progress & results and History navigation,
-with Back/Next actions and an explicit Start button. Opening retained results
-from History creates another run tab. The action footer stays below the run’s
+Each run has three stages: Choose work, Review plan and Progress & results,
+with Back/Next actions and an explicit Start button. **Project History** is a
+separate destination for that checkout. **Current run** returns to the stage you
+left. Opening saved evidence creates a separate tab with **Back to current run**;
+it preserves your draft and any running work. Browsing History never resumes it. The action footer stays below the run’s
 scrolling content, including when detached. Filled primary-action
 buttons follow the app's active accent color and identify the main next action;
 Back, Cancel and utilities use neutral
@@ -38,9 +40,13 @@ buttons. Settings, project setup and approval dialogs use the same hierarchy.
 
 ## Choose work
 
-Run checks, Build only and Prepare and deliver are visible, exclusive goal buttons.
+**Preset** is the starting point. Choose saved private choices, a project suggestion,
+or **Custom run** for one-off work. Custom run exposes Work type: Run checks,
+Build only, Prepare and deliver, or Project operation. A selected preset supplies
+its work type; use **Override work type** to change it for this run.
 Build only selects a supported Build operation without tests or delivery.
-Project operation opens the project operation controls. Source, Platforms,
+Project operation exposes the project's own operations, including Package operations
+that may require checks before creating their output. Source, Platforms,
 Delivery and Options sit above the configuration form. Platforms shows selected
 platform counts. Delivery uses one scrolling form with category and platform
 headings, so Android and iOS destinations can be inspected together. Selected
@@ -59,14 +65,21 @@ or the selected execution host, without committing or excluding files for you.
 Switching to Run checks excludes delivery without discarding saved destination
 choices; switching back restores their visibility.
 
-Presets appears only in Choose work. Selecting a preset loads its saved choices
-and invalidates any previous review; it never starts work. The adjacent menu
-contains Save preset and Delete preset. Edits mark the selected preset Modified.
-New workflow options inherit their declared defaults without marking an older
-preset Modified; changing an inherited option away from its default does.
-Saving a preset keeps the current choices and review; deleting one leaves the
-current draft intact. Presets remain private to the selected checkout. On reopening the app, choices
-that exactly match a saved preset re-select its name without reapplying it.
+The preset controls appear only in Choose work. Selecting a preset loads its
+choices and invalidates any previous review; it never starts work or restores
+approval. Edits are **Overrides for this run** until explicitly saved.
+**Reset overrides** reloads the selected preset. **Save as new preset…** creates a
+new private name; **Save changes to selected preset…** explicitly replaces the
+selected private preset after confirmation. Project suggestions are immutable:
+save a private copy to keep changes. **Delete preset** leaves the current draft
+intact. Sparse older presets and newly added fields retain their existing
+inheritance; a new workflow option at its default is not an override.
+On reopening the app, matching remembered choices reselect the private preset
+without reapplying it. Each registered checkout owns its private presets.
+Remembered choices are saved in the background. If saving fails, the window stays
+open and keeps the unsaved choices for retry. Closing again offers Retry, Discard
+or Cancel; Discard closes without remembering those choices. Background loading
+of defaults and viewing saved evidence do not replace another tab's latest edits.
 
 Configuration uses two resizable columns. The selected section's settings appear
 on the left. Platforms presents a platform checkbox and
@@ -80,7 +93,7 @@ when necessary. Zoom in to read a dense graph and scroll or drag to explore it. 
 by default and remembers your choice across app launches. Enable it to move
 inside a fitted map to enlarge small cards, then move toward
 an edge to reach that corner. The map reaches its edge within the outer fifth
-of the panel, so you do not need to aim at the border. Source, Testing and Delivery
+of the panel, so you do not need to aim at the border. Source, Testing, Build & Package and Delivery
 headings stay readable above their section boxes while you zoom and pan. Their
 widths and horizontal positions follow the boxes; offscreen sections scroll out
 of the heading strip too. In Vertical view, headings stick along the left edge
@@ -141,13 +154,12 @@ appear once in the shared run options. Advanced operations keep their own inputs
 platform does not block its delivery review. Conflicting choices stay
 selected with an explanation; add the required platform or remove the destination.
 
-Older projects retain single-platform validation and **Project operation**, where
-their suggested workflows, operation, platform and execution backend are available.
-Selecting a suggested workflow explicitly opens Project operation. Changes keep
-its name with a Modified notice; Restore suggested workflow reapplies its declared
-values. No execution host is substituted silently. Applicable named test suites
-remain available for single-platform operations. Integrated journeys use the
-project's required validation groups rather than a hidden legacy suite selection.
+Older projects retain single-platform validation and **Project operation**.
+Their project suggestions appear in the same Preset picker and preserve the
+project's exact operation, platform, execution backend and suite. No execution
+host is substituted silently. Applicable named test suites remain available for
+single-platform operations. Integrated journeys use the project's required
+validation groups rather than a hidden legacy suite selection.
 
 Source selection is in its own section. Use Advanced for a focused
 test pattern, build number override or optional custom release identifier. Open Project settings for persistent local values; run overrides apply
@@ -159,7 +171,24 @@ storage cleanup. Connection checks first prepare a reviewable plan.
 
 If Review plan cannot proceed, its explanation appears beside that button. Select
 at least one platform for guided validation. Invalid descriptors and changed project identities show a project error. During preparation,
-the same area shows progress; failures leave the choices intact for correction.
+the same area shows the current manager phase and elapsed time. Waiting for the
+project uses an indeterminate indicator because the adapter protocol does not
+report a total. Source snapshots and prerequisite checks can take longer on a
+cold request; no tests, builds or delivery have started.
+
+Use **Cancel preparation** to stop. The status remains cancellation requested
+until owned cleanup completes; adapters without cancellation support must return
+first. Changing choices or saving project settings supersedes the pending
+request. Its late success or error cannot replace your newer choices. Review
+again after it retires. Failures retain the choices and expose error details.
+History and other tabs remain available while preparation or execution is pending.
+Closing requests the same cleanup and discards any late plan.
+
+Review groups actual build and package effects under **Build & Package**, separate
+from testing and delivery. Known platform and output facts come from the plan.
+A declared retained artifact is shown as reuse, not a promised new build. The
+category is absent when no build or retained input is relevant. Selecting cards
+updates the persistent side pane; it does not enter another card browser.
 
 ## Settings
 

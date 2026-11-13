@@ -80,6 +80,35 @@ The nested browser in `grouped_workflow_ui.py` and its grouping/map support are
 intentionally retained for a separate UX review. Their presence is not a reason
 to reconnect or remove them during routine maintenance.
 
+The main window separates the three current-run stages from project History.
+Saved evidence opens in another workspace tab with an explicit return to its
+origin. Inspection and continuation remain separate actions. One preset picker
+combines private presets, immutable project suggestions and Custom run. Overrides
+change only the current run until an explicit save; sparse inherited values keep
+their existing registry representation.
+
+A preparation job owns a request identity and selection/settings generation.
+Registration checks and adapter preparation run in the worker. Cancellation uses
+a request-local bridge copy so defaults/settings requests retain their own
+lifetimes; adapters without this seam retire by returning normally. Both late
+success and late failure are discarded after cancellation, supersession or close.
+No replacement preparation is admitted before the previous callable and its
+bridge teardown return. Display preparation is plain headless data; Qt changes
+stay on the GUI thread. Hidden graphs/JSON are deferred and large task lists are
+populated in bounded slices. Start remains disabled until the review is ready.
+Accepted close gates new work immediately and queues a parented timer recheck
+after workers or rendering retire. Remembered-choice writes coalesce per project;
+explicit registry mutations wait for that writer. Failures retain retryable values,
+cancel queued mutations and keep the window open. Defaults/settings invalidation
+and saved-evidence tabs never persist an older draft as a new user choice.
+Credential validation snapshots inherited protected values once per top-level
+traversal, without caching them across requests or omitting nested values.
+
+The Build & Package overview is presentation only: declared effects, artifacts
+and retained provenance determine its content. It cannot alter phase dependencies,
+source verification, reuse eligibility, execution effects or delivery approval.
+Project snapshot and retention policy remain unchanged.
+
 Starting a fresh GUI plan authorizes its selected Firebase/TestFlight uploads and
 GitHub actions. Other declared effects can require a later artifact review.
 Saved plans and CLI execution retain their declared approval requirements. Always
@@ -90,7 +119,10 @@ See [execution and review](../user/workflows.md#execution-and-review).
 
 | Module | Owns |
 | --- | --- |
-| `preparation.py` | Typed workflow selections and normalized adapter requests shared by GUI and presets |
+| `preparation.py` | Typed selections, normalized adapter requests and optional request-local cancellation |
+| `preparation_ui.py` | Owned worker completion, cancellation and plain prepared results |
+| `selection_persistence_ui.py` | Coalesced serialized remembered-choice writes and close draining |
+| `review_presentation.py` | Headless redaction, display grouping and prepared review data |
 | `configuration_ui.py` | Controls, selection snapshots, restoration and preset comparison |
 | `configuration_source_ui.py` | Source widgets and revision synchronization; emits selection changes without project policy |
 | `configuration_delivery_ui.py` | Descriptor-driven destination controls/forms; no preparation or project-tool calls |

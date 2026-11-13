@@ -2,6 +2,7 @@
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF, QEvent, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF, QTransform, QTextLayout, QTextOption
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget, QProgressBar, QToolTip
+from .review_presentation import phase_category
 from .workflow_icons import NAMES, WorkflowIcons, step_icons
 from .workflow_graph import layout_positions, visible_dependencies, connection_groups
 from .workflow_presentation import FAILED, title, effect_label, display_states, state_label, format_step_time
@@ -9,7 +10,7 @@ from .test_tree_ui import current_test_seconds
 from .ui_components import status_colors
 
 SECTION_COLORS = {'Source': '#7296ca', 'Testing': '#71ab8b',
-                  'Delivery': '#d6aa64', 'Build / package': '#aa8ac4'}
+                  'Delivery': '#d6aa64', 'Build & Package': '#aa8ac4'}
 
 
 def section_tint(heading, palette):
@@ -137,6 +138,7 @@ class FlowCanvas(QWidget):
                         'Other cards and lines stay visible in gray. Move away to restore the full map. '
                         'Tab focus also traces the flow; selection stays unchanged.')
         self.cards, self.edges, self.states = {}, [], {}
+        self.card_details = {}
         self.headers, self.order_edges, self.positions = [], set(), {}
         self.completion_targets = set()
         self.hover_key = self.keyboard_key = ''
@@ -273,6 +275,7 @@ class FlowCanvas(QWidget):
         # Filter only the drawing. Statuses, inspection and execution keep the
         # original plan, including prerequisites outside this card.
         phases = tuple(phase for phase in plan.phases if phase.id in keys)
+        self.card_details = getattr(plan, 'card_details', None) or {}
         by_id = {phase.id: phase for phase in plan.phases}
         self.trace_parents = {phase.id: (*phase.dependencies, *getattr(phase, 'waits_for', ()))
                               for phase in plan.phases}
@@ -295,11 +298,11 @@ class FlowCanvas(QWidget):
         self.base_card_height = 64 if compact else 100
         column_sections = {}
         for phase in phases:
-            section = getattr(phase, 'section', '')
-            label = {'source': 'Source', 'platforms': 'Testing', 'delivery': 'Delivery'}.get(section)
-            if not label:
-                effect = phase.effect if phase.effect != 'inherit' else plan.effect
-                label = 'Delivery' if effect in {'upload', 'publish', 'deploy'} else 'Build / package' if effect == 'build' else 'Testing'
+            category, _ = self.card_details.get(phase.id, ('', ''))
+            section = (category or getattr(phase, 'category', '') or getattr(phase, 'section', '')
+                       if compact else phase_category(phase, plan))
+            label = {'source': 'Source', 'platforms': 'Testing', 'delivery': 'Delivery',
+                     'build': 'Build & Package'}.get(section, 'Testing')
             column_sections.setdefault(self.positions[phase.id][0], set()).add(label)
         groups = []
         for column, labels in column_sections.items():
@@ -334,7 +337,7 @@ class FlowCanvas(QWidget):
             counts = CardActivityLabel(1) if reserve_activity else QLabel()
             heading.setText(title(phase))
             heading.setStyleSheet('font-weight: 600;')
-            kind.setText(effect_label(phase, plan))
+            kind.setText(self.card_description(phase, plan))
             icons = step_icons(phase, plan)
             card.setProperty('workflowContext', ' · '.join(NAMES[name] for name in icons))
             badges = QHBoxLayout()
@@ -361,8 +364,10 @@ class FlowCanvas(QWidget):
                 prerequisites.setTextFormat(Qt.TextFormat.PlainText)
                 prerequisites.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 body.addWidget(prerequisites)
-            external = phase.id.startswith('deliver.') if compact else (
-                phase.effect if phase.effect != 'inherit' else plan.effect) in {'upload', 'deploy', 'publish', 'dispatch'}
+            if compact:
+                external = phase.id.startswith('deliver.') or getattr(phase, 'category', '') == 'delivery'
+            else:
+                external = (phase.effect if phase.effect != 'inherit' else plan.effect) in {'upload', 'deploy', 'publish', 'dispatch'}
             external = external and getattr(phase, 'approval_required', True)
             if external:
                 badge = QLabel('Approval required')
@@ -509,6 +514,9 @@ class FlowCanvas(QWidget):
                                       card.layout().totalHeightForWidth(width)))
         self.arrange(vertical)
 
+    def card_description(self, phase, plan):
+        return self.card_details[phase.id][1] if phase.id in self.card_details else effect_label(phase, plan)
+
     def update_facts(self, plan, facts, selected, preview=False):
         self.states = display_states(plan, facts, preview)
         for phase in plan.phases:
@@ -549,10 +557,11 @@ class FlowCanvas(QWidget):
                 card.style().polish(card)
             self.style_card(card, status)
             context = card.property('workflowContext')
-            card.setToolTip('\n'.join(filter(None, (title(phase), context, effect_label(phase, plan), reason,
+            description = self.card_description(phase, plan)
+            card.setToolTip('\n'.join(filter(None, (title(phase), context, description, reason,
                 counts_label.text() if not counts_label.isHidden() else '', phase.id))))
             card.setAccessibleName(title(phase) + ': ' + label)
-            card.setAccessibleDescription('\n'.join(filter(None, (context, reason,
+            card.setAccessibleDescription('\n'.join(filter(None, (context, description, reason,
                 counts_label.text() if not counts_label.isHidden() else ''))))
         self.update()
 
