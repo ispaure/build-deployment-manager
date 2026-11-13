@@ -168,30 +168,81 @@ The cleanup inventory shows workflow hold expiry separately from `.keep` pins.
 Protected trees can exceed a project's soft storage budget; awaiting review and
 unknown outcomes retain their outputs even when no build process is running.
 
-Open **More → Manage build storage… → Retained workflows** to retire superseded runs.
-Review the listed workflows and confirm retirement. This releases only those
-runs' holds and permanently disables their continuation. Logs, receipts and the
-original outcomes stay in history; an unknown outcome is still unknown. Check
-the provider before preparing a replacement delivery. Other runs' holds and
-explicit `.keep` pins remain protected. Delete newly unprotected outputs from
-the build outputs tab after reviewing their paths.
+## Manage build storage
 
+Open **More → Manage build storage…**. The selected checkout and scan status
+appear first. The overview then shows estimates for project-declared build
+storage and saved evidence from declared results folders as measurements become
+available.
 
-## Clear local test evidence
+| Category | What it includes |
+| --- | --- |
+| **Builds and working files** | Build preparations, retained source snapshots, workspaces and other project-declared outputs. Removing them may require new preparation and can prevent retry or delivery using those files. |
+| **Rebuildable caches** | Items the project adapter identifies as caches. Rebuilding them takes time. |
+| **Saved runs and test results** | Local run records, reports, receipts, logs, screenshots, recordings and copied installers. Projects can declare older evidence folders as well. |
 
-Open **More → Manage build storage… → Test results**. Click the **Size** or
-**Bulky files** column to sort, then select the runs or loose files to review.
+Use the category list to browse with the keyboard. Choose **Show space chart**
+to compare measured amounts in the optional treemap. **Size on disk** estimates
+allocated file bytes. A cached estimate can be stale during a refresh. A partial
+estimate accounts for the known portion, and unknown sizes are marked. Shared
+locations are counted once. The actual space reclaimed can differ on compressed,
+cloned or hard-linked storage. Select an entry and choose **Item details…** to
+inspect its path, protection and measurements in a scrollable view. In a narrow
+window the chart replaces the category summary while the item list remains
+visible; **Hide space chart** restores the category list. Choose **Refresh
+storage** to update the inventory.
+The **Available to review** column estimates removable build files or bulky
+evidence; it excludes known protections. It is a starting point for review,
+and the live checks can still keep an item.
 
-- **Delete bulky files…** removes raw logs, screenshots, recordings and copied
-  installers from selected runs, and removes selected loose evidence files.
-  Run outcomes, structured test reports and delivery receipts remain.
-- **Delete entire runs…** also removes those runs from local history, including
-  reports and receipts.
+### Review a cleanup
 
-The confirmation shows the locations, dates and sizes. Active runs, runs held
-for review or continuation, pinned evidence and unresolved delivery outcomes
-are protected. A project can include older evidence folders in this view.
-This cleanup is separate from the build output cleanup and runs only on request.
+Select entries in **Builds and files** and choose **Review cleanup…**. Use
+**Select available shown** to select eligible entries in the current view,
+then review that selection before confirming. The preview shows the estimated
+size and its freshness, what would be removed or kept, and any effect on retry
+or delivery. Expand its details to see the selected locations and reasons for
+excluded entries. **In use**, **Kept for a later run** and **Pinned to keep**
+describe protections. Conflicting ownership can also block cleanup. Entries
+marked **Available to review** are rechecked after confirmation. A changed entry
+can require a fresh review.
+
+### Clear local test evidence
+
+In **Saved runs and test results**, select entries and open the preview for the
+cleanup you want.
+
+- **Remove bulky files…** removes raw logs, screenshots, recordings and copied
+  installers from selected runs and removes selected loose evidence files. It
+  keeps the run records, structured test reports and delivery receipts.
+- **Delete entire runs…** removes selected runs from local history, including
+  their records, reports and receipts. Use this when you no longer need that
+  history.
+
+Active runs, runs held for review or continuation, pinned evidence and unresolved
+delivery outcomes are protected.
+
+### Stop a scan or cleanup
+
+Use **Stop** to cancel a scan. During cleanup, **Stop** lets the current deletion
+finish and skips entries that have yet to start. If you choose **Close** while an
+entry is being removed, the dialog waits for that deletion. Review the outcome
+for the items that were removed, skipped or failed.
+An incomplete removal may have removed some files. The refreshed inventory
+shows what remains before another review.
+
+### Retire workflows or adopt disposable storage
+
+In **Advanced**, select superseded workflows and choose **Retire selected
+workflows…**. Retirement releases their storage holds and permanently disables
+continuation. Their original outcomes, logs and receipts stay in history. Check
+the provider before preparing a replacement for an unknown delivery outcome.
+Other workflows' holds and explicit `.keep` pins still apply. Review newly
+eligible outputs in **Builds and files** if you want to remove them.
+
+Projects that support adoption offer it in **Advanced**. Adopt only a location
+the project can treat as disposable build or QA storage. Adoption puts the
+specified location under the project's cleanup and automatic retention policy.
 
 ## Remote-controller cleanup grace
 

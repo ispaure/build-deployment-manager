@@ -64,6 +64,17 @@ checks separate from installation, and retain identity/signature/approval checks
 immediately before the actual effect. Unused retry fields are omitted from plan
 serialization to preserve legacy hashes.
 
+### Storage actions
+
+Adapters that declare `storage_inventory` report explicitly owned entries using
+their existing `group`, `name` and `path` values and protection information.
+Presentation labels can identify entries as caches. The manager accounts for
+entries the adapter actually returns and uses `delete_storage` with the existing
+group/name selections when the adapter declares deletion support. Adapters own
+the candidate paths, retention policy and live deletion guards. If the adapter
+supports `enroll_storage`, it also owns validation and enrollment of explicitly
+chosen disposable locations. See [storage management](storage-management.md).
+
 ### Test evidence folders
 
 The storage dialog lists saved runs in the descriptor's `results` directory.

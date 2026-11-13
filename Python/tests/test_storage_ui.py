@@ -88,6 +88,9 @@ class SettingsAndStorageUITests(unittest.TestCase):
                 results_directory = root / 'runs'
             dialog = StorageDialog(Project())
             self.wait(dialog)
+            # Workflow controls are deferred until their Advanced view is opened.
+            dialog.tabs.setCurrentIndex(dialog.advanced_tab)
+            self.wait(dialog)
             self.assertEqual(dialog.workflows.topLevelItemCount(), 1)
             dialog.workflows.topLevelItem(0).setSelected(True)
             self.assertTrue(dialog.retire.isEnabled())

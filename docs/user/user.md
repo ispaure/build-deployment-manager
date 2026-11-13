@@ -164,9 +164,10 @@ attempts for human review. Individual phase durations remain attached to the run
 | Tests passed but delivery blocked | Inspect required native/runtime/source gates and the pending review step |
 | No individual tests shown | Inspect phase logs and ask whether the adapter declares JUnit evidence |
 
-Storage cleanup operates only on project-declared owned groups. Review selected
-entries; pins, leases and retained review holds can keep them protected. Application
-data, signing keys and personal VMs are not disposable build outputs.
+Open **More → Manage build storage…** to inspect the selected project's build
+files, rebuildable caches and saved results. Review what will be removed before
+confirming cleanup. To keep the run records while clearing bulky evidence, use
+**Remove bulky files…**. See [Manage build storage](workflows.md#manage-build-storage).
 
 For support, include manager/project revisions, source selection, failed step,
 platform and redacted error. Keep credentials and private document contents out
