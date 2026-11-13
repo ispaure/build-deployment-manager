@@ -78,6 +78,33 @@ Host-specific and operation-specific backend mappings are resolved identically
 on both sides. Projects retain their interpreter, manager version and commonUtils
 pin; importing the facade never installs or upgrades anything.
 
+### Project settings
+
+The `settings` action returns rows keyed by field ID. Each row declares its
+effective `value` and can include `origin`, `label`, `description`, `kind`,
+`section`, `read_only` and `visible_when`. Supply the effective source even
+for read-only rows when it helps explain an identity, derived value or shared
+account. The UI uses declared run-field IDs and known setting namespaces to
+place rows under user-facing categories. It uses the adapter's section for
+other fields. Existing field IDs continue to be the persistence keys.
+
+`save_settings` receives a partial `changes` object. Merge it into the current
+checkout settings and validate the resulting configuration. Omitted fields
+retain their stored values. Keep credentials as protected references.
+
+An adapter that supports removing checkout profile overrides can opt in per
+field by adding a `reset` object to its row. It declares `overridden` (whether a
+checkout override is stored, even if masked), `value` (the effective value
+without that override, with the same type as the effective row value), and
+`origin` (its source). Use the same effective-settings resolver to compute the
+fallback so an environment value can remain in effect. The manager sends an
+optional `resets` list of field IDs to `save_settings` only when requested. A
+field appears in at most one of `changes` and `resets`. Validate both against
+the current schema, remove only the specified checkout keys, and commit
+the merged result together. Repeated removal of an absent key is safe. Keep
+tracked, guarded, credential and signing settings outside this contract.
+Adapters without reset metadata keep the existing request shape.
+
 ## Shared guest execution
 
 `build_manager.guest_workload` provides:

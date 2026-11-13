@@ -192,27 +192,40 @@ updates the persistent side pane; it does not enter another card browser.
 
 ## Settings
 
-Settings has categories on the left and fields on the right. Search finds fields
-by name, category or description without losing edits. Show value sources reveals
-profile/default/environment origins when you need them. Unsaved changes are
-identified; Save returns to the main window with confirmation. App settings is
-separate from project tools and delivery destinations.
+Open **Project settings** for the selected checkout. Available categories
+include **Run defaults**, **Environments & tools**, **Builds & signing**,
+**Delivery**, and **Advanced**. Select **Delivery** to see the provider pages.
+Use **Help** beside an ID or destination field to find it in the provider's
+console. Tab reaches the Help button, Space opens it, and Escape returns to the
+editor. See the [delivery setup guide](delivery-setup.md).
 
-App settings controls application text size with a preview and a System default reset. Help explains the workflow. Project
-settings opens its loading shell immediately and loads the categorized form, with
-navigation on the left and fields on the right. Registered projects need no
-additional trust approval, including existing registrations and descriptor updates.
-Project reads and writes run in a
-worker, with errors, retry and an explicit empty state. You can cancel loading;
-real bridge settings requests time out after 30 seconds. Failed saves preserve
-input, and closing with unsaved edits asks whether to discard them. Saving locks
-the editor until the write completes or reports failure. Changing saved values
-invalidates the previous plan review.
+Search finds fields by name, category or explanation and keeps your draft
+edits. **Show value sources** displays the adapter's source, such as a tracked
+default, the checkout profile, a shared account or an environment variable.
+An unsaved edit shows the current source until Save. An environment value can
+still take priority after you save a checkout edit.
+
+For a field that supports reset, **Reset** previews the value and source that
+will apply when Save clears the checkout override. **Undo reset** restores your
+previous draft for that field. **Reset page…** lists the supported overrides
+on that page before staging a group reset. Clear the search to use the page
+action. The preview can show the same value if an environment setting still
+takes priority. Credential and signing references are protected from reset.
+Save writes your edits and staged resets. Cancel discards the draft.
+
+Use **More → Accounts** for shared account references, **More → Test
+machines** for machine setup, **More → App settings** for text size, and
+**More → Manage build storage** to review storage use and cleanup.
+
+Project settings opens while the project interpreter loads the form. You can
+cancel loading or retry a failure. A failed save keeps the draft open. Saving
+locks the editor until the write completes or reports a failure. A successful
+save invalidates the previous plan review.
 
 ## Settings versus this run
 
-Project settings stores reusable tools, accounts, signing references, app identities
-and default destinations. Its “Defaults for new runs” section seeds delivery fields.
+Project settings stores reusable tools, checkout-specific references, app identities
+and default destinations. **Run defaults** seeds delivery fields for new runs.
 Choose the platform, execution location, source, destination and optional build
 number for each run. TestFlight “what to test” and recipient group, and Firebase
 notes/group appear with the applicable delivery choice. Editing these run fields

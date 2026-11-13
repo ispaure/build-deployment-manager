@@ -48,6 +48,29 @@ def resolve(schema, *, account=None, machine=None, profile=None, environment=Non
     return values,origins
 
 
+def setting_reset(name, row):
+    """Return the adapter's declared fallback for a resettable profile field."""
+    reset = row.get('reset')
+    if (not isinstance(reset, dict) or row.get('read_only') or row.get('credential') or
+            row.get('kind') == 'protected-file' or name.startswith(('auth.', 'signing.', 'testing.'))):
+        return None
+    if (type(reset.get('overridden')) is not bool or 'value' not in reset or
+            type(reset['value']) is not type(row.get('value')) or
+            not isinstance(reset.get('origin'), str) or not reset['origin'].strip()):
+        return None
+    return reset
+
+
+def validate_settings_resets(rows, values, resets):
+    if not isinstance(resets, (list, tuple)) or any(not isinstance(name, str) for name in resets):
+        raise ValueError('Settings resets must name individual fields.')
+    if len(set(resets)) != len(resets) or set(resets).intersection(values):
+        raise ValueError('Supply one edit or reset per settings field.')
+    for name in resets:
+        if name not in rows or setting_reset(name, rows[name]) is None:
+            raise ValueError('Settings field does not support reset: ' + name)
+
+
 def reference_status(path):
     if not path:return 'missing'
     return 'configured (not verified)' if Path(path).expanduser().is_file() else 'missing reference'

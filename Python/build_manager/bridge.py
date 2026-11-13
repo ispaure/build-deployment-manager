@@ -213,20 +213,27 @@ class ProjectBridge:
             raise ValueError('Supply a project app version.')
         return self.call('set_app_version', version=value, timeout=30)
 
-    def store_settings(self, values, *, cancelled=lambda: False):
+    def store_settings(self, values, *, resets=(), cancelled=lambda: False):
+        if resets:
+            return self.save_settings(values, resets=resets, cancelled=cancelled)
         return self.save_settings(values, cancelled=cancelled)
 
     def load_settings(self, *, cancelled=lambda: False, timeout=30):
         from .providers import unimplemented_distribution_rows
         return dict(self.call('settings', cancelled=cancelled, timeout=timeout), **unimplemented_distribution_rows(self.platforms))
 
-    def save_settings(self, values, *, cancelled=lambda: False):
+    def save_settings(self, values, *, resets=(), cancelled=lambda: False):
         from .credentials import reject_secrets, validate_settings_changes
+        from .settings import validate_settings_resets
         reject_secrets(values)
         # Validate against the declared schema before invoking the writer.
         rows = self.load_settings(cancelled=cancelled)
         validate_settings_changes(rows, values, self.root)
-        return self.call('save_settings', changes=values, cancelled=cancelled, timeout=30)
+        validate_settings_resets(rows, values, resets)
+        request = {'changes': values}
+        if resets:
+            request['resets'] = list(resets)
+        return self.call('save_settings', cancelled=cancelled, timeout=30, **request)
 
     def verification_plan(self):
         return Plan.from_data(self.call('verification'))

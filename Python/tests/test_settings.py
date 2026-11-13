@@ -4,10 +4,23 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from build_manager.settings import Field,SettingsStore,resolve
+from build_manager.settings import Field,SettingsStore,resolve,validate_settings_resets
 
 
 class SettingsTests(unittest.TestCase):
+    def test_reset_admission_excludes_protected_and_undeclared_fields(self):
+        entry = dict(value='custom', reset=dict(overridden=True, value='default', origin='tracked default'))
+        rows = {'firebase.group': entry, 'auth.reference': entry, 'signing.app_profile': entry,
+                'testing.runner': entry, 'protected': dict(entry, kind='protected-file'),
+                'credential': dict(entry, credential=True), 'identity': dict(entry, read_only=True),
+                'legacy': dict(value='old'), 'invalid': dict(entry, reset=dict(entry['reset'], value=1))}
+        validate_settings_resets(rows, {}, ['firebase.group'])
+        for field in rows.keys() - {'firebase.group'} | {'unknown'}:
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'does not support reset'):
+                validate_settings_resets(rows, {}, [field])
+        with self.assertRaisesRegex(ValueError, 'one edit or reset'):
+            validate_settings_resets(rows, {'firebase.group': 'new'}, ['firebase.group'])
+
     def test_layers_guard_destinations_and_show_origins(self):
         schema={'auth.reference':Field('',account=True),'tools.python':Field('python',machine=True),
                 'destination':Field('one'),'app.id':Field('guarded',guarded=True),

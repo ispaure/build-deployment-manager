@@ -181,6 +181,7 @@ native paths from unavailable platforms.
 
 - [Setup and launch](setup.md)
 - [Guided UI control reference](guided-ui.md)
+- [Set up delivery destinations](delivery-setup.md)
 - [Configuration files, device catalogs and backup](configuration-files.md)
 - [Workflow review, retention and recovery](workflows.md)
 - [Host capabilities and mobile target limits](hosts.md)
