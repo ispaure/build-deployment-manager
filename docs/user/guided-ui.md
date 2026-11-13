@@ -345,7 +345,7 @@ paragraphs. The footer keeps the approval boundary beside Start.
 Choose work, Review and Run maps offer Best fit, Horizontal and Vertical.
 Best fit switches between left-to-right and top-to-bottom when that fits the
 window better. Small workflows stay compact and aligned near the top.
-Source, Testing and Delivery
+Source, Testing, Build & Package and Delivery, when relevant,
 use soft background tints rather than divider lines that resemble connections.
 Keyboard focus brings off-screen cards into view. Connections stay visible when
 selecting a step; selection changes the details, not which arrows appear.
@@ -428,7 +428,7 @@ Best fit adapts the overview to the available panel: it tries horizontal and
 vertical arrangements and modest card widths so labels can wrap before shrinking
 the whole map. Horizontal and Vertical keep your chosen direction. Manual zoom
 preserves the arrangement while resizing; Fit resumes automatic sizing.
-The Source, Testing and Delivery backgrounds fill the overview's available
+The relevant Source, Testing, Build & Package and Delivery backgrounds fill the overview's available
 height while cards retain bounded sizes within each section.
 
 Live updates preserve selection, pan and zoom, and the text selection and scroll in
@@ -563,10 +563,15 @@ portable contract tests and offscreen layout checks do not establish those resul
 
 ## Reading shared build workflows
 
-Read the workflow from left to right under Source, Testing and Delivery headings.
-Delivery can span several columns: build, export/sign and delivery to each
-recipient. Cards stay near their parents; a shared build appears once and branches
-to its consumers when the project declares package metadata.
+Read the workflow from left to right under the relevant Source, Testing,
+Build & Package and Delivery headings.
+Build & Package identifies declared artifact preparation; Delivery identifies the
+actions that send or install those artifacts. Review labels reuse of prepared
+artifacts explicitly and omits the build category when neither build work nor
+retained provenance is relevant. Cards stay near their parents; a shared build
+appears once and branches to its consumers when the project declares package
+metadata. The reviewed plan retains every project-declared dependency and
+approval requirement.
 
 Logistics device destinations offer Debug (default) and Release. Debug prepares a
 separate development app. Release reuses the signed Firebase APK on Android, or
