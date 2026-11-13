@@ -196,7 +196,7 @@ class Executor:
                 locks.enter_context(workspace_lock(Path(plan.workspace) / 'operation.lock'))
                 locks.enter_context(resources.acquire(plan.resources,plan.capacities,cancelled=self.cancelled,
                     timeout=max(phase.timeout for phase in plan.phases),
-                    event=lambda value:self.event(dict(value,phase='workflow'))))
+                    event=lambda value:self.event(dict(value,phase='workflow')), cancel_before_admission=False))
                 for resource in sorted(set(plan.resource_locks)):
                     locks.enter_context(workspace_lock(resource))
                 previous = recover_phase_records(plan,report,reconcile=reconcile,preserve_unknown=True) if resume else []

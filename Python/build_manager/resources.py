@@ -14,9 +14,14 @@ class HostResourceSlots:
         self.directory=Path(directory) if directory else config_directory()/'resources'
 
     @contextmanager
-    def acquire(self,requirements,capacities,*,cancelled,timeout,event=lambda value:None,cleanup=False):
+    def acquire(self,requirements,capacities,*,cancelled,timeout,event=lambda value:None,cleanup=False,
+                cancel_before_admission=True):
+        """Admit cleanup despite cancellation; whole-plan locks may guard that cleanup."""
+        check_admission = cancel_before_admission and not cleanup
         started=time.monotonic();last_wait=None
         while True:
+            if check_admission and cancelled.is_set():
+                raise RuntimeError('Resource wait cancelled or timed out.')
             held=ExitStack()
             try:
                 for name,amount in sorted(requirements.items()):
@@ -49,6 +54,8 @@ class HostResourceSlots:
             except BaseException:
                 held.close();raise
         with held:
+            if check_admission and cancelled.is_set():
+                raise RuntimeError('Resource wait cancelled or timed out.')
             yield
 
 

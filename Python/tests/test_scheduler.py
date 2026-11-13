@@ -1,12 +1,16 @@
 """Real process overlap and cross-process host resource exclusion."""
 import json
 from dataclasses import replace
+import os
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from threading import Event,Timer
+from threading import Event, Thread, Timer
+import time
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from build_manager import Executor,Phase,Plan
 from process_rendezvous import rendezvous_argv
@@ -64,6 +68,94 @@ class SchedulerTests(unittest.TestCase):
         for process in processes:
             stdout,stderr=process.communicate(timeout=15);self.assertEqual(process.returncode,0,stderr.decode())
         a,b=self.times('a'),self.times('b');self.assertTrue(a[1]<=b[0] or b[1]<=a[0])
+
+    def test_cancelled_resource_wait_never_launches_phase_and_still_admits_cleanup(self):
+        from build_manager import resources as resource_module
+
+        directory = self.root / 'resources'
+        requirement = {'device:queued-fixture': 1}
+        cancelled, ready, release, released = Event(), Event(), Event(), Event()
+        waiting = []
+        launches = []
+        ordinary = self.phase('ordinary', code='print("ordinary")', resources=requirement)
+        cleanup = self.phase('cleanup', code='print("cleanup")', dependencies=('ordinary',),
+                             always=True, resources=requirement)
+        commands = {phase.argv: phase.id for phase in (ordinary, cleanup)}
+        if os.name == 'nt':
+            from build_manager import windows_process
+            constructor, constructor_name = windows_process, 'WindowsProcess'
+        else:
+            constructor, constructor_name = subprocess, 'Popen'
+        original_launch = getattr(constructor, constructor_name)
+
+        def hold_slot():
+            with resource_module.HostResourceSlots(directory).acquire(
+                    requirement, {}, cancelled=Event(), timeout=10):
+                ready.set()
+                release.wait(10)
+            released.set()
+
+        def cancel_and_release(_delay):
+            cancelled.set()
+            release.set()
+            self.assertTrue(released.wait(5))
+
+        def record_launch(argv, **options):
+            if tuple(argv) in commands:
+                launches.append(commands[tuple(argv)])
+            return original_launch(argv, **options)
+
+        def event(value):
+            if value.get('type') == 'waiting':
+                waiting.append(value['phase'])
+
+        holder = Thread(target=hold_slot)
+        holder.start()
+        try:
+            self.assertTrue(ready.wait(5))
+            plan = Plan('Fixture', 'Queued cancellation', {}, (ordinary, cleanup), str(self.root / 'workspace'))
+            clock = SimpleNamespace(monotonic=time.monotonic, sleep=cancel_and_release)
+            with patch.object(resource_module, 'time', clock), \
+                    patch.object(constructor, constructor_name, side_effect=record_launch):
+                result = Executor(cancelled=cancelled, resource_directory=directory, event=event).run(
+                    plan, self.root / 'result')
+        finally:
+            release.set()
+            holder.join(10)
+
+        self.assertFalse(holder.is_alive())
+        self.assertEqual(waiting, ['ordinary'])
+        self.assertEqual(launches, ['cleanup'])
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual([(row['status'], row['launch_state']) for row in result['phases']],
+                         [('cancelled', 'not_started'), ('passed', 'started')])
+
+    def test_cancelled_plan_admits_cleanup_under_its_plan_resource(self):
+        from build_manager.resources import HostResourceSlots
+
+        directory = self.root / 'resources'
+        requirement = {'device:plan-fixture': 1}
+        cancelled = Event()
+        cancelled.set()
+        ordinary = self.phase('ordinary', code='raise SystemExit(7)')
+        cleanup = self.phase('cleanup', code='print("cleanup")', dependencies=('ordinary',), always=True)
+        plan = Plan('Fixture', 'Cancelled plan', {}, (ordinary, cleanup), str(self.root / 'workspace'),
+                    resources=requirement)
+        plan_lock_was_held = []
+
+        def event(value):
+            if value.get('id') != 'cleanup' or value.get('status') != 'running' or not value.get('log'):
+                return
+            with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                with HostResourceSlots(directory).acquire(requirement, {}, cancelled=Event(), timeout=0):
+                    self.fail('Cleanup ran without its plan resource')
+            plan_lock_was_held.append(True)
+
+        result = Executor(cancelled=cancelled, resource_directory=directory, event=event).run(
+            plan, self.root / 'result')
+        self.assertEqual(result['status'], 'cancelled')
+        self.assertEqual([row['status'] for row in result['phases']], ['skipped', 'passed'])
+        self.assertEqual(plan_lock_was_held, [True])
 
     def test_parallel_cancellation_retires_descendants_then_owned_cleanup(self):
         cancelled=Event();started=set();timer=Timer(.1,cancelled.set)
