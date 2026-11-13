@@ -15,32 +15,41 @@ class HostResourceSlots:
 
     @contextmanager
     def acquire(self,requirements,capacities,*,cancelled,timeout,event=lambda value:None,cleanup=False,
-                cancel_before_admission=True):
+                cancel_before_admission=True, validate=lambda: None):
         """Admit cleanup despite cancellation; whole-plan locks may guard that cleanup."""
         check_admission = cancel_before_admission and not cleanup
+        if not requirements:
+            validate()
+            if check_admission and cancelled.is_set():
+                raise RuntimeError('Resource wait cancelled or timed out.')
+            yield
+            return
         started=time.monotonic();last_wait=None
         while True:
             if check_admission and cancelled.is_set():
                 raise RuntimeError('Resource wait cancelled or timed out.')
             held=ExitStack()
+            name, amount, capacity = 'resource-configuration', 1, 1
             try:
-                for name,amount in sorted(requirements.items()):
-                    capacity=capacities.get(name,1)
-                    if type(amount) is not int or type(capacity) is not int or not 1<=amount<=capacity<=64:
-                        raise ValueError('Invalid resource capacity requirement: '+name)
-                    key=hashlib.sha256(name.encode()).hexdigest()
-                    with workspace_lock(self.directory/'configuration.lock'):
+                with workspace_lock(self.directory/'configuration.lock'):
+                    validate()
+                    for name,amount in sorted(requirements.items()):
+                        capacity=capacities.get(name,1)
+                        if type(amount) is not int or type(capacity) is not int or not 1<=amount<=capacity<=64:
+                            raise ValueError('Invalid resource capacity requirement: '+name)
+                        key=hashlib.sha256(name.encode()).hexdigest()
                         path=self.directory/(key+'.json');saved=load_profile(path)
                         if saved and saved.get('capacity')!=capacity:
                             raise ValueError('Resource capacity changed; explicitly reconcile idle host configuration: '+name)
-                        if not saved:save_profile(path,{'capacity':capacity},allowed={'capacity'})
-                    acquired=0
-                    for slot in range(capacity):
-                        try:held.enter_context(workspace_lock(self.directory/f'{key}.{slot}.lock'))
-                        except RuntimeError:continue
-                        acquired+=1
-                        if acquired==amount:break
-                    if acquired<amount:raise RuntimeError('Waiting for resource: '+name)
+                        if not saved or 'name' not in saved:
+                            save_profile(path,{'name':name,'capacity':capacity},allowed={'name','capacity'})
+                        acquired=0
+                        for slot in range(capacity):
+                            try:held.enter_context(workspace_lock(self.directory/f'{key}.{slot}.lock'))
+                            except RuntimeError:continue
+                            acquired+=1
+                            if acquired==amount:break
+                        if acquired<amount:raise RuntimeError('Waiting for resource: '+name)
                 break
             except RuntimeError as error:
                 held.close()

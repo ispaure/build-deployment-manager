@@ -107,6 +107,7 @@ class Executor:
         from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
         from .identity import engine_review_identity
         from .resources import HostResourceSlots
+        from .test_workers import admitted_environment
         from .workflows import EXTERNAL, recover_phase_records, retained_phase_records, review_identity, verify_artifacts
         if resume:
             from .history import read_report
@@ -155,7 +156,9 @@ class Executor:
                         BUILD_MANAGER_APPROVED_PLAN=plan.identity,BUILD_MANAGER_APPROVED_ARTIFACTS=json.dumps(artifacts),
                         BUILD_MANAGER_OPERATION_ID=rows[phase.id]['operation_id']))
                 with resources.acquire(phase.resources, plan.capacities, cancelled=self.cancelled,
-                        timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always):
+                        timeout=phase.timeout, event=lambda value:self.event(dict(value, phase=phase.id)), cleanup=phase.always,
+                        validate=lambda: admitted_environment(phase, plan, resources.directory)):
+                    phase = replace(phase, environment=admitted_environment(phase, plan, resources.directory))
                     from .evidence_cache import EvidenceCache
                     from .infrastructure_recovery import execute as recover_infrastructure
                     def run_attempt(command, directory):
@@ -340,7 +343,10 @@ class Executor:
                    started_at=timestamp(), status='running', log=phase.id + '.log')
         emit(dict(type='phase', **row))
         started = time.monotonic()
-        environment = dict(os.environ, **phase.environment)
+        from .test_workers import ENV_PLATFORM, ENV_WORKERS, ENV_RESERVED
+        environment = {key: value for key, value in os.environ.items()
+                       if key not in {ENV_PLATFORM, ENV_WORKERS, ENV_RESERVED}}
+        environment.update(phase.environment)
         # Logs and structured progress are decoded as UTF-8. Redirected Python
         # output otherwise defaults to the Windows code page and loses Unicode.
         environment.setdefault('PYTHONIOENCODING', 'utf-8')

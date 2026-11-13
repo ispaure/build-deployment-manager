@@ -31,13 +31,15 @@ def apply_preferences(app, path):
 
 
 class ApplicationSettingsDialog(QDialog):
-    def __init__(self, project=None, parent=None, *, directory=None):
+    def __init__(self, project=None, parent=None, *, directory=None, worker_directory=None):
         super().__init__(parent)
         self.setWindowTitle('App settings')
         self.resize(540, 300)
         self.path = Path(directory) / 'appearance.json' if directory is not None else preferences_path(project)
+        from .test_workers import resource_directory, limits
+        self.worker_directory = resource_directory(worker_directory)
         layout = QVBoxLayout(self)
-        intro = QLabel('Application appearance applies to all projects. Build tools, signing and destinations belong in Project settings.')
+        intro = QLabel('Appearance applies to all projects. Test worker limits are shared by all Manager runs on this computer; projects choose which tests can overlap.')
         intro.setWordWrap(True)
         layout.addWidget(intro)
         form = QFormLayout()
@@ -46,6 +48,14 @@ class ApplicationSettingsDialog(QDialog):
         self.size.setSpecialValueText('System default')
         self.size.setSuffix(' pt')
         form.addRow('Text size', self.size)
+        self.platform_workers = QSpinBox()
+        self.platform_workers.setRange(1, 8)
+        self.host_workers = QSpinBox()
+        self.host_workers.setRange(1, 64)
+        form.addRow('Test workers per platform', self.platform_workers)
+        form.addRow('Test workers on this computer', self.host_workers)
+        self.platform_workers.setToolTip('Combined ceiling for participating test phases on one platform, including separate runs.')
+        self.host_workers.setToolTip('Shared ceiling across platforms and runs. Native builds and other applications need CPU headroom.')
         layout.addLayout(form)
         self.status = QLabel()
         self.status.setWordWrap(True)
@@ -54,7 +64,10 @@ class ApplicationSettingsDialog(QDialog):
             if type(size) is not int or not 0 <= size <= 28:
                 raise ValueError('Text size must be between 0 and 28.')
             self.size.setValue(size)
-        except (OSError, ValueError) as error:
+            workers = limits(self.worker_directory)
+            self.platform_workers.setValue(workers['per_platform'])
+            self.host_workers.setValue(workers['host'])
+        except (OSError, ValueError, RuntimeError) as error:
             self.status.setText(str(error))
         folder = self.path.parent / 'configuration'
         open_folder = QPushButton('Open configuration folder')
@@ -94,9 +107,11 @@ class ApplicationSettingsDialog(QDialog):
 
     def save(self):
         try:
+            from .test_workers import configure
+            configure(dict(per_platform=self.platform_workers.value(), host=self.host_workers.value()), self.worker_directory)
             save_profile(self.path, {'text_size': self.size.value()}, allowed={'text_size'})
             apply_preferences(QApplication.instance(), self.path)
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, RuntimeError) as error:
             self.status.setText(str(error))
             return
         self.accept()

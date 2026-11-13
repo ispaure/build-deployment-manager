@@ -10,7 +10,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox, QStackedWidget
 from build_manager.ui import ManagerPanel
 from build_manager.run_ui import RunView
-from build_manager.application_settings_ui import ApplicationSettingsDialog, apply_preferences
+from build_manager.application_settings_ui import ApplicationSettingsDialog
 from build_manager.settings_ui import SettingsDialog
 from build_manager.registry import Registry
 from build_manager.bridge import ProjectBridge
@@ -80,10 +80,14 @@ class AccessibleFlowTests(unittest.TestCase):
             project = SimpleNamespace(registry=SimpleNamespace(directory=Path(directory)))
             original = QFont(self.app.font())
             try:
-                dialog = ApplicationSettingsDialog(project)
+                dialog = ApplicationSettingsDialog(project, worker_directory=Path(directory) / 'resources')
                 dialog.size.setValue(15)
+                dialog.platform_workers.setValue(2)
+                dialog.host_workers.setValue(4)
                 dialog.save()
                 self.assertEqual(self.app.font().pointSize(), 15)
+                from build_manager.test_workers import limits
+                self.assertEqual(limits(dialog.worker_directory), dict(per_platform=2, host=4))
                 self.assertEqual(json.loads(dialog.path.read_text())['values'], {'text_size': 15})
                 dialog.close()
             finally:

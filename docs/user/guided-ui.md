@@ -214,7 +214,7 @@ takes priority. Credential and signing references are protected from reset.
 Save writes your edits and staged resets. Cancel discards the draft.
 
 Use **More → Accounts** for shared account references, **More → Test
-machines** for machine setup, **More → App settings** for text size, and
+machines** for machine setup, **More → App settings** for text size and test worker limits, and
 **More → Manage build storage** to review storage use and cleanup.
 
 Project settings opens while the project interpreter loads the form. You can

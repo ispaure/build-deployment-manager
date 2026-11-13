@@ -8,6 +8,48 @@ acquires resources in sorted order, and releases partial acquisitions before wai
 One persisted host capacity prevents different processes inventing conflicting slot
 counts. Capacity changes require explicit reconciliation while idle.
 
+## Workers inside test phases
+
+`test_workers.reserve(plan, platform, selected, accelerated=...)` lets a project
+budget local test phases without changing the Plan schema or its phase scheduler.
+The project supplies stable platform IDs and audited runner capabilities. Selected
+serial phases reserve one worker; accelerated phases reserve the configured
+per-platform ceiling. Both `test-workers:host` and
+`test-workers:platform:<platform>` amounts are acquired together with the phase's
+existing resources. Two Manager processes therefore share the same limits.
+
+App settings defaults to four workers per platform, limited by the host budget.
+The host default is half the available logical CPUs, rounded down, at least one
+and at most eight. The per-platform setting accepts 1–8; the host setting accepts
+that ceiling through 64. These are test-process reservations, not CPU quotas for
+compilers, command helpers, native simulators or unrelated applications. Leave
+headroom for those owners. Unsupported runners remain serial; adapters must not
+advertise parallel support for native acceptance without separate validation.
+
+Executor validates captured limits under the resource configuration lock before
+slot admission, then supplies `BUILD_MANAGER_RESERVED_TEST_WORKERS` only to the
+admitted phase. A cooperating runner must never exceed it. Inherited reservations
+are removed at each new Manager phase boundary. A phase holds its reservation
+through completion and cleanup; unused slots inside a serial part of an audited
+runner are conservatively retained. No nested pool may independently multiply
+`Plan.max_workers`. Projects retain stage barriers, per-file timeouts, failure
+policy and child cleanup, and must allow enough `stop_grace` for their supervisor.
+
+`test_workers.configure` changes only this resource namespace. It excludes
+admission while checking every owned worker slot, refuses changes during active
+tests, and reconciles persisted capacities while idle. Queued or retained plans
+with old capacities fail before launching; prepare a new plan. The setting and
+locks use the host's normal Manager configuration root even when a different
+project registry is selected. Existing plans with no resource requirements still
+perform no resource-directory I/O.
+
+Real subprocess contracts exercise simultaneous independent Manager instances,
+shared host and platform ceilings, queued cancellation, unchanged legacy phases,
+idle capacity changes and rejection of stale plans. This is portable engine
+evidence; it does not establish native Android/iOS concurrency.
+
+## Phase scheduling and cleanup
+
 Plan workspace locks still exclude competing writers to the same workspace.
 Parallel branches use separate logs/artifact names; the GUI shows branch states,
 waiting reasons and timings. Failed branches block consumers while independent

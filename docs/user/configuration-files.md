@@ -10,6 +10,28 @@ Open **More → App settings → Open configuration folder**. The window opens t
 | `configuration/shared-settings.json` | Named account references, project-to-account bindings, machine settings and any explicit import receipts. Connected accounts maintains the account sections. |
 | `configuration/projects/<name>/profile.json` | Adapter settings for that checkout, when its adapter uses the supplied profile. Use Project settings for validated changes. |
 | `appearance.json` | Manager text size. App settings maintains it. |
+| `resources/test-workers.json` under the host's default Manager root | Per-platform and computer-wide test worker ceilings. App settings validates changes and reconciles idle resource slots. |
+
+## Limit parallel test workers
+
+Open **More → App settings**. **Test workers per platform** limits participating
+test phases for the same platform across all runs. **Test workers on this computer**
+limits their combined reservations across platforms and projects. Both settings
+apply to the current computer, including runs using a separate `--registry`.
+
+Start with four per platform and eight on a 16-core computer. Smaller hosts
+default to half their logical CPU count, at least one, and reduce the platform
+ceiling to fit. Choose up to eight per platform when an audited runner benefits
+from a larger pool. For two platforms, four plus four can run together under an
+eight-worker host ceiling; an eight-worker phase takes that whole budget and the
+second waits. The progress view reports the resource wait.
+
+Only project-approved tests use multiple workers. Serial host tests reserve one;
+native tools, compiler threads and other applications retain their own resource
+policies, so the test ceiling is not a limit on total CPU use. Keep headroom when
+builds run at the same time. Save changed limits after participating tests finish,
+then prepare a new plan. Retained plans with old limits are rejected before tests
+launch. Use App settings rather than hand-editing resource capacity files.
 
 ## Add or rename a shared device
 
