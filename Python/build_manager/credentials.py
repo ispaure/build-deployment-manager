@@ -5,24 +5,30 @@ import re
 
 
 def reject_secrets(values):
+    inherited_credentials = tuple(
+        secret for name, secret in os.environ.items()
+        if re.search(r'(?:TOKEN|PASSWORD|SECRET|PRIVATE_KEY|API_KEY)$', name, re.I) and len(secret) >= 8
+    )
+    _reject_secrets(values, inherited_credentials)
+
+
+def _reject_secrets(values, inherited_credentials):
     if isinstance(values, dict):
         for key, value in values.items():
             name = str(key).lower().replace('-', '_').split('.')[-1]
             if re.search(r'(^|_)(password|passwd|token|secret|private_key|api_key|client_secret)$', name):
                 raise ValueError('Store protected credential references, never secret values.')
-            reject_secrets(value)
+            _reject_secrets(value, inherited_credentials)
     elif isinstance(values, (list, tuple)):
         for value in values:
-            reject_secrets(value)
+            _reject_secrets(value, inherited_credentials)
     elif isinstance(values, str):
         if (re.search(r'-----BEGIN [A-Z]', values) or
                 re.search(r'\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,})', values) or
                 re.search(r'(?i)(?:bearer\s+\S+|https?://[^/\s:@]+:[^/\s@]+@)', values)):
             raise ValueError('Credential contents cannot be saved; use a protected reference.')
-        for name, secret in os.environ.items():
-            if (re.search(r'(?:TOKEN|PASSWORD|SECRET|PRIVATE_KEY|API_KEY)$', name, re.I) and
-                    len(secret) >= 8 and secret in values):
-                raise ValueError('An inherited credential value cannot be saved; use its environment variable name.')
+        if any(secret in values for secret in inherited_credentials):
+            raise ValueError('An inherited credential value cannot be saved; use its environment variable name.')
 
 
 def resolve_external_credential_path(path, checkout=None):
