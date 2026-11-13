@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from build_manager.parallels import Parallels
+from build_manager.parallels import Parallels, ParallelsStartTimeout
 
 VM = '00000000-0000-0000-0000-000000000001'
 
@@ -100,6 +100,35 @@ class ParallelsTransportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 client.start('Synthetic Linux')
             execute.assert_not_called()
+
+    def test_stopped_start_timeout_retains_exact_request_and_original_state(self):
+        client = Parallels('/fixture/prlctl')
+        row = dict(uuid='{' + VM + '}', name='Dedicated test', status='stopped')
+        argv = ['/fixture/prlctl', 'start', row['uuid']]
+        original = subprocess.TimeoutExpired(argv, 120, b'partial stdout', b'partial stderr')
+        with (patch.object(client, 'inventory', return_value=[row]) as inventory,
+              patch('build_manager.parallels.subprocess.run', side_effect=original) as execute):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                client.start('Dedicated test')
+        error = raised.exception
+        self.assertIsInstance(error, ParallelsStartTimeout)
+        self.assertEqual((error.uuid, error.original_state), (row['uuid'], 'stopped'))
+        self.assertEqual((error.cmd, error.timeout, error.output, error.stderr),
+                         (original.cmd, original.timeout, original.output, original.stderr))
+        self.assertEqual(str(error), str(original))
+        self.assertIs(error.__cause__, original)
+        inventory.assert_called_once_with()
+        execute.assert_called_once_with(argv, check=True, timeout=120)
+
+    def test_inventory_timeout_before_start_stays_an_ordinary_timeout(self):
+        client = Parallels('/fixture/prlctl')
+        error = subprocess.TimeoutExpired(['/fixture/prlctl', 'list', '--all', '--json'], 30)
+        with (patch.object(client, 'inventory', side_effect=error),
+              patch('build_manager.parallels.subprocess.run') as execute):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                client.start(VM)
+        self.assertIs(raised.exception, error)
+        execute.assert_not_called()
 
     def test_stage_allowlist_excludes_private_files(self):
         with TemporaryDirectory() as directory:

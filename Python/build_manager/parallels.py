@@ -105,6 +105,15 @@ if record.exists():
 '''
 
 
+class ParallelsStartTimeout(subprocess.TimeoutExpired):
+    """The exact stopped guest was sent a start request without acknowledgement."""
+
+    def __init__(self, original, timeout):
+        super().__init__(timeout.cmd, timeout.timeout, timeout.output, timeout.stderr)
+        self.uuid = original['uuid']
+        self.original_state = original['status']
+
+
 class Parallels:
     def __init__(self, executable=None):
         self.executable = executable or shutil.which('prlctl')
@@ -129,7 +138,10 @@ class Parallels:
         elif original['status'] != 'running':
             if original['status'] != 'stopped':
                 raise ValueError('Selected guest is busy; wait for its power transition to finish.')
-            subprocess.run([self.executable, 'start', original['uuid']], check=True, timeout=120)
+            try:
+                subprocess.run([self.executable, 'start', original['uuid']], check=True, timeout=120)
+            except subprocess.TimeoutExpired as error:
+                raise ParallelsStartTimeout(original, error) from error
         return original
 
     def command(self, selector, argv):
