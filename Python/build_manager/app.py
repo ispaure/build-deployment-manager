@@ -26,11 +26,36 @@ def main(argv=None):
         apply_preferences(app, (args.registry or config_directory()) / 'appearance.json')
     except (OSError, ValueError):
         pass
-    window = ManagerWindow(Registry(args.registry))
-    window.show()
-    if args.smoke_exit:
-        QTimer.singleShot(150,window.close)
-    return app.exec()
+    from .manager_diagnostics import DiagnosticStore, DiagnosticUnavailable
+    store = DiagnosticStore(args.registry or config_directory())
+    session, pending, warning = None, [], ''
+    try:
+        pending = store.pending()
+        warning = store.warning
+        session = store.start()
+        session.install_hooks()
+    except (DiagnosticUnavailable, OSError) as error:
+        warning = str(error)
+    try:
+        window = ManagerWindow(Registry(args.registry))
+        window.show()
+        from .diagnostics_ui import offer_manager_diagnostics
+        offer_manager_diagnostics(window, store, pending, warning)
+        if args.smoke_exit:
+            QTimer.singleShot(150,window.close)
+        return app.exec()
+    except Exception:
+        if session is not None:
+            import sys
+            session.record_exception(*sys.exc_info())
+        raise
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except (DiagnosticUnavailable, OSError):
+                # A failed diagnostic cleanup must not replace the app outcome.
+                session.restore_hooks()
 
 
 # Qt imports are isolated in this GUI-only module.

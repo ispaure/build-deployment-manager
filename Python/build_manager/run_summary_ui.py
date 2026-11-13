@@ -1,7 +1,7 @@
 """Run summary presentation from explicit plan and RunState facts."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
-from .ui_components import ActionStrip, style_button, HeadingLabel
+from .ui_components import ActionStrip, style_button, HeadingLabel, WrappingLayout
 
 
 class RunSummaryView(QWidget):
@@ -106,7 +106,7 @@ class RunSummaryView(QWidget):
             if files:
                 action += f' · {files} retained file' + ('s' if files != 1 else '')
         elif outcome:
-            action = 'Run finished. Check Tests for individual outcomes and Timing for the slowest tests. Open another run with the + tab button.'
+            action = 'Run finished. Check the evidence for individual step outcomes.'
         else:
             action = 'Work is in progress. Test totals update as reports arrive. Delivery requires a separate approval.'
         self.workflow_action.setText(action)
@@ -116,3 +116,54 @@ class RunSummaryView(QWidget):
                 for label, state in outcomes(plan, facts.values())))
         else:
             self.destinations.clear()
+
+
+class RunOutcomeView(QWidget):
+    failed_case_requested = Signal()
+    logs_requested = Signal()
+    blocker_requested = Signal()
+    files_requested = Signal()
+    diagnostics_requested = Signal()
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self.heading = HeadingLabel(section=True)
+        self.heading.setTextFormat(Qt.TextFormat.PlainText)
+        self.message = QLabel()
+        self.problems = QLabel()
+        self.deliveries = QLabel()
+        self.guidance = QLabel()
+        for label in (self.heading, self.message, self.guidance, self.problems, self.deliveries):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            label.setWordWrap(True)
+            layout.addWidget(label)
+        actions = WrappingLayout()
+        self.failed_case = self.add_action(actions, 'View failing test', self.failed_case_requested)
+        self.copy = self.add_action(actions, 'Copy diagnostics…', self.diagnostics_requested)
+        self.logs = self.add_action(actions, 'View logs', self.logs_requested)
+        self.blocker = self.add_action(actions, 'View blocking step', self.blocker_requested)
+        self.files = self.add_action(actions, 'View deliveries', self.files_requested)
+        layout.addLayout(actions)
+
+    @staticmethod
+    def add_action(layout, text, signal):
+        button = style_button(QPushButton(text))
+        button.clicked.connect(signal.emit)
+        layout.addWidget(button)
+        button.hide()
+        return button
+
+    def present(self, *, heading, message, guidance, problems, deliveries, case=False, logs=False,
+                blocker=False, files=False, diagnostics=False):
+        for label, text in ((self.heading, heading), (self.message, message), (self.guidance, guidance),
+                            (self.problems, problems), (self.deliveries, deliveries)):
+            if text != label.text():
+                label.setText(text)
+            label.setVisible(bool(text))
+        for button, visible in ((self.failed_case, case), (self.logs, logs), (self.blocker, blocker),
+                                (self.files, files), (self.copy, diagnostics)):
+            button.setVisible(visible)

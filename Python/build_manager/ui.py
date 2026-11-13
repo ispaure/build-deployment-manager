@@ -50,6 +50,10 @@ class ManagerPanel(QWidget):
         self.preparation_state = 'idle'
         self.preparation_render = None
         self.prepared_display = None
+        self.prepared_diagnostic_context = {}
+        self.active_diagnostic_context = {}
+        self.preparation_diagnostic = None
+        self.diagnostic_report = {}
         self.current_run_stage = 0
         self.close_requested = False
         self.applying_preset, self.preset_error = False, ''
@@ -62,6 +66,8 @@ class ManagerPanel(QWidget):
         self.preparation_timer.timeout.connect(self.plan_prepared)
         from .run_session import RunSession
         self.session = RunSession(project.runner_directory, self)
+        self.session.diagnostic_stderr = ''
+        self.session.diagnostic_stderr_truncated = False
         self.process = self.session.process
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.readyReadStandardError.connect(self.read_errors)
@@ -174,10 +180,17 @@ class ManagerPanel(QWidget):
         self.plan_feedback.hide()
         from .review_ui import Disclosure, text_view
         self.preparation_error = text_view('Full plan preparation failure and traceback')
+        # The trace scrolls independently. Its shared text-view minimum would
+        # otherwise squeeze the editable source and feedback over each other.
+        self.preparation_error.setMinimumHeight(40)
         self.preparation_error.setMaximumHeight(160)
         self.preparation_error_section = Disclosure('Error details · full traceback', self.preparation_error)
         self.preparation_error_section.hide()
         configuration_layout.addWidget(self.preparation_error_section)
+        self.copy_preparation_diagnostics = QPushButton('Copy diagnostics…')
+        self.copy_preparation_diagnostics.hide()
+        self.copy_preparation_diagnostics.clicked.connect(self.preview_preparation_diagnostics)
+        configuration_layout.addWidget(self.copy_preparation_diagnostics)
         self.preparation_progress = QProgressBar()
         self.preparation_progress.setRange(0, 0)
         self.preparation_progress.setAccessibleName('Plan preparation in progress')
@@ -232,6 +245,7 @@ class ManagerPanel(QWidget):
         run_layout.setContentsMargins(6, 4, 6, 4)
         run_layout.setSpacing(4)
         self.run_view = RunView()
+        self.run_view.diagnostics_requested.connect(self.preview_run_diagnostics)
         self.run_view.flow.lazy_canvas = True
         self.run_view.actions_in_footer = True
         run_layout.addWidget(self.run_view, 1)
@@ -531,6 +545,9 @@ class ManagerPanel(QWidget):
     def invalidate(self, *_, preserve_preset=False, persist=True):
         self.selection_revision += 1
         self.prepared_display = None
+        self.prepared_diagnostic_context = {}
+        self.preparation_diagnostic = None
+        self.copy_preparation_diagnostics.hide()
         job = self.preparation_job
         if job is not None:
             job.reason = 'superseded'
@@ -699,6 +716,9 @@ class ManagerPanel(QWidget):
         job = PreparePlan(lambda: prepare(job.cancelled.is_set, job.report), self.prepared, transform=transform)
         job.revision, job.request_id = self.selection_revision, uuid4().hex
         job.goal, job.proposal = goal, proposal
+        job.diagnostic_context = dict(origin='Planning failure · no run started',
+            project=getattr(self.project, 'row', {}).get('name', 'Not recorded'),
+            preset=self.configuration.preset.currentText(), run_id=job.request_id)
         job.device_retry, job.retained_delivery = device_retry, retained_delivery
         self.preparation_job = job
         self.preparing_proposal = proposal
@@ -709,6 +729,8 @@ class ManagerPanel(QWidget):
         self.session.current_phase = 'Checking project registration and selected work'
         self.session.phase_elapsed.start()
         self.preparation_error_section.hide()
+        self.copy_preparation_diagnostics.hide()
+        self.preparation_diagnostic = None
         self.plan_feedback.show()
         self.preparation_progress.show()
         self.cancel_preparation.show()
@@ -751,6 +773,9 @@ class ManagerPanel(QWidget):
             message = str(error).strip().splitlines()
             self.preparation_message('Could not prepare the plan. ' + self.redact(message[-1] if message else 'Unknown error'),
                 details=self.redact(getattr(error, 'details', str(error))))
+            self.preparation_diagnostic = dict(job.diagnostic_context, error=str(error),
+                traceback=getattr(error, 'details', str(error)), evidence_status='Preparation failed; no run started.')
+            self.copy_preparation_diagnostics.show()
             if 'committed' in error.lower() and ('source' in error.lower() or 'revision' in error.lower()):
                 self.configuration.show_source_blocker()
                 self.configuration.open_section('source')
@@ -761,6 +786,7 @@ class ManagerPanel(QWidget):
                 self.configuration.source_summary.show()
             return
         self.plan = result.plan
+        self.prepared_diagnostic_context = dict(job.diagnostic_context, origin='Current run')
         self.prepared_display = (result.plan, result.review)
         self.preparation_render = result
         self.preparation_state = 'rendering'
@@ -849,6 +875,9 @@ class ManagerPanel(QWidget):
         self.resumable = False
         self.result = run / 'result.json'
         self.active_plan = self.plan
+        self.active_diagnostic_context = dict(self.prepared_diagnostic_context,
+            origin='Current run', run_id=run.name)
+        self.diagnostic_report = {}
         self.initialize_results_workspace(self.plan)
         self.open_results.setEnabled(False)
         self.continue_run.setEnabled(False)
@@ -965,7 +994,10 @@ class ManagerPanel(QWidget):
             self.result = result
             self.start.setEnabled(False)
             self.open_results.setEnabled(True)
-            self.run_view.set_output(self.redact(json.dumps(dict(plan=plan.data(), previous=previous), indent=2)))
+            self.active_diagnostic_context = dict(origin='Saved run', run_id=result.parent.name, preset='Not recorded')
+            self.diagnostic_report = self.redacted_data(previous)
+            self.run_view.evidence_root = result.parent
+            self.run_view.set_report(self.diagnostic_report)
             self.run_view.complete(previous)
             self.stages.setCurrentIndex(2)
             confirmed = bool(steps or plan.effect in {'deploy', 'upload', 'publish', 'dispatch'})
@@ -1283,6 +1315,9 @@ class ManagerPanel(QWidget):
                 workspace.inspect_phase(self.review_workspace.selected)
         self.phase_rows = self.run_view.rows
         self.run_view.phase_log_reader = self.read_phase_log
+        self.run_view.evidence_root = self.result.parent if self.result else None
+        self.session.diagnostic_stderr = ''
+        self.session.diagnostic_stderr_truncated = False
         workspace.log_reader = self.read_phase_log
         self.review_workspace.log_reader = self.read_phase_log
         self.review_workspace.set_facts(self.run_view.facts if previous else {})
@@ -1399,13 +1434,15 @@ class ManagerPanel(QWidget):
             self.result = path
             self.present_plan(plan, prepared=job.review)
             self.initialize_results_workspace(plan, report['phases'], prepared=job.review)
+            self.active_diagnostic_context = dict(origin='Saved run', run_id=path.parent.name, preset='Not recorded')
+            self.diagnostic_report = self.redacted_data(report)
+            self.run_view.set_report(self.diagnostic_report)
             self.run_view.complete(report)
             self.run_view.saved_context.setText('Saved run · ' + path.parent.name +
                 (' · ' + str(report['started_at']) if report.get('started_at') else ''))
             self.run_view.saved_context.setToolTip('Original engine identity:\n' +
                 self.redact(json.dumps(report.get('engine', {}), indent=2)))
             self.run_view.saved_context.show()
-            self.run_view.set_output(self.redact(json.dumps(report, indent=2)))
             self.resumable = not report.get('retirement') and report['status'] in {'awaiting_review', 'failed', 'cancelled', 'unknown'}
             self.continue_run.setEnabled(self.resumable)
             self.continue_run.setVisible(self.resumable)
@@ -1419,7 +1456,6 @@ class ManagerPanel(QWidget):
             self.status.setText('Cannot read retained run: ' + self.redact(str(error)))
 
     def read_phase_log(self, key):
-        from pathlib import Path
         if not self.result:
             return ''
         name = self.run_view.facts.get(key, {}).get('log')
@@ -1427,17 +1463,88 @@ class ManagerPanel(QWidget):
             return ''
         if not isinstance(name, str):
             raise ValueError('Invalid step log reference.')
-        root = self.result.parent.resolve()
-        path = (root / name).resolve()
-        if not path.is_relative_to(root):
-            raise ValueError('Log must stay inside the retained run directory.')
-        with path.open('rb') as stream:
-            raw = stream.read(262145)
-        text = self.redact(raw[:262144].decode('utf-8', errors='replace'))
-        return text + ('\nPreview truncated; open the results folder for the complete log.' if len(raw) > 262144 else '')
+        from .diagnostics import read_log
+        try:
+            evidence = read_log(self.result.parent, name)
+        except ValueError as error:
+            raise ValueError('Log must stay inside the retained run directory and be a non-linked regular file.') from error
+        if evidence.status == 'missing':
+            raise FileNotFoundError('Retained log is unavailable; it may have been removed during cleanup.')
+        if evidence.status == 'unreadable':
+            raise OSError('Retained log could not be read.')
+        text = self.redact(evidence.text)
+        return text + ('\nPreview truncated; open the results folder for the complete log.' if evidence.truncated else '')
+
+    def preview_preparation_diagnostics(self):
+        if self.preparation_diagnostic is None:
+            return
+        from copy import deepcopy
+        from .diagnostics import format_diagnostics
+        from .diagnostics_ui import DiagnosticPreview
+        context = deepcopy(self.preparation_diagnostic)
+        secrets = tuple(self.redact.secrets)
+        dialog = DiagnosticPreview(lambda include: format_diagnostics(None, context=context, include_excerpt=include, secrets=secrets), self)
+        dialog.show()
+
+    def preview_run_diagnostics(self, selected=''):
+        from copy import deepcopy
+        import platform
+        from PySide6.QtCore import qVersion
+        from .diagnostics import MAX_LOG_BYTES, diagnose, format_diagnostics, read_log
+        from .diagnostics_ui import DiagnosticPreview
+        plan = deepcopy(self.run_view.plan)
+        facts = deepcopy(self.run_view.facts)
+        report = deepcopy(self.diagnostic_report)
+        report.update(status=self.run_view.outcome, phases=list(facts.values()))
+        context = deepcopy(self.active_diagnostic_context)
+        context.update(error=self.run_view.run_error, python_version=platform.python_version(), qt_version=qVersion())
+        test_step, test_id = self.run_view.selected_test_identity()
+        if test_step and not self.run_view.run_error:
+            selected = test_step
+        selected = '' if self.run_view.run_error else selected or diagnose(plan, facts, outcome=self.run_view.outcome).step_id
+        reference = facts.get(selected, {}).get('log')
+        root = self.result.parent if self.result else None
+        live = '' if (selected or None) in self.run_view.output.dropped else '\n'.join(
+            line for key, line in self.run_view.output.lines if key == selected or not selected and key is None)
+        fallback = (self.session.diagnostic_stderr or self.session.stderr) if self.run_view.run_error else live
+        controller_failure = bool(self.run_view.run_error)
+        prefix_full = controller_failure and (self.session.diagnostic_stderr_truncated
+            or len(fallback.encode('utf-8')) >= MAX_LOG_BYTES)
+        if prefix_full:
+            fallback = fallback.rsplit('\n', 1)[0] + '\n' if '\n' in fallback else ''
+        secrets = tuple(self.redact.secrets)
+        captured = {}
+        def render(include):
+            if not captured:
+                text, state = fallback, 'Live captured output' if fallback else 'No output was captured.'
+                if controller_failure:
+                    state = 'Run evidence incomplete; captured controller stderr prefix.' if fallback else 'Run evidence incomplete; no controller stderr captured.'
+                    if prefix_full:
+                        state += ' Inspected first 256 KiB only; incomplete boundary line omitted.'
+                if root and reference:
+                    try:
+                        evidence = read_log(root, reference)
+                        text = evidence.text or fallback
+                        state = evidence.status
+                        if evidence.truncated:
+                            state += '; inspected first 256 KiB only'
+                    except (OSError, ValueError):
+                        state = 'Retained log unavailable: invalid or unreadable reference.'
+                captured.update(text=text, state=state)
+            return format_diagnostics(plan, report, facts=facts,
+                context=dict(context, evidence_status=captured['state']), selected=selected,
+                log_text=captured['text'], include_excerpt=include, test_id=test_id, secrets=secrets)
+        dialog = DiagnosticPreview(render, self)
+        dialog.show()
 
     def read_errors(self):
         text = bytes(self.process.readAllStandardError()).decode('utf-8', errors='replace')
+        # Keep the beginning in memory for sharing, never a tail with unknown
+        # private-key/credential context. Ordinary display policy is unchanged.
+        if not self.session.diagnostic_stderr_truncated:
+            prefix = (self.session.diagnostic_stderr + text).encode('utf-8')
+            self.session.diagnostic_stderr_truncated = len(prefix) > 262144
+            self.session.diagnostic_stderr = prefix[:262144].decode('utf-8', errors='ignore')
         text = self.redact(text)
         self.session.stderr = (self.session.stderr + text)[-16384:]
         self.run_view.append_output(None, text)
@@ -1510,15 +1617,12 @@ class ManagerPanel(QWidget):
             status = report['status']
             if status not in {'passed', 'failed', 'cancelled', 'awaiting_review', 'unknown'} or not isinstance(report['phases'], list):
                 raise ValueError('The result report is incomplete or invalid.')
-            self.run_view.append_output(None, self.redact(json.dumps(report, indent=2)))
+            self.diagnostic_report = self.redacted_data(report)
+            self.run_view.set_report(self.diagnostic_report)
             for phase in report['phases']:
                 if not isinstance(phase, dict):
                     raise ValueError('Invalid result phase.')
                 self.update_phase(phase)
-                for artifact in phase.get('artifacts', []):
-                    evidence = self.read_json_evidence_preview(artifact['path'])
-                    if evidence:
-                        self.run_view.append_output(None, evidence)
             self.run_view.complete(report)
             if code and status == 'passed':
                 raise ValueError('A passing report disagrees with the operation exit code.')
@@ -1539,7 +1643,7 @@ class ManagerPanel(QWidget):
             from .api import read_storage_maintenance
             maintenance = read_storage_maintenance(self.result.parent)
             if maintenance is not None:
-                self.run_view.append_output(None, 'Storage cleanup: ' + self.redact(json.dumps(maintenance, indent=2)))
+                self.run_view.set_storage_maintenance(self.redacted_data(maintenance))
                 if maintenance['status'] in {'failed', 'incomplete'}:
                     next_action += ' Storage cleanup needs attention; inspect the results for details.'
         self.status.setText(f'{status}; exit {code}. Results: {self.result}' + next_action)

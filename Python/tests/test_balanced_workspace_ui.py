@@ -69,26 +69,39 @@ class BalancedWorkspaceTests(unittest.TestCase):
             self.assertFalse(view.destination_options[target].isHidden())
         self.assertEqual(view.choices(), before)
 
-    def test_one_evidence_selector_reaches_run_and_technical_pages(self):
+    def test_run_evidence_selector_keeps_source_records_in_a_disclosure(self):
         view = RunView(); view.reset(integrated(self.root))
         nav = view.results_workspace.inspector_tabs
         self.assertIsInstance(nav, EvidenceNavigator)
         self.assertFalse(nav.findChildren(QTabBar))
-        for page in (view.results_workspace.plan_data, view.test_results, view.output, view.delivery_page):
-            index = nav.indexOf(page)
-            nav.setTabVisible(index, True)
-            nav.selector.setCurrentIndex(nav.selector.findData(page))
-            self.assertIs(nav.currentWidget(), page)
+        labels = lambda selector: [selector.itemText(index) for index in range(selector.count())]
+        self.assertEqual(labels(nav.selector), ['Summary', 'Logs', 'Deliveries'])
+        disclosure = view.results_workspace.technical_section
+        self.assertTrue(disclosure.content.isHidden())
+        view.set_report(dict(status='passed', marker='Only in the run report'))
+        disclosure.toggle.click()
+        self.assertFalse(disclosure.content.isHidden())
+        technical = view.technical.navigator
+        self.assertEqual(labels(technical.selector), [
+            'Step command', 'Plan overview', 'Dependencies', 'Plan data', 'Step record', 'Run report'])
+        for page in (view.results_workspace.plan_data, view.report_view):
+            technical.selector.setCurrentIndex(technical.selector.findData(page))
+            self.assertIs(technical.currentWidget(), page)
+            self.assertIs(nav.currentWidget(), view.summary_page)
+        self.assertIn('Only in the run report', view.report_view.toPlainText())
+        self.assertNotIn('Only in the run report', view.log.toPlainText())
+        view.set_storage_maintenance(dict(status='incomplete'))
+        self.assertEqual(labels(technical.selector)[-1], 'Storage maintenance')
+        technical.setCurrentWidget(view.storage_view)
+        self.assertIn('incomplete', view.storage_view.toPlainText())
+        self.assertNotIn('incomplete', view.log.toPlainText())
         view.results_workspace.inspect_phase('android')
-        nav.setCurrentWidget(view.test_results)
+        nav.setCurrentWidget(view.output)
         view.results_workspace.flow.open_group('deliver.firebase')
-        self.assertIs(nav.currentWidget(), view.test_results)
+        self.assertIs(nav.currentWidget(), view.output)
         self.assertIn('Firebase', view.results_workspace.scope_label.text())
         self.assertEqual(set(view.scoped_facts()), {'firebase'})
-        nav.selector.setCurrentIndex(nav.selector.findData(view.output))
-        nav.setCurrentWidget(view.results_workspace.details_scroll)
-        view.show_results_tab()
-        self.assertIs(nav.currentWidget(), view.output)
+        self.assertEqual(labels(nav.selector), ['Summary', 'Logs', 'Deliveries'])
 
     def test_captured_summary_visible_and_live_refresh_preserves_manual_panes(self):
         panel = ManagerPanel(self.project()); plan = integrated(self.root)
@@ -157,6 +170,25 @@ class BalancedWorkspaceTests(unittest.TestCase):
         self.assertIn('No captured output', view.log.placeholderText())
         view.append('test', 'First real log line', selected='test', keys={'test'})
         self.assertEqual(view.log.toPlainText(), 'First real log line')
+
+    def test_terminal_logs_distinguish_missing_empty_unreadable_and_truncated(self):
+        from build_manager.diagnostics import EvidenceRead
+        view = RunOutputView()
+        for status, text, notice in (
+                ('missing', '', 'log file is missing'),
+                ('empty', '', 'log is empty'),
+                ('unreadable', '', 'log could not be read'),
+                ('truncated', 'First complete line', 'cause may appear later')):
+            with self.subTest(status=status):
+                from unittest.mock import Mock
+                reader = Mock(return_value=EvidenceRead(text, status, status == 'truncated'))
+                for _ in range(2):
+                    view.show_scope(selected='test', keys={'test'}, reader=reader, reference='test.log', terminal=True)
+                reader.assert_called_once_with('test')
+                self.assertEqual(view.log.toPlainText(), text)
+                self.assertIn(notice, view.notice.text())
+        view.show_scope(selected='unrecorded', keys={'unrecorded'}, terminal=True)
+        self.assertIn('No log was recorded', view.notice.text())
 
     def test_recipient_actions_and_release_notes_adapt_to_enlarged_text(self):
         from types import SimpleNamespace

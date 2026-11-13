@@ -89,6 +89,41 @@ class RunWorkspaceTests(unittest.TestCase):
         first.set_busy(False)
         self.assertTrue(window.projects.isEnabled())
 
+    def test_saved_failure_starts_on_summary_and_return_preserves_current_draft(self):
+        window, first = self.window, self.panel
+        window.show()
+        self.pump()
+        plan = integrated(self.root)
+        directory = self.root / 'earlier-failure'
+        directory.mkdir()
+        plan.save(directory / 'plan.json')
+        result = directory / 'result.json'
+        result.write_text(json.dumps(dict(schema=1, status='failed', plan_identity=plan.identity,
+            phases=[dict(id=plan.phases[0].id, status='failed', error='Earlier fixture gate failed.')])))
+        item = QTreeWidgetItem(['Earlier failure'])
+        item.setData(0, Qt.ItemDataRole.UserRole, str(result))
+        first.history.addTopLevelItem(item)
+        first.revision.setText('keep-current-draft')
+        first.open_history(item)
+        saved = window.panel
+        deadline = time.monotonic() + 5
+        while saved.retained_job is not None:
+            self.app.processEvents()
+            time.sleep(.002)
+            self.assertLess(time.monotonic(), deadline)
+        self.assertIs(saved.run_view.tabs.currentWidget(), saved.run_view.summary_page)
+        self.assertIn('Earlier fixture gate failed', saved.run_view.outcome_view.message.text())
+        self.assertEqual(saved.active_diagnostic_context['preset'], 'Not recorded')
+        saved.run_view.show_logs(plan.phases[0].id)
+        saved.current_run.click()
+        self.assertIs(window.panel, first)
+        self.assertEqual(first.revision.text(), 'keep-current-draft')
+        self.assertIsNone(first.result)
+        first.open_history(item)
+        self.pump()
+        self.assertIs(window.panel, saved)
+        self.assertIs(saved.run_view.tabs.currentWidget(), saved.run_view.output)
+
     def test_closing_active_detached_run_restores_main_window_actions(self):
         window, first = self.window, self.panel
         workspace = window.run_workspace

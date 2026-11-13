@@ -141,10 +141,10 @@ with TemporaryDirectory() as folder:
             self.assertLess(time.monotonic(), deadline)
             time.sleep(.01)
         self.assertFalse(panel.result.parent.exists())
-        self.assertIn('RuntimeError: startup fixture', panel.run_view.summary.text())
+        self.assertIn('RuntimeError: startup fixture', panel.run_view.outcome_view.message.text())
         self.assertIn('Traceback', panel.preview.toPlainText())
         self.assertNotIn('private-token-value', panel.preview.toPlainText())
-        self.assertNotIn('private-token-value', panel.run_view.summary.text())
+        self.assertNotIn('private-token-value', panel.run_view.outcome_view.message.text())
         self.assertTrue(all(fact['status'] == 'queued' for fact in panel.run_view.facts.values()))
 
     def test_finished_drains_pending_stderr_before_reporting_missing_result(self):
@@ -154,7 +154,7 @@ with TemporaryDirectory() as folder:
         with patch.object(panel.process, 'readAllStandardError',
                           return_value=b'ModuleNotFoundError: synthetic missing dependency\n'):
             panel.finished(1)
-        self.assertIn('ModuleNotFoundError: synthetic missing dependency', panel.run_view.summary.text())
+        self.assertIn('ModuleNotFoundError: synthetic missing dependency', panel.run_view.outcome_view.message.text())
 
     def test_new_launch_clears_previous_startup_stderr(self):
         panel = ManagerPanel(OtherProject(self.root))
@@ -245,7 +245,9 @@ with TemporaryDirectory() as folder:
         project=OtherProject(self.root)
         original=project.make_plan
         release = Event()
+        entered = Event()
         def slow(*args,**kwargs):
+            entered.set()
             if not release.wait(5):
                 raise RuntimeError('Test did not release the planning worker.')
             return original(*args,**kwargs)
@@ -256,6 +258,11 @@ with TemporaryDirectory() as folder:
         try:
             panel.request_plan_preparation()
             self.assertTrue(panel.preparing)
+            admission_deadline = time.monotonic() + 3
+            while not entered.is_set():
+                self.app.processEvents()
+                self.assertLess(time.monotonic(), admission_deadline)
+                time.sleep(.005)
             # Programmatic changes cannot install a plan for the previous selection.
             panel.revision.setText('different revision')
             deadline=time.monotonic()+3
@@ -272,7 +279,7 @@ with TemporaryDirectory() as folder:
             self.assertGreater(len(ticks),3)
             self.assertIsNone(panel.plan)
             self.assertFalse(panel.start.isEnabled())
-            self.assertIn('Selection changed',panel.status.text())
+            self.assertIn('Choices or settings changed',panel.status.text())
         finally:
             release.set()
             timer.stop()

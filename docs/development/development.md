@@ -204,8 +204,13 @@ phase, captured facts and state/reason values, and preserves text selection/scro
 for unchanged detail identity. `run_output_ui.RunOutputView` owns bounded redacted
 output and receives the selected phase, allowed phase keys and retained-log reader.
 These rendering views receive explicit inputs from their coordinator. Retained log
-read errors remain empty-output results, and current selection determines the
-scope after navigation. The dormant nested workflow browser remains disconnected.
+reads distinguish missing, empty, unreadable and truncated evidence. Current
+selection determines scope after navigation. Failure-first Summary selects the
+initial destination once; later updates preserve reading. The dormant nested
+workflow browser remains disconnected.
+
+[Failure diagnostics](failure-diagnostics.md) defines the sharing allowlist,
+bounded previews, local clipboard boundary and separate manager crash records.
 
 See [adapter boundaries and consumer acceptance](adapters.md#boundaries-when-adding-another-project)
 for generic command/source owners and the explicit cross-consumer test plan.

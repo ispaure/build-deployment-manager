@@ -10,7 +10,7 @@ class RunInspectorView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.selection_heading = QLabel('Whole workflow')
         self.selection_heading.setStyleSheet('font-weight: 600; font-size: 14pt;')
-        self.selection_info = QLabel('Select a workflow card to inspect its progress, tests, timing and output.')
+        self.selection_info = QLabel('Select a workflow card to inspect its results.')
         self.next_action = QLabel()
         for control in (self.selection_heading, self.selection_info, self.next_action):
             control.setTextFormat(Qt.TextFormat.PlainText)
@@ -54,17 +54,17 @@ class RunInspectorView(QWidget):
         elif state == 'retrying':
             self.next_action.setText('Waiting to reconnect automatically. Other work continues; completed tests and prepared builds are retained. Stop cancels the wait.')
         elif state == 'running':
-            self.next_action.setText('This step is running. Reports appear after capture; Output shows its current messages.')
+            self.next_action.setText('This step is running. Logs shows its current messages.')
         elif state == 'passed':
-            self.next_action.setText('This step passed. Results and timing below belong to this card. Other branches may still be running.')
+            self.next_action.setText('This step passed. Other branches may still be running.')
         elif state in {'failed', 'error', 'timeout'}:
-            self.next_action.setText('This step failed. Inspect Tests for failures or Details and Output for the reason.')
+            self.next_action.setText('This step failed. View problems to inspect the recorded evidence.')
         elif state == 'awaiting_review':
             self.next_action.setText('This step needs your approval. Use Review and continue below the workflow to inspect the exact action before it starts.')
         elif state == 'unknown':
             self.next_action.setText('This step has an unknown outcome. Check its provider status before retrying; it will not repeat automatically.')
         else:
-            self.next_action.setText(reason or 'This step has not produced a report. Inspect Details for its current state.')
+            self.next_action.setText(reason or 'This step has not produced a report.')
 
     def set_detail_text(self, text, key):
         if self.detail.toPlainText() != text:

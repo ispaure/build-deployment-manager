@@ -138,6 +138,9 @@ class ScopedRunTests(unittest.TestCase):
         self.view.update_phase(dict(id='android', status='skipped', seconds=0))
         self.assertIn('Not started', self.view.detail.toPlainText())
         self.assertNotIn('0.00s', self.view.flow.canvas.cards['android'][1].text())
+        task = self.view.results_workspace.rows['android']
+        self.assertEqual(task.text(2), '—')
+        self.assertEqual(task.toolTip(2), 'Not started')
 
     def test_external_prerequisites_navigate_to_their_own_card(self):
         self.grouped.open_group('deliver.firebase')
@@ -167,9 +170,12 @@ class ScopedRunTests(unittest.TestCase):
         self.assertIn('a'*64, self.view.detail.toPlainText())
 
     def test_startup_error_opens_run_evidence_without_faking_a_step_failure(self):
+        self.view.inspect_summary_phase('android')
         self.view.unverified('Runner could not import its dependencies')
-        self.view.show_problems()
         self.assertEqual(self.grouped.pages.currentIndex(), 0)
+        self.assertIs(self.view.tabs.currentWidget(), self.view.summary_page)
+        self.assertFalse(self.view.selected)
+        self.assertEqual(self.view.outcome_view.heading.text(), 'Run evidence incomplete')
         self.assertIn('Runner could not import', self.view.detail.toPlainText())
         self.assertTrue(all(row['status'] == 'queued' for row in self.view.facts.values()))
 
@@ -198,9 +204,11 @@ class ScopedRunTests(unittest.TestCase):
                   dict(id='android', status='failed', seconds=2, tests=[case('broken', 'failed')])]
         for _ in range(2):
             self.view.reset(self.plan, report)
+            self.view.inspect_summary_phase('firebase')
             self.view.complete(dict(status='failed', seconds=3))
-            self.view.show_problems()
             self.assertEqual(self.view.selected, 'android')
+            self.assertIs(self.view.tabs.currentWidget(), self.view.summary_page)
+            self.view.outcome_view.failed_case.click()
             self.assertEqual(self.view.tests.currentItem().text(0), 'broken')
             self.assertIn('Expected success', self.view.test_detail.toPlainText())
             self.assertIn('android', self.view.results_workspace.rows)
@@ -211,10 +219,68 @@ class ScopedRunTests(unittest.TestCase):
         self.assertTrue(self.view.flow.isHidden())
         self.assertIn('No executable source subtasks', self.view.detail.toPlainText())
 
+    def test_preflight_prefers_first_captured_error_and_routes_to_its_logs(self):
+        error = 'Error: required synthetic tool was not found'
+        log = 'Checking workspace\n' + error + '\nChecked metadata'
+        self.view.phase_log_reader = lambda key: log
+        self.view.update_phase(dict(id='env', status='failed', exit_code=2, log='env.log',
+                                    summary='Checked metadata'))
+        self.view.update_phase(dict(id='android', status='skipped', reason='dependency did not pass'))
+        self.view.inspect_summary_phase('android')
+        self.assertIn('Check environment', self.view.outcome_view.message.text())
+        self.view.outcome_view.blocker.click()
+        self.assertEqual(self.view.selected, 'env')
+        self.view.complete(dict(status='failed', seconds=3))
+        self.assertIn(error, self.view.outcome_view.message.text())
+        self.assertIn('From captured logs', self.view.outcome_view.message.text())
+        self.view.outcome_view.logs.click()
+        self.assertEqual(self.view.selected, 'env')
+        self.assertIs(self.view.tabs.currentWidget(), self.view.output)
+        self.assertEqual(self.view.log.toPlainText(), log)
+
+    def test_missing_declared_junit_report_is_an_available_tests_destination(self):
+        env = replace(self.plan.phases[0], artifact_types={'result.xml': 'junit'}, artifacts=('result.xml',))
+        self.view.reset(replace(self.plan, phases=(env, *self.plan.phases[1:])))
+        self.view.update_phase(dict(id='env', status='failed', error='JUnit report could not be collected'))
+        self.view.complete(dict(status='failed'))
+        self.view.tabs.setCurrentWidget(self.view.test_results)
+        self.assertIs(self.view.tabs.currentWidget(), self.view.test_results)
+        self.assertIn('No cases are available', self.view.test_summary.text())
+        self.assertTrue(self.view.test_results.timing_button.isHidden())
+
+    def test_explicit_logs_open_rechecks_retained_file_after_cleanup(self):
+        log = self.root / 'env.log'
+        log.write_text('First retained log')
+        self.view.phase_log_reader = lambda key: log.read_text()
+        self.view.update_phase(dict(id='env', status='failed', log=log.name))
+        self.view.complete(dict(status='failed'))
+        self.view.show_logs('env')
+        self.assertEqual(self.view.log.toPlainText(), 'First retained log')
+        log.unlink()
+        self.view.tick()
+        self.assertEqual(self.view.log.toPlainText(), 'First retained log')
+        self.view.show_summary()
+        self.view.outcome_view.logs.click()
+        self.assertEqual(self.view.log.toPlainText(), '')
+        self.assertIn('log file is missing', self.view.log_notice.text())
+
     def test_timer_before_first_plan_is_harmless(self):
         view = RunView()
         self.addCleanup(view.close)
         view.tick()
+
+    def test_controller_error_without_plan_has_summary_and_runner_logs(self):
+        view = RunView()
+        self.addCleanup(view.close)
+        view.unverified('The operation process could not start.')
+        view.append_output(None, 'Synthetic controller stderr')
+        self.assertEqual(view.outcome_view.heading.text(), 'Run evidence incomplete')
+        self.assertIn('could not start', view.outcome_view.message.text())
+        self.assertFalse(view.outcome_view.copy.isHidden())
+        view.outcome_view.logs.click()
+        self.assertIs(view.tabs.currentWidget(), view.output)
+        self.assertIn('controller stderr', view.log.toPlainText())
+        self.assertFalse(view.facts)
 
 
 if __name__ == '__main__':

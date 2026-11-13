@@ -127,6 +127,9 @@ See [execution and review](../user/workflows.md#execution-and-review).
 | `configuration_source_ui.py` | Source widgets and revision synchronization; emits selection changes without project policy |
 | `configuration_delivery_ui.py` | Descriptor-driven destination controls/forms; no preparation or project-tool calls |
 | `run_summary_ui.py` | Run summary rendering from explicit plan, facts and outcome |
+| `diagnostics.py`, `redaction.py` | Read-only diagnosis and allowlisted bounded sharing text |
+| `diagnostics_ui.py` | Frozen asynchronous preview and explicitly activated local clipboard write |
+| `manager_diagnostics.py` | Private bounded GUI error/ended-session records, separate from run state |
 | `run_test_results_ui.py` | Scoped test/timing rendering, filters, totals, selection and render-cache reset |
 | `presets_ui.py` | One workspace's saved-preset picker, actions and refresh lifecycle |
 | `run_session.py` | Qt process lifecycle, cancellation marker and process output delivery |

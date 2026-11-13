@@ -238,7 +238,7 @@ availability. Preparing a suggestion does not create or reserve a remote tag.
 Live and retained runs keep the main workflow cards visible. Select a card to
 filter the persistent task list and inspector beside it, then select a step for
 evidence. Card selection does not open a nested dependency-card browser.
-The inspector's Files and deliveries tab lists relevant destination outcomes and
+The inspector's Artifacts or Deliveries view lists relevant destination outcomes and
 retained output paths. A successful run preserves your current view; partial
 delivery and unknown outcomes remain separate.
 Prepared input files from prerequisite steps are included with the delivery
@@ -317,24 +317,26 @@ keep their full paths in tooltips.
 When evidence is present, failed task rows carry an error icon. Review exposes
 View error details; during a run the global attention summary and footer action
 lead to the cause without repeating the same action above the map.
-Its Error details panel appears automatically, with the error headline, full
-traceback, exit code, failed test messages and captured step output. Successful
+Progress opens a newly failed run on Summary, with a readable failure and direct
+actions for its failing test, logs or prerequisite. Successful
 and unstarted steps have no empty error box. View blocking step follows a blocked
 step back to the recorded failure. Changing unrelated facts preserves selected
 text and scroll position in the details. A plan-preparation failure exposes Error
-details with the full redacted traceback beside the retained choices.
+details and Copy diagnostics with the redacted traceback beside the retained choices.
 
 The right inspector has a single Evidence selector and a visible scope label.
 Details presents labelled task facts, prerequisites and available error evidence.
 Technical · Command shows the exact selected command, working directory and
 references. Technical · Summary, Dependencies and Data inspect the complete
-reviewed plan. Progress adds Run summary, Tests, Timing, Output and Files and
-deliveries to the same selector. Selecting a different card or task preserves
+reviewed plan. Progress uses Summary, applicable Tests, Logs, and Artifacts or
+Deliveries. Summary's **Technical evidence** disclosure keeps the command, captured
+plan, dependencies, step record, run report and any storage-maintenance record.
+Timing is inside Tests when durations exist. Selecting a different card or task preserves
 the chosen evidence view where applicable.
 
 The task/test tree and inspector occupy independently resizable vertical panes,
 with no outer scrolling sidebar. A short task selection gives more space to
-evidence; manual pane sizes survive live updates and Start. Output refreshes
+evidence; manual pane sizes survive live updates and Start. Log refreshes
 preserve selected text and reading position when the scope is unchanged.
 Selecting a task or evidence view starts no commands.
 
@@ -410,9 +412,9 @@ updating the manager and project adapter to use the new scheduling policy.
 The main workflow cards retain the captured Source, platform, preparation and
 destination groups during execution and while viewing retained runs. Selecting a
 card filters the persistent task list without navigating into another map.
-Select a task for Details, Command and Plan, just as in Review. The additional
-Results tab contains reported test totals, individual Tests, Timing, Output and
-relevant Files and deliveries. The run heading shows finished steps and current
+Select a task for Summary and its Technical evidence. Tests offers reported cases
+and optional timing; Logs shows captured output; Artifacts or Deliveries appears
+when relevant. The run heading shows finished steps and current
 states; each card updates with its measured progress.
 
 Shared preparation stays in the chosen package cards, with shared task references
@@ -452,8 +454,8 @@ the executor later records skipped steps. Muted cards remain selectable. Cleanup
 steps declared to run after failure remain eligible, and unrelated branches stay
 independent.
 
-Summary shows reported test counts and guidance for the next action. Timing
-lists measured tests slowest first, with total, average and median durations.
+Summary shows the first useful failure detail and guidance for the next action.
+Within Tests, timing lists measured tests slowest first, with total, average and median durations.
 Missing durations are excluded from statistics; summed test time differs from
 active run time because parallel work can overlap.
 
@@ -462,7 +464,7 @@ Running cards and their inspector share the same elapsed clock; completed steps
 retain measured durations. Never-started steps show Not started rather than a
 synthetic zero duration. Main cards label summed durations as Total step time
 (may overlap); this is distinct from the run's active time and individual test
-time. Select a step's Details for
+time. Select a step's Summary and Technical evidence for
 dependency information, errors, log filename and artifact checksums. Progress
 counts finished steps, including failures and skips; it is not a success percentage.
 The workflow outcome remains explicit.
@@ -475,9 +477,15 @@ Search case/suite/class names and messages, or filter by Problems, Passed or
 Skipped. Select a case to read its failure/skip detail and measured duration.
 Adapters without individual reports still show complete phase status and logs.
 Cases appear after report capture at phase completion; Live output streams during
-execution. Output is scoped to the selected step or all steps in the open card;
+execution. Logs is scoped to the selected step or all steps in the open card;
 unassigned runner messages appear when viewing all steps in that card. Saved runs can preview each step’s retained log
 within its own result directory. Console text is never treated as proof that a case passed.
+
+**Copy diagnostics…** opens a bounded, redacted preview for the visible failure
+or selected failed test. Review it, optionally omit the excerpt, then choose
+**Copy** and wait for **Copied** feedback. The manager sends nothing. See
+[diagnosis and recovery](workflows.md#diagnose-a-failure-and-copy-details) for missing
+logs, planning/controller errors and next-launch manager reports.
 
 Cancel operation requests cancellation and owned cleanup. Closing the application
 during active work offers the same cancellation path. Open results and logs opens

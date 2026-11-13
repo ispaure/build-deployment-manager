@@ -59,6 +59,10 @@ class ResultsOverviewTests(unittest.TestCase):
         self.view.update_phase(dict(id='firebase', status='passed'))
         self.view.update_phase(dict(id='testflight', status='unknown'))
         self.view.complete(dict(status='unknown'))
+        self.assertEqual(self.view.selected, 'testflight')
+        self.assertIn('1 delivered', self.view.outcome_view.deliveries.text())
+        self.assertIn('1 unknown outcome', self.view.outcome_view.deliveries.text())
+        self.assertIn('provider', self.view.outcome_view.guidance.text())
         first, second = [self.view.delivered.topLevelItem(i) for i in range(2)]
         self.assertEqual(first.text(1), 'Delivered')
         self.assertFalse(first.icon(1).isNull())
@@ -77,12 +81,17 @@ class ResultsOverviewTests(unittest.TestCase):
         self.assertEqual(self.view.selected, 'android')
 
     def test_prepared_files_keep_path_and_full_identity_in_evidence(self):
+        retained = Path(self.plan.workspace).parent
+        self.view.evidence_root = retained
+        path = str(retained / 'App.zip')
         self.view.update_phase(dict(id='prepare', status='passed', artifacts=[dict(
-            path='/retained/App.zip', original_path='/workspace/ReleaseApp.zip', sha256='a'*64)]))
+            path=path, original_path='/workspace/ReleaseApp.zip', sha256='a'*64)]))
         item = self.view.delivered.topLevelItem(2)
         self.assertEqual(item.text(0), 'ReleaseApp.zip')
-        self.assertEqual(item.text(2), '/retained/App.zip')
+        self.assertEqual(item.text(1), 'File missing · record retained')
+        self.assertEqual(item.text(2), path)
         self.view.inspect_delivered(item)
+        self.assertIs(self.view.technical.navigator.currentWidget(), self.view.detail)
         self.assertIn('a'*64, self.view.detail.toPlainText())
 
     def test_live_updates_preserve_expansion_and_exact_selected_file(self):

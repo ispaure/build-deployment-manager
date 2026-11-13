@@ -112,10 +112,49 @@ dialog. Step clocks, declared JUnit cases and failure details remain attached to
 their original run. Active duration accumulates across resume attempts; time spent
 waiting between attempts for human approval is excluded.
 
-If the execution process exits before writing a result report, the run summary
-shows the final startup error from stderr, when available. The Output tab retains
-the traceback with credential redaction. Steps that never started remain queued;
-inspect a fresh plan after correcting the startup problem.
+If the execution process crashes or exits without a verified result, Summary
+identifies incomplete evidence and includes its startup error when available.
+Logs retains captured output. Steps that never started remain queued; an
+interrupted running action can have an unknown outcome. Inspect the original
+run evidence before deciding what to do next.
+
+## Diagnose a failure and copy details
+
+A newly finished failed run, or a failed run opened from Project History, starts
+on **Summary**. It identifies the affected step and shows the reported assertion,
+exception or an error excerpt from its logs. A log excerpt is a clue, not a new
+execution outcome. **View failing test**, **View logs** and **View blocking step**
+open the relevant evidence. A blocked step did not execute; follow its prerequisite
+to find the cause. Completed, blocked and uncertain deliveries stay separate.
+
+Choose **Copy diagnostics…** beside the error, or beside a selected test's details.
+Review the text, optionally turn off **Include log or traceback excerpt**, then
+choose **Copy**. The message confirms that the visible preview was copied. Opening
+or closing the preview does not change the clipboard. Paste it manually where
+you want to share it; the manager sends nothing. A later run update cannot change
+the preview's captured identity or text.
+
+Sharing excludes raw commands, environment/settings dictionaries and destination
+identities, and filters known credentials, protected references and private paths.
+Review the preview: arbitrary unlabeled text cannot be guaranteed secret-free.
+The report marks omitted or unavailable evidence. Saved runs say **Not recorded**
+for a preset name that was never captured. Viewer versions are separate from the
+original recorded engine revisions.
+
+After **Remove bulky files**, structured reports and outcomes can remain while logs
+or screenshots are missing. Logs identifies missing, empty, unreadable and truncated
+evidence. Opening saved evidence or copying a report never regenerates files,
+resumes work or approves an action. **Back to current run** returns to the preserved
+draft or current result.
+
+A preparation failure retains your choices and offers the same preview; no run
+started. After an unexpected manager exit, the next launch can offer **Inspect
+diagnostics…** for a recorded manager error. An unexpected-exit marker without a
+traceback says the cause is unavailable. These reports describe the GUI, not the
+outcome of a separate executor. Inspect run history independently. **Dismiss
+diagnostic** removes only the selected manager report. If diagnostic storage is
+full or unavailable, a notice explains that recording is unavailable and keeps
+existing reports. Run records and holds are unchanged.
 
 Workflow cards show small Windows, Linux, Apple, Android, GitHub and Docker icons
 when their declared platform or execution location is known. A card can show both
@@ -135,8 +174,8 @@ or resizes. Fit keeps the selected orientation.
 During a live or retained run, selecting a workflow card updates the persistent
 side pane. Review plan and Progress & results keep the same card overview;
 selection does not enter a nested card browser. Use the pane's step selection to
-inspect state, waiting reasons, errors and captured context. Tests, Timing, Output
-and Files and deliveries follow the selected scope. View problems selects the
+inspect state, waiting reasons, errors and captured context. Summary, Tests, Logs
+and applicable Artifacts or Deliveries follow the selected scope. View problems selects the
 failing step and its reported problem. See the [guided UI](guided-ui.md) for the
 available evidence controls.
 
@@ -144,7 +183,7 @@ Running cards and details use the same elapsed clock. Completed steps keep their
 measured durations; skipped steps without measured runtime show Not started.
 Main cards show Total step time (may overlap), which differs from active run time
 and reported individual test time. Progress updates preserve graph navigation and
-Details text selection and scroll position.
+evidence text selection and scroll position.
 
 Interrupted harmless work is retryable. A running/failed/timeout external effect
 has an unknown outcome until its provider reconciles the recorded operation.

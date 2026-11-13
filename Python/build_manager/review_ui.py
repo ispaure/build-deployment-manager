@@ -96,8 +96,9 @@ class ReviewPlanView(QWidget):
     _ROW_BATCH_SIZE = 32
     _ROW_SLICE_MS = 6
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, run_mode=False):
         super().__init__(parent)
+        self.run_mode = run_mode
         self.plan, self.phases, self.facts, self.rows = None, {}, {}, {}
         self.selected, self.detail_selection = '', None
         self.log_reader = None
@@ -219,7 +220,8 @@ class ReviewPlanView(QWidget):
         detail_side.setContentsMargins(6, 6, 6, 6)
         detail_side.setSpacing(4)
         self.details_scroll.setWidget(details_body)
-        self.inspector_tabs.addTab(self.details_scroll, 'Details')
+        self.inspector_tabs.addTab(self.details_scroll, 'Summary' if run_mode else 'Details')
+        self.run_summary_layout = detail_side if run_mode else None
         detail_side.addWidget(self.case_detail)
         self.context_info = QLabel()
         self.context_info.setWordWrap(True)
@@ -264,8 +266,16 @@ class ReviewPlanView(QWidget):
         detail_side.addStretch()
         self.command = text_view('Exact selected step command and execution settings')
         self.command_section = self.command
-        self.inspector_tabs.addTab(self.command, 'Technical · Command')
-        self.plan_tabs = EvidenceGroup(self.inspector_tabs, prefix='Technical · ')
+        if run_mode:
+            technical = EvidenceNavigator()
+            technical.setAccessibleName('Technical source evidence')
+            technical.addTab(self.command, 'Step command')
+            self.technical_section = Disclosure('Technical evidence', technical)
+            detail_side.insertWidget(detail_side.count() - 1, self.technical_section)
+        else:
+            technical = self.inspector_tabs
+            technical.addTab(self.command, 'Technical · Command')
+        self.plan_tabs = EvidenceGroup(technical, prefix='' if run_mode else 'Technical · ')
         self.plan_tabs.setAccessibleName('Complete plan summary, dependencies and data')
         self.overview = text_view('Readable complete plan', deferred=True)
         self.plan_data = text_view('Complete redacted plan data', deferred=True)
@@ -273,10 +283,15 @@ class ReviewPlanView(QWidget):
         self.board.setHeaderLabels(['Planned work', 'Starts after', 'What happens'])
         self.board.setMinimumHeight(140)
         self.board.setAccessibleName('Every declared dependency')
-        for label, widget in [('Summary', self.overview), ('Dependencies', self.board), ('Data', self.plan_data)]:
+        for label, widget in [('Plan overview' if run_mode else 'Summary', self.overview),
+                              ('Dependencies', self.board), ('Plan data' if run_mode else 'Data', self.plan_data)]:
             self.plan_tabs.addTab(widget, label)
-        self.technical_section = self.plan_tabs
-        self.inspector_tabs.currentChanged.connect(self.materialize_evidence)
+        if run_mode:
+            technical.setMinimumHeight(215)
+            self.technical_section.toggle.toggled.connect(self.materialize_evidence)
+        else:
+            self.technical_section = self.plan_tabs
+        technical.currentChanged.connect(self.materialize_evidence)
         self.splitter.addWidget(self.inspector_scroll)
         self.splitter.setSizes([450, 550])
         self.splitter.setStretchFactor(0, 45)
@@ -337,7 +352,9 @@ class ReviewPlanView(QWidget):
         super().closeEvent(event)
 
     def materialize_evidence(self, _):
-        page = self.inspector_tabs.currentWidget()
+        if self.run_mode and not self.technical_section.toggle.isChecked():
+            return
+        page = self.plan_tabs.navigator.currentWidget()
         if page in (self.overview, self.plan_data):
             page.materialize()
 
@@ -379,6 +396,9 @@ class ReviewPlanView(QWidget):
         self.source_details.toggle.setChecked(False)
         self.inspector_tabs.setCurrentWidget(self.details_scroll)
         self.plan_tabs.last = 0
+        if self.run_mode:
+            self.technical_section.toggle.setChecked(False)
+            self.plan_tabs.setCurrentIndex(0)
         self.graph.reset(self.plan, preview=preview)
         # Reserve the same status space before and after Start.
         self.flow.reset(self.plan, fields, preview=preview, reserve_activity=True, overview=data.grouped)
@@ -620,9 +640,12 @@ class ReviewPlanView(QWidget):
         row.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
             if self.is_problem(key) else self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         update_test_children(row, key, fact, self.phases[key], force=force_tests)
-        time_share(self.tasks, row, fact.get('reuse', {}).get('original_seconds') if fact.get('reused') else fact.get('seconds'),
-                   group_seconds, reused=fact.get('reused', False))
-        if fact.get('seconds') is None and not fact.get('reused'):
+        reused = fact.get('reused', False)
+        seconds = fact.get('reuse', {}).get('original_seconds') if reused else fact.get('seconds')
+        if self.run_mode and not reused and elapsed == 'Not started':
+            seconds = None
+        time_share(self.tasks, row, seconds, group_seconds, reused=reused)
+        if seconds is None and not reused:
             row.setToolTip(2, elapsed)
         cases = fact.get('tests') or fact.get('live_tests', ())
         if cases:
@@ -691,11 +714,12 @@ class ReviewPlanView(QWidget):
                 widget.deleteLater()
         for label in self.fact_values:
             self.set_fact(label, '')
-        self.inspector_tabs.setTabEnabled(self.inspector_tabs.indexOf(self.command), bool(key))
+        technical = self.plan_tabs.navigator
+        technical.setTabEnabled(technical.indexOf(self.command), bool(key))
         self.fact_panel.setVisible(bool(key))
         self.blocking_key = blocking_prerequisite(self.plan, self.facts, key) if self.facts and key else ''
-        self.blocker.setVisible(bool(self.blocking_key))
-        problem = bool(key and self.is_problem(key))
+        self.blocker.setVisible(bool(self.blocking_key) and not self.run_mode)
+        problem = bool(key and self.is_problem(key) and not self.run_mode)
         self.error_panel.setVisible(problem)
         self.size_task_list(problem)
         self.error_summary.clear()
@@ -757,7 +781,10 @@ class ReviewPlanView(QWidget):
         self.set_fact('Purpose', description)
         self.set_fact('Runs on', self.execution_location(key))
         elapsed = format_step_time(fact, state)
-        self.set_fact('Elapsed', elapsed if elapsed not in {'', 'Not started'} else '')
+        if self.run_mode and fact.get('reused'):
+            previous = fact.get('reuse', {}).get('original_seconds')
+            elapsed = 'Reused from a previous run' + (f' · {format_step_time(dict(seconds=previous), state)} originally' if previous is not None else '')
+        self.set_fact('Elapsed', elapsed if self.run_mode or elapsed != 'Not started' else '')
         if fact.get('current_test'):
             case = fact['current_test']
             self.set_fact('Running test', '.'.join(filter(None, (case.get('classname'), case['name']))))
