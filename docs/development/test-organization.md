@@ -84,6 +84,20 @@ when skipped. The manager does not infer required case policy from report labels
 Declare an explicit release acceptance phase that checks the project's expected
 suite/case inventory, native host identity and allowed skip policy.
 
+Declare a runner-owned timing sidecar alongside JUnit with its exact output path
+in `artifacts` and type `json` in `artifact_types`. Use a fresh path per execution.
+The Manager retains and hashes the original bytes without interpreting the
+project's timing schema. A failed test retains newly written JSON sidecars,
+including when its JUnit is missing or malformed. The runner must treat timing
+data as private evidence and exclude credentials. JSON does not satisfy JUnit
+or case completeness requirements.
+
+Verified local reuse restores both declared artifacts from the authenticated
+receipt, citing the original step and duration in the `reuse` field. A consumer
+can read the current run's retained timing artifact even if the project later
+cleans up its original timing output. Use the original timing data for
+provenance and the current run's `seconds` for execution accounting.
+
 ## Delivery dependencies
 
 One project preset may prepare source → run required suites → build → verify

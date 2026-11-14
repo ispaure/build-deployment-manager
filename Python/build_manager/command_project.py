@@ -59,8 +59,8 @@ def normalize(descriptor):
             relative(row.get('cwd', '.'))
             for path in row.get('artifacts', []):
                 relative(path)
-            if any(v not in ('file', 'junit') for v in row.get('artifact_types', {}).values()):
-                raise ValueError('Command artifact types must be file or junit.')
+            if any(v not in ('file', 'junit', 'json') for v in row.get('artifact_types', {}).values()):
+                raise ValueError('Command artifact types must be file, junit or json.')
             if set(row.get('artifact_types', {})) - set(row.get('artifacts', [])):
                 raise ValueError('Artifact types must name declared artifacts.')
             phases.append(Phase(**dict(row, cwd=row.get('cwd', '.'))))

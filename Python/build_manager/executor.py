@@ -72,6 +72,14 @@ def stop_process(process, *, grace=1):
     process.wait(timeout=5)
 
 
+def report_signature(path):
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size, stat.st_ino, stat.st_ctime_ns
+
+
 class Executor:
     def __init__(self, *, cancelled=None, event=None, event_format='snapshot',
                  resource_directory=None, evidence_directory=None):
@@ -368,16 +376,14 @@ class Executor:
         tail = []
         # Only changed, explicitly declared reports belong to this attempt.
         from .test_results import read_junit
-        live_reports = {}
+        live_reports, json_reports = {}, {}
         for value in phase.artifacts:
-            if phase.artifact_types.get(value) == 'junit':
-                path = Path(value)
-                try:
-                    stat = path.stat()
-                    signature = (stat.st_mtime_ns, stat.st_size)
-                except OSError:
-                    signature = None
-                live_reports[path] = signature
+            path = Path(value)
+            kind = phase.artifact_types.get(value)
+            if kind == 'junit':
+                live_reports[path] = report_signature(path)
+            elif kind == 'json':
+                json_reports[path] = report_signature(path)
         live_cases = {}
         next_report_check = 0
         streaming_tests = False
@@ -440,9 +446,8 @@ class Executor:
             changed = False
             for path, previous in live_reports.items():
                 try:
-                    stat = path.stat()
-                    signature = (stat.st_mtime_ns, stat.st_size)
-                    if signature == previous:
+                    signature = report_signature(path)
+                    if signature is None or signature == previous:
                         continue
                     cases = read_junit(path)
                 except (OSError, ValueError):
@@ -554,20 +559,28 @@ class Executor:
                 for index, value in enumerate(phase.artifacts):
                     source = Path(value)
                     if not source.is_file():
-                        if row['status'] != 'passed':
-                            continue
-                        raise RuntimeError('Expected prepared artifact/report is missing: ' + source.name)
-                    # Failed commands retain test reports, not potentially incomplete
-                    # deployment artifacts that could be mistaken for prepared output.
+                        if row['status'] == 'passed':
+                            row.update(status='failed', error=redact('Expected prepared artifact/report is missing: ' + source.name))
+                        continue
                     kind = phase.artifact_types.get(value, 'file')
-                    if row['status'] != 'passed' and kind != 'junit':
+                    if kind == 'json' and report_signature(source) == json_reports[source]:
+                        # Declared JSON sidecars can contain failure timing. A
+                        # stale file is not evidence from this attempt.
+                        if row['status'] == 'passed':
+                            row.update(status='failed', error=redact('Expected a fresh JSON report: ' + source.name))
+                        continue
+                    if row['status'] != 'passed' and kind not in ('junit', 'json'):
                         continue
                     destination = directory / f'{phase.id}-{index}{source.suffix}'
                     shutil.copyfile(source, destination)
-                    row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=phase.artifact_types.get(value, 'file'),
+                    row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=kind,
                                                    sha256=file_sha256(destination, cancelled=self.cancelled.is_set if not phase.always else lambda: False)))
                     if kind == 'junit':
-                        cases = sanitized_report(read_junit(destination), report_redactor)
+                        try:
+                            cases = sanitized_report(read_junit(destination), report_redactor)
+                        except (OSError, ValueError) as error:
+                            row.update(status='failed', error=redact(str(error)))
+                            continue
                         for case in cases:
                             files = files_by_case.get((case['classname'], case['name']), ())
                             if len(files) == 1:

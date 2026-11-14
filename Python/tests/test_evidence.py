@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from build_manager import Phase
+from build_manager import Executor, Phase, Plan
 from build_manager.evidence_cache import EvidenceCache
 
 
@@ -42,6 +42,34 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(row['reuse']['original_seconds'], 12)
         self.assertEqual(row['reuse']['step'], 'first')
         self.assertEqual(Path(row['artifacts'][0]['original_path']).read_text(), '<testsuite/>')
+
+    def test_reused_phase_retains_its_own_junit_and_timing_provenance(self):
+        command = ('from pathlib import Path; '
+            'Path("cases.xml").write_text(\'<testsuite><testcase name="case"/></testsuite>\'); '
+            'Path("timing.json").write_text(\'{"elapsed": 0.2}\')')
+        junit, timing = self.root / 'cases.xml', self.root / 'timing.json'
+        phase = Phase('first', (sys.executable, '-c', command), str(self.root), effect='test',
+                      reuse_key='a' * 64, artifacts=(str(junit), str(timing)),
+                      artifact_types={str(junit): 'junit', str(timing): 'json'})
+        plan = Plan('Fixture', 'Test', {}, (phase,), str(self.root / 'workspace'))
+        executor = Executor(evidence_directory=self.cache.directory)
+        old = executor.run(plan, self.root / 'fresh')['phases'][0]
+        expected = [Path(item['path']).read_bytes() for item in old['artifacts']]
+        restored_junit, restored_timing = self.root / 'second.xml', self.root / 'second.json'
+        second = replace(phase, id='second', artifacts=(str(restored_junit), str(restored_timing)),
+                         artifact_types={str(restored_junit): 'junit', str(restored_timing): 'json'})
+        plan = replace(plan, phases=(second,))
+        row = executor.run(plan, self.root / 'reused')['phases'][0]
+        self.assertTrue(row['reused'])
+        self.assertEqual(row['reuse']['original_seconds'], old['seconds'])
+        self.assertEqual(row['reuse']['step'], 'first')
+        self.assertEqual(row['seconds'], 0)
+        self.assertEqual([item['kind'] for item in row['artifacts']], ['junit', 'json'])
+        for item in old['artifacts']:
+            Path(item['path']).unlink()
+        for path in (junit, timing, restored_junit, restored_timing):
+            path.unlink()
+        self.assertEqual([Path(item['path']).read_bytes() for item in row['artifacts']], expected)
 
     def test_changed_inputs_failures_and_cancelled_results_are_never_reused(self):
         self.execute('failed', status='failed')
@@ -79,7 +107,6 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotIn('reused', row)
 
     def test_equivalent_pending_suite_does_not_occupy_independent_worker(self):
-        from build_manager import Executor, Plan
         marker, artifact, count = self.root/'independent', self.root/'report', self.root/'calls'
         code = ('from pathlib import Path;import time;'
             f'Path({str(count)!r}).write_text("executed");'

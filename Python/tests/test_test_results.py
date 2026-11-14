@@ -117,6 +117,35 @@ report.write_text('<testsuite><testcase name="first" time=".1"/><testcase name="
         self.assertEqual(report['status'], 'failed')
         self.assertIn('JUnit XML', report['phases'][0]['error'])
 
+    def test_failed_run_retains_only_fresh_json_sidecars_even_with_bad_junit(self):
+        measured, stale = self.root / 'timing.json', self.root / 'stale.json'
+        output_file = self.root / 'partial.zip'
+        stale.write_text('{"previous": true}')
+        artifact_types = {str(self.path): 'junit', str(measured): 'json', str(stale): 'json'}
+        code = ('from pathlib import Path; Path("report.xml").write_text("<invalid>"); '
+                'Path("timing.json").write_text(\'{"failure": 1}\'); Path("partial.zip").touch(); '
+                'raise SystemExit(8)')
+        phase = Phase('test', (sys.executable, '-c', code), str(self.root),
+                      artifacts=(*artifact_types, str(output_file)), artifact_types=artifact_types)
+        plan = Plan('Fixture', 'Test', {}, (phase,), str(self.root / 'workspace'))
+        row = Executor().run(plan, self.root / 'results')['phases'][0]
+        self.assertEqual(row['status'], 'failed')
+        self.assertIn('JUnit XML', row['error'])
+        self.assertFalse(row.get('tests'))
+        self.assertEqual([artifact['kind'] for artifact in row['artifacts']], ['junit', 'json'])
+        self.assertEqual(Path(row['artifacts'][1]['path']).read_bytes(), measured.read_bytes())
+
+    def test_unchanged_json_report_cannot_certify_a_fresh_pass(self):
+        timing = self.root / 'timing.json'
+        timing.write_text('{"previous": true}')
+        phase = Phase('timing', (sys.executable, '-c', 'pass'), str(self.root),
+                      artifacts=(str(timing),), artifact_types={str(timing): 'json'})
+        plan = Plan('Fixture', 'Test', {}, (phase,), str(self.root / 'workspace'))
+        row = Executor().run(plan, self.root / 'results')['phases'][0]
+        self.assertEqual(row['status'], 'failed')
+        self.assertIn('fresh JSON report', row['error'])
+        self.assertEqual(row['artifacts'], [])
+
     def test_case_values_are_redacted_in_result_and_events(self):
         with patch.dict('os.environ', {'GH_TOKEN': 'synthetic-case-secret'}):
             report = self.execute_report('<testsuite><testcase name="a"><failure message="ENV_SECRET"/></testcase></testsuite>')

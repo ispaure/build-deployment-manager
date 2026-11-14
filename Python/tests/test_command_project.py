@@ -58,6 +58,15 @@ class CommandProjectTests(unittest.TestCase):
         self.assertNotEqual(second.returncode, 0)
         self.assertEqual((self.root / 'build-project.json').read_bytes(), original)
 
+    def test_command_project_can_declare_timing_json(self):
+        path = self.create()
+        data = json.loads(path.read_text())
+        row = data['commands']['operations']['Check'][0]
+        row.update(artifacts=['timing.json'], artifact_types={'timing.json': 'json'})
+        path.write_text(json.dumps(data))
+        phase = self.bridge().make_plan('Check', 'host', 'Local').phases[0]
+        self.assertEqual(phase.artifact_types, {phase.artifacts[0]: 'json'})
+
     def test_invalid_commands_and_conflicting_capabilities_rejected(self):
         path = self.create()
         original = json.loads(path.read_text())
