@@ -20,15 +20,18 @@ from .preparation_ui import PreparePlan, PreparationFailure, ReadRetainedRun
 
 
 class ReadHistory(QRunnable):
-    def __init__(self, directory, results):
+    def __init__(self, directory, results, *, extra_directories=()):
         super().__init__()
         self.directory, self.results = directory, results
+        self.extra_directories = extra_directories
         self.cancelled, self.done = Event(), Event()
 
     def run(self):
         from .history import recent_runs
         try:
-            self.results.put(recent_runs(self.directory, 100, self.cancelled.is_set))
+            options = {'extra_directories': self.extra_directories} if self.extra_directories else {}
+            rows = recent_runs(self.directory, 100, self.cancelled.is_set, **options) if self.directory else []
+            self.results.put(rows)
         finally:
             self.done.set()
 
@@ -1365,7 +1368,10 @@ class ManagerPanel(QWidget):
             return
         self.history_loading = True
         self.history_timer.start()
-        self.history_job = ReadHistory(self.project.results_directory, self.history_results)
+        from .test_storage import history_roots
+        roots = history_roots(self.project)
+        self.history_job = ReadHistory(roots[0] if roots else None, self.history_results,
+                                       extra_directories=roots[1:])
         QThreadPool.globalInstance().start(self.history_job)
 
     def history_loaded(self):

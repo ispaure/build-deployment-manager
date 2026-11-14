@@ -58,18 +58,24 @@ def read_report(path):
     return report
 
 
-def recent_runs(directory, limit=100, cancelled=lambda: False):
-    root = Path(directory)
-    if cancelled() or not root.is_dir() or linked(root):
-        return []
+def recent_runs(directory, limit=100, cancelled=lambda: False, *, extra_directories=()):
     rows = []
+    paths = {}
     # One level only: no snapshot/build/cache traversal and no adapter invocation.
-    try:
-        paths = sorted((path for path in root.glob('*/result.json') if not linked(path.parent) and not linked(path)),
-                       key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
-    except OSError:
-        return []
-    for path in paths:
+    for root in map(Path, (directory, *extra_directories)):
+        if cancelled():
+            return rows
+        if not root.is_dir() or linked(root):
+            continue
+        for path in root.glob('*/result.json'):
+            if cancelled():
+                return rows
+            try:
+                if not linked(path.parent) and not linked(path) and path.is_file():
+                    paths[path] = path.stat().st_mtime_ns
+            except OSError:
+                continue
+    for path in sorted(paths, key=lambda path: (-paths[path], str(path)))[:limit]:
         if cancelled():
             break
         try:

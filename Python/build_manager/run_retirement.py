@@ -22,6 +22,31 @@ def list_held_or_retired_runs(runs_directory):
     return [row for row in rows if row.get('holds') or row.get('retired')]
 
 
+def retire_project_run(project, selection, *, confirmed=False):
+    from .test_storage import history_roots
+    if not confirmed:
+        raise ValueError('Review the workflow and confirm retirement first.')
+    roots = history_roots(project)
+    if not isinstance(selection, (str, Path)):
+        raise ValueError('Choose a saved run name or path.')
+    selection = str(selection)
+    path = Path(selection)
+    if path.is_absolute():
+        if path.name == 'result.json' and path.parent.parent in roots:
+            path = path.parent
+        if path.parent not in roots:
+            raise ValueError('Choose an exact saved run path from project history.')
+    else:
+        if path.name != selection or selection in ('', '.', '..') or '\\' in selection or ':' in selection:
+            raise ValueError('Choose a direct saved run name or an exact path from project history.')
+        matches = [root / selection for root in roots if (root / selection / 'result.json').is_file()
+                   and not any(linked(item) for item in (root / selection, root / selection / 'result.json'))]
+        if len(matches) != 1:
+            raise ValueError('Run name is missing or ambiguous; choose an exact path from project history.')
+        path = matches[0]
+    return retire_run(path.parent, path.name, confirmed=True)
+
+
 def retire_run(runs_directory, run_name, *, confirmed=False):
     """Retain logs, receipts and unknown outcomes; prohibit further continuation.
 

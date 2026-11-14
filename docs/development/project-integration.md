@@ -154,6 +154,21 @@ and Windows tool preparation, retaining their container setup, source recipe,
 manager-pin installation and application test policy. New integrations can use the
 complete session runner without copying Logistics' backend modules.
 
+### Preserve history when changing a result directory
+
+`results` is the checkout-relative destination for new runs. Declare prior
+run directories in the optional `legacy_results` list to include their existing
+records in History and storage review. The Manager leaves saved plans, artifacts
+and hold owner paths at their original locations. Use an absolute path from
+History with `storage --retire-workflow` when multiple roots contain the same run
+name. A unique run name still works.
+
+Changing the descriptor changes its digest. Exact-path review and continuation
+can still use the original plan and artifacts. Automatic adapter storage
+maintenance requires the original descriptor identity and reports a separate
+failure if the current descriptor differs. Refreshing registration preserves
+that check.
+
 ## Validation and compatibility
 
 Run `test_command_project.py`, `test_adapter_sdk.py`, `test_guest_workload.py`, the

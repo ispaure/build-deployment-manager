@@ -24,6 +24,16 @@ def evidence_root(project, value):
     return project / path
 
 
+def history_roots(project):
+    primary = Path(project.results_directory).absolute()
+    root = Path(getattr(project, 'root', primary.parent)).absolute()
+    declared = getattr(project, 'descriptor', {}).get('legacy_results', [])
+    roots = (primary, *(evidence_root(root, value) for value in declared))
+    return tuple(dict.fromkeys(folder for folder in roots if folder != root
+                              and folder.is_relative_to(root) and '..' not in folder.parts
+                              and not any(linked(part) for part in (folder, *folder.parents))))
+
+
 def result_roots(project):
     directory = getattr(project, 'results_directory', None)
     if directory is None:
@@ -32,7 +42,7 @@ def result_roots(project):
     root = Path(getattr(project, 'root', primary.parent)).absolute()
     declared = getattr(project, 'descriptor', {}).get('test_evidence', [])
     extras = [evidence_root(root, value) for value in declared]
-    return {folder: folder in extras for folder in (primary, *extras)
+    return {folder: folder in extras for folder in (*history_roots(project), *extras)
             if folder != root and folder.is_relative_to(root)
             and '..' not in folder.parts
             and not any(linked(part) for part in (folder, *folder.parents))}

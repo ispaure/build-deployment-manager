@@ -128,8 +128,8 @@ class ManagerAPI:
             confirmed=confirmed, expected_attempt=expected_attempt)
 
     def retire_run(self, run_name, *, project=None, confirmed=False):
-        from .run_retirement import retire_run
-        return retire_run(self._project(project).results_directory, run_name, confirmed=confirmed)
+        from .run_retirement import retire_project_run
+        return retire_project_run(self._project(project), run_name, confirmed=confirmed)
 
     def storage_maintenance(self, plan):
         """Invoke only a still-trusted originating adapter's declared policy."""
@@ -170,7 +170,10 @@ class ManagerAPI:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError('History limit must be 1–100.')
         bridge = self._project(project)
-        return dict(directory=str(bridge.results_directory), runs=recent_runs(bridge.results_directory, limit))
+        from .test_storage import history_roots
+        roots = history_roots(bridge)
+        return dict(directory=str(bridge.results_directory),
+                    runs=recent_runs(roots[0], limit, extra_directories=roots[1:]) if roots else [])
 
 
 def plan_info(plan):

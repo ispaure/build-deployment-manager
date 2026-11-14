@@ -43,6 +43,13 @@ def read_project_descriptor(root):
         from .test_storage import evidence_root
         for value in evidence:
             evidence_root(root, value)
+    legacy = data.get('legacy_results', [])
+    if not isinstance(legacy, list) or any(not isinstance(value, str) or not value for value in legacy):
+        raise ValueError('Legacy result folders must be a list of checkout-relative paths.')
+    if legacy:
+        from .test_storage import evidence_root
+        for value in legacy:
+            evidence_root(root, value)
     if 'commands' in data:
         from .command_project import normalize
         if not all(isinstance(data.get(k), str) and data[k] for k in ('project_id', 'name')):

@@ -142,7 +142,7 @@ def parser_for_cli():
     storage.add_argument('--delete', action='append', default=[], metavar='GROUP=NAME',
                          help='Exact group and direct output name from storage inventory; repeat for each output')
     storage.add_argument('--confirm', action='store_true', help='Confirm reviewed generated-output deletion')
-    storage.add_argument('--retire-workflow', metavar='NAME', help='Release one saved workflow’s holds and disable continuation; retain its evidence')
+    storage.add_argument('--retire-workflow', metavar='NAME_OR_PATH', help='Retire a saved workflow by unique name or exact history path; retain its evidence')
     retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
