@@ -149,6 +149,11 @@ errors, failure summaries, failed test samples and paths to the retained report
 and logs. With `--events`, stdout is JSONL: event envelopes followed by the final
 result. Events wrap existing executor events in `event`; child output is an
 `event.type="output"` string, never raw text between JSON records.
+For long test runs, add `--event-format compact` to `--events` on `start`,
+`run` or `resume`. Compact observers receive changed test inventory rows and
+periodic checkpoints. Existing `--events` readers continue receiving snapshots.
+See the [compact event contract](../development/automation-api.md#execution-and-evidence)
+for decoding and reconnect behavior.
 Credential filtering scans the environment once per record, including large test
 inventories; private-key block state remains local to each independent string.
 

@@ -101,6 +101,35 @@ with TemporaryDirectory() as folder:
         self.assertIn('passed', panel.status.text())
         panel.close()
 
+    def test_compact_runner_shows_live_case_in_the_results_model(self):
+        code = '''
+from pathlib import Path
+import time
+from build_manager.test_progress import emit_test_progress
+emit_test_progress('test_finished', name='observed', classname='Fixture',
+                   file='fixture.py', status='passed', seconds=.125)
+deadline = time.monotonic() + 6
+while not Path('continue').exists():
+    assert time.monotonic() < deadline, 'UI did not receive the live case'
+    time.sleep(.01)
+'''
+        panel = ManagerPanel(OtherProject(self.root, code=code))
+        self.addCleanup(panel.close)
+        self.inspect(panel)
+        panel.run_plan()
+        cases = ()
+        deadline = time.monotonic() + 5
+        while not cases:
+            self.app.processEvents()
+            cases = panel.run_view.facts['example'].get('live_tests', ())
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(.01)
+        self.assertEqual(panel.run_view.facts['example']['status'], 'running')
+        self.assertEqual(cases[0]['name'], 'observed')
+        self.assertEqual(cases[0]['seconds'], .125)
+        (self.root / 'continue').touch()
+        self.assertEqual(self.finish(panel)['status'], 'passed')
+
     def test_runner_imports_pinned_dependency_without_pythonpath(self):
         source = Path(__file__).resolve().parents[1]
         code = ('from pathlib import Path; import sys; '

@@ -149,6 +149,11 @@ The Logistics isolated runner and the optional manager `JUnitResult` producer
 emit these events at test start and finish. Standalone runs without the opt-in
 environment variable keep their normal output and dependencies.
 
+The [Manager event transport](automation-api.md#execution-and-evidence) can
+send these inventories as compact frames with resynchronization checkpoints.
+Adapters and runners continue to emit schema-1 stdout markers and declare
+JUnit artifacts through the existing interfaces.
+
 Logistics now declares host contracts/UI, Android native/runtime, iOS native and
 complete tester acceptance. Its existing isolated runner emits measured JUnit
 cases, and reviewed tester workflows require tooling, desktop UI, mobile-host and

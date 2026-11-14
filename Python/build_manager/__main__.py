@@ -5,6 +5,7 @@ from pathlib import Path
 import signal
 from threading import Event, Thread, Lock
 
+from .event_stream import EVENT_FORMATS
 from .executor import Executor
 from .models import Plan
 
@@ -21,6 +22,7 @@ def main():
     parser.add_argument('--approval-identity', action='append', default=[], help='Reviewed STEP=SHA256 identity; rechecked before continuation')
     parser.add_argument('--approve-step', action='append', default=[])
     parser.add_argument('--cancel-file', type=Path, help='Owned cancellation request marker from a local UI')
+    parser.add_argument('--event-format', choices=EVENT_FORMATS, default='snapshot')
     args = parser.parse_args()
     cancelled = Event()
     for name in (signal.SIGINT, signal.SIGTERM):
@@ -59,7 +61,7 @@ def main():
             approvals = [approve(plan, name, previous) for name in args.approve_step]
             if any(item.step in identities and identities[item.step] != item.identity for item in approvals):
                 raise ValueError('Reviewed artifact identity changed; inspect and approve the current preparation.')
-        report = Executor(cancelled=cancelled, event=event).run(
+        report = Executor(cancelled=cancelled, event=event, event_format=args.event_format).run(
             plan, args.output, confirmed=args.confirm, resume=args.resume, approvals=approvals,
             engine_review=args.engine_review_identity, retry_failed=not args.no_retry_failed)
     except (OSError, ValueError, RuntimeError) as error:

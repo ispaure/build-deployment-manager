@@ -1152,6 +1152,8 @@ class ManagerPanel(QWidget):
                 break
             event = self.session.events.take_event()
             processed += 1
+            if event is None:
+                continue
             if event.get('type') == 'output':
                 self.run_view.append_output(event.get('phase'), self.redact(event['text'].rstrip()))
             elif event.get('type') == 'waiting':
@@ -1165,9 +1167,8 @@ class ManagerPanel(QWidget):
                     self.update_phase(dict(id=event['phase'], status='waiting_resource',
                                            reason=self.redact(reason), resource=self.redact(resource)), defer=True)
             elif event.get('type') == 'phase':
-                # A suite can emit several growing case inventories in one
-                # read. Merge before redaction/model work, not merely before
-                # painting the same data repeatedly on the GUI thread.
+                # Merge snapshots reconstructed from this read before
+                # redaction and model updates on the GUI thread.
                 previous_status = self.run_view.state.queue_event(event)
                 if not self.live_update_timer.isActive():
                     self.live_update_timer.start()

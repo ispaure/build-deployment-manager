@@ -267,11 +267,12 @@ def review_run(output, *, cancelled=None):
 
 def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities=None,
              expected_identity=None, cancelled=None, event=None, engine_review=None, retry_failed=True,
-             maintenance=None, approve_steps=(), reconcile=None):
+             maintenance=None, approve_steps=(), reconcile=None, event_format='snapshot'):
     """Run a trusted Plan/path; reviewed identities authorize only matching pending steps.
 
     This call blocks until completion or review. Cancellation is a threading.Event.
-    Event callbacks run on executor threads and must be thread safe. On resume,
+    Event callbacks run on executor threads and must be thread safe. The default
+    event format is the existing snapshot contract. On resume,
     reconcile(step_id, row) runs under the supervisor lock and must return an
     evidenced receipt with status "passed" or "not-performed". Unknown outcomes
     are retained when no callback is supplied; they are never automatically retried.
@@ -310,7 +311,7 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
             if step in identities and identities[step] != permission.identity:
                 raise ValueError('Reviewed artifact identity changed; inspect the current preparation.')
             approvals.append(permission)
-    report = Executor(cancelled=cancelled, event=event).run(
+    report = Executor(cancelled=cancelled, event=event, event_format=event_format).run(
         plan, output, confirmed=confirmed, resume=resume, approvals=approvals, engine_review=engine_review,
         retry_failed=retry_failed, reconcile=reconcile)
     if maintenance is not None:

@@ -48,11 +48,11 @@ class RunSession(QObject):
             raise ValueError('Preserving failed steps requires a retained run.')
         suffix = '.resume-' + uuid4().hex + '.cancel' if resume else '.cancel'
         self.cancel_file = output.with_suffix(suffix)
-        self.buffer = ''
+        self.events = RunEventLineBuffer()
         self.failure = None
         self.stderr = ''
         arguments = ['-m', 'build_manager', str(plan_path), '--output', str(output),
-                     '--cancel-file', str(self.cancel_file)]
+                     '--cancel-file', str(self.cancel_file), '--event-format', 'compact']
         if resume:
             arguments.append('--resume')
         if not retry_failed:

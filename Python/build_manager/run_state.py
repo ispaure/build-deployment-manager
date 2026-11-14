@@ -3,6 +3,8 @@ import json
 import time
 from typing import Any, NotRequired, TypedDict
 
+from .event_stream import ExpandEvents
+
 
 class PhaseFact(TypedDict):
     id: str
@@ -18,6 +20,7 @@ class RunEventLineBuffer:
     """Keep incomplete JSON lines until the next process read."""
     def __init__(self):
         self.buffer = ''
+        self.inventories = ExpandEvents()
 
     def append(self, text):
         self.buffer += text
@@ -25,13 +28,13 @@ class RunEventLineBuffer:
     def has_line(self):
         return '\n' in self.buffer
 
-    def take_event(self) -> dict[str, Any]:
+    def take_event(self) -> dict[str, Any] | None:
         line, self.buffer = self.buffer.split('\n', 1)
         try:
             event = json.loads(line)
         except ValueError:
             event = None
-        return event if isinstance(event, dict) else dict(type='output', text=line)
+        return self.inventories.apply(event) if isinstance(event, dict) else dict(type='output', text=line)
 
 
 class RunState:

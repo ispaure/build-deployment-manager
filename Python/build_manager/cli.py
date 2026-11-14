@@ -11,6 +11,7 @@ from commonUtils.runtime.operations import OperationCancelled
 
 from .api import (API_VERSION, ManagerAPI, plan_info, read_logs, read_status,
                   review_run, run_plan, summarize_run_report)
+from .event_stream import EVENT_FORMATS
 from .models import Plan
 from .redaction import Redactor
 
@@ -175,6 +176,8 @@ def parser_for_cli():
         command.add_argument('--expect-identity', help='Require the reviewed plan SHA256')
         command.add_argument('--confirm', action='store_true', help='Confirm authorized external effects')
         command.add_argument('--events', action='store_true', help='Stream JSONL events before the final result')
+        command.add_argument('--event-format', choices=EVENT_FORMATS, default='snapshot',
+                             help='With --events, choose snapshot events or versioned compact test inventories')
     resume.add_argument('--no-retry-failed', action='store_true', help='Keep failed checks and blocked steps; continue independently ready work only')
     resume.add_argument('--approval-identity', action='append', default=[], help='Reviewed pending STEP=SHA256 from review')
     resume.add_argument('--approve-step', action='append', default=[], metavar='STEP',
@@ -319,6 +322,8 @@ def execute(args, api):
         with cancellation() as cancelled:
             return review_run(args.output, cancelled=cancelled)
     if command in ('run', 'resume', 'start'):
+        if args.event_format != 'snapshot' and not args.events:
+            raise ArgumentError('--event-format compact requires --events.')
         if command == 'start':
             if args.authorize_deliveries and not args.confirm:
                 raise ValueError('Authorizing delivery at start requires --confirm.')
@@ -345,7 +350,8 @@ def execute(args, api):
                               approval_identities=assignments(args.approval_identity) if command == 'resume' else None,
                               approve_steps=args.approve_step if command == 'resume' else (),
                               expected_identity=args.expect_identity, engine_review=args.engine_review_identity if command == 'resume' else None, cancelled=cancelled,
-                              event=event if args.events else None, maintenance=api.storage_maintenance)
+                              event=event if args.events else None, event_format=args.event_format,
+                              maintenance=api.storage_maintenance)
         return summarize_run_report(report, args.output)
     raise ValueError('Unsupported command.')
 

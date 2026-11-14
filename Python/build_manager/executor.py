@@ -14,9 +14,10 @@ import time
 
 from commonUtils.runtime.streams import file_sha256
 from commonUtils.runtime.operations import OperationCancelled
+from .event_stream import CHECKPOINT_SECONDS, event_callback
 from .locking import workspace_lock
 from .redaction import Redactor
-from .run_recording import RunRecorder, timestamp
+from .run_recording import RunRecorder, sanitized_report, timestamp
 from .scheduling import can_consider_phase, defer_for_review, skip_reason, final_status
 
 
@@ -72,9 +73,11 @@ def stop_process(process, *, grace=1):
 
 
 class Executor:
-    def __init__(self, *, cancelled=None, event=None, resource_directory=None, evidence_directory=None):
+    def __init__(self, *, cancelled=None, event=None, event_format='snapshot',
+                 resource_directory=None, evidence_directory=None):
         self.cancelled = cancelled if cancelled is not None else Event()
-        self.event = event or (lambda value: None)
+        self.event = event_callback(event, event_format) or (lambda value: None)
+        self.compact_events = event is not None and event_format == 'compact'
         self.resource_directory = resource_directory
         self.evidence_directory = evidence_directory
 
@@ -341,7 +344,11 @@ class Executor:
         emit = self.event if event is None else event
         row = dict(id=phase.id, required=phase.required, kind=phase.kind,
                    started_at=timestamp(), status='running', log=phase.id + '.log')
-        emit(dict(type='phase', **row))
+        opening = dict(type='phase', **row)
+        if self.compact_events:
+            opening.update(_test_inventory_reset=True, tests=[], live_tests=[], test_files=[],
+                           current_test=None, tests_provisional=True)
+        emit(opening)
         started = time.monotonic()
         from .test_workers import ENV_PLATFORM, ENV_WORKERS, ENV_RESERVED
         environment = {key: value for key, value in os.environ.items()
@@ -351,7 +358,9 @@ class Executor:
         # output otherwise defaults to the Windows code page and loses Unicode.
         environment.setdefault('PYTHONIOENCODING', 'utf-8')
         environment['BUILD_MANAGER_TEST_PROGRESS'] = '1'
-        redact = Redactor(environment.get(name) for name in secret_environment)
+        secrets = [environment.get(name) for name in secret_environment]
+        redact = Redactor(secrets)
+        report_redactor = Redactor(secrets)
         messages = Queue(maxsize=128)
         process = None
         reader = None
@@ -375,6 +384,19 @@ class Executor:
         next_stream_snapshot = 0
         streamed_cases = {}
         file_states = {name: dict(name=name, status='planned') for name in phase.test_files}
+        next_checkpoint = None
+
+        def publish_progress(update, cases, *, files=False):
+            nonlocal next_checkpoint
+            row['live_tests'] = cases
+            row['tests_provisional'] = True
+            if files:
+                row['test_files'] = list(file_states.values())
+                update['test_files'] = row['test_files']
+            update['live_tests'] = cases
+            emit(update)
+            if self.compact_events and next_checkpoint is None:
+                next_checkpoint = time.monotonic() + CHECKPOINT_SECONDS
 
         def stream_progress(event):
             nonlocal streaming_tests, next_stream_snapshot
@@ -399,15 +421,16 @@ class Executor:
                 identity = (event['file'], event['classname'], event['name'])
                 streamed_cases[identity] = dict(event, suite=event['file'])
                 row['current_test'] = None
-            row.update(test_files=list(file_states.values()), live_tests=list(streamed_cases.values()), tests_provisional=True)
+            row['tests_provisional'] = True
             # Current-test transitions are immediate, but don't resend the
             # entire growing case inventory twice for every fast testcase.
             update = dict(type='phase', id=phase.id, status=row['status'],
                           current_test=row.get('current_test'), tests_provisional=True)
             if kind.startswith('file_') or time.monotonic() >= next_stream_snapshot:
-                update.update(test_files=row['test_files'], live_tests=row['live_tests'])
                 next_stream_snapshot = time.monotonic() + .25
-            emit(update)
+                publish_progress(update, list(streamed_cases.values()), files=True)
+            else:
+                emit(update)
 
         def report_progress():
             nonlocal next_report_check
@@ -427,15 +450,11 @@ class Executor:
                     # remains strict and decides the execution outcome.
                     continue
                 live_reports[path] = signature
-                for case in cases:
-                    for key in ('name', 'classname', 'suite', 'message'):
-                        case[key] = redact(case[key])
-                live_cases[path] = cases
+                live_cases[path] = sanitized_report(cases, report_redactor)
                 changed = True
             if changed:
-                row.update(live_tests=[case for cases in live_cases.values() for case in cases],
-                           tests_provisional=True)
-                emit(dict(type='phase', **row))
+                publish_progress(dict(row, type='phase', tests_provisional=True),
+                                 [case for cases in live_cases.values() for case in cases])
 
         try:
             if launch is not None:
@@ -473,7 +492,6 @@ class Executor:
             # time on Windows (which would produce CRCRLF/blank log lines).
             with (output / row['log']).open('w', encoding='utf-8', newline='') as stream:
                 while not finished or process.poll() is None:
-                    report_progress()
                     if not stopped and self.cancelled.is_set() and not phase.always:
                         row['status'] = 'cancelled'
                         stop_process(process, grace=phase.stop_grace)
@@ -482,6 +500,16 @@ class Executor:
                         row['status'] = 'timeout'
                         stop_process(process, grace=phase.stop_grace)
                         stopped = True
+                    report_progress()
+                    if (next_checkpoint is not None and row['status'] == 'running'
+                            and time.monotonic() >= next_checkpoint):
+                        next_checkpoint = None
+                        cases = list(streamed_cases.values()) if streaming_tests else row['live_tests']
+                        checkpoint = dict(type='phase', id=phase.id, status='running', log=opening['log'],
+                                          started_at=opening['started_at'], kind=phase.kind, required=phase.required,
+                                          tests_provisional=True, current_test=row.get('current_test'),
+                                          _test_inventory_checkpoint=True)
+                        publish_progress(checkpoint, cases, files=streaming_tests)
                     if finished:
                         time.sleep(.05)
                         continue
@@ -492,12 +520,15 @@ class Executor:
                     if message is None:
                         finished = True
                         continue
-                    line = redact(message.decode('utf-8', errors='replace'))
+                    line = message.decode('utf-8', errors='replace')
                     from .test_progress import parse_test_progress
+                    # Redact field values after parsing. Filtering JSON text
+                    # can eat its closing quote or miss escaped credentials.
                     progress = parse_test_progress(line)
                     if progress is not None:
-                        stream_progress(progress)
+                        stream_progress(sanitized_report(progress, report_redactor))
                         continue
+                    line = redact(line)
                     stream.write(line)
                     stream.flush()
                     tail = (tail + line.splitlines())[-6:]
@@ -517,6 +548,9 @@ class Executor:
                 row['artifacts'] = []
                 directory = output / 'artifacts'
                 directory.mkdir(exist_ok=True)
+                files_by_case = {}
+                for file, classname, name in streamed_cases:
+                    files_by_case.setdefault((classname, name), set()).add(file)
                 for index, value in enumerate(phase.artifacts):
                     source = Path(value)
                     if not source.is_file():
@@ -533,15 +567,11 @@ class Executor:
                     row['artifacts'].append(dict(path=str(destination), original_path=str(source.resolve()), kind=phase.artifact_types.get(value, 'file'),
                                                    sha256=file_sha256(destination, cancelled=self.cancelled.is_set if not phase.always else lambda: False)))
                     if kind == 'junit':
-                        from .test_results import read_junit
-                        cases = read_junit(destination)
+                        cases = sanitized_report(read_junit(destination), report_redactor)
                         for case in cases:
-                            case.update({key: Redactor(environment.get(name) for name in secret_environment)(case[key])
-                                         for key in ('name', 'classname', 'suite', 'message')})
-                            files = {info['file'] for info in streamed_cases.values()
-                                     if info['classname'] == case['classname'] and info['name'] == case['name']}
+                            files = files_by_case.get((case['classname'], case['name']), ())
                             if len(files) == 1:
-                                case['file'] = files.pop()
+                                case['file'] = next(iter(files))
                         row.setdefault('tests', []).extend(cases)
                         if any(case['status'] in {'failed', 'error'} for case in cases):
                             row.update(status='failed', error='JUnit report contains failing tests.')
@@ -567,6 +597,8 @@ class Executor:
                 info['status'] = row['status'] if row['status'] != 'passed' else 'reported'
         if streaming_tests:
             row['test_files'] = list(file_states.values())
+            if row.get('tests_provisional'):
+                row['live_tests'] = list(streamed_cases.values())
         row.update(seconds=time.monotonic() - started, finished_at=timestamp(), current_test=None)
         if row['status'] != 'passed':
             row['summary'] = '\n'.join(tail)

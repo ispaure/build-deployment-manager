@@ -40,9 +40,9 @@ class InfrastructureRecoveryTests(unittest.TestCase):
         values.update(options)
         return Phase('native', self.command(self.code), str(self.root), **values)
 
-    def execute(self, phase=None, *, event=None, cancelled=None, resume=False, extra=()):
+    def execute(self, phase=None, *, event=None, event_format='snapshot', cancelled=None, resume=False, extra=()):
         plan = Plan('fixture', 'test', {'revision': 'fixture'}, (phase or self.phase(), *extra), str(self.root / 'workspace'))
-        executor = Executor(event=event, cancelled=cancelled,
+        executor = Executor(event=event, cancelled=cancelled, event_format=event_format,
             resource_directory=self.root / 'resources', evidence_directory=self.root / 'cache')
         return executor.run(plan, self.root / 'result', resume=resume)
 
@@ -265,19 +265,27 @@ class InfrastructureRecoveryTests(unittest.TestCase):
             self.phase(artifacts=(str(alias),))
 
     def test_live_logs_resolve_and_attempts_do_not_share_test_facts(self):
+        from build_manager.event_stream import ExpandEvents
         from build_manager.run_state import RunState
         state = RunState()
+        decoder = ExpandEvents()
         paths = []
-        def event(value):
-            if value['type'] == 'phase':
+        seen = []
+        def event(frame):
+            value = decoder.apply(frame)
+            if value and value['type'] == 'phase':
                 state.update(value)
                 if value.get('log'):
                     paths.append(self.root / 'result' / value['log'])
+                seen.extend(row['name'] for row in value.get('live_tests', []))
         progress = dict(schema=1, kind='test_finished', name='first-only', classname='native',
                         file='app.py', status='passed')
         self.code = self.code.replace("raise SystemExit", "print(" + repr('@@BUILD_MANAGER_TEST@@' + json.dumps(progress))
                                       + ") if n==1 else None; raise SystemExit")
-        self.assertEqual(self.execute(event=event)['status'], 'passed')
+        report = self.execute(event=event, event_format='compact')
+        self.assertEqual(report['status'], 'passed')
+        self.assertIn('first-only', seen)
+        self.assertEqual(report['phases'][0]['recovery']['attempts'][0]['live_tests'][0]['name'], 'first-only')
         self.assertTrue(paths)
         self.assertTrue(all(path.is_file() for path in paths), paths)
         self.assertEqual(state.facts['native']['live_tests'], [])

@@ -58,16 +58,43 @@ existing declaration and protected credential rules.
 
 `run_plan(plan_or_path, output, *, confirmed=False, resume=False,
 approval_identities=None, expected_identity=None, cancelled=None, event=None,
-reconcile=None)`
+reconcile=None, event_format='snapshot')`
 returns the complete Executor report. It does not print. `output` becomes an
 absolute path. Fresh runs require a new output directory; resume requires matching
 retained plan/report identities and the existing engine identity/recovery checks.
 
 `cancelled` is a `threading.Event`; the caller owns signal/event integration.
-`event` receives existing executor dictionaries on worker threads and must be
-thread safe. Callback failures are caller errors; callbacks should not raise.
+`event` receives dictionaries on executor threads and must be thread safe.
+The default `event_format='snapshot'` preserves existing phase events.
+Choose `event_format='compact'` to transport running test inventories as
+versioned frames. Lifecycle events, terminal phase records and retained reports
+keep their existing shape. Callback failures are caller errors.
 Calls block until the executor finishes or reaches review. The CLI installs and
 restores SIGINT/SIGTERM handlers around execution and review.
+
+For compact events, feed each dictionary to
+`build_manager.event_stream.ExpandEvents().apply(event)` using one decoder per
+ordered stream. Pass its returned events to the existing observer and ignore
+`None`. For CLI JSONL, pass the inner `event` dictionary. The bundled UI uses
+the same decoder and reads the retained report at completion.
+
+A `type="test_inventory"` frame with `progress_schema=1` identifies the phase
+in `id` and its inventory generation in `stream`. `sequence` increases within
+that generation. The first frame of a checkpoint sets `checkpoint=true` and
+clears the generation's provisional inventory. Data frames carry up to 64
+`[index, row]` entries for the named `field`, either `test_files` or
+`live_tests`. A commit frame carries the inventory `sizes`, the phase metadata
+in `phase`, and the inventory `fields` to attach to that event. Apply the batch
+only at commit. Sizes truncate inventories when a runner rewrites a report.
+
+Observers that attach late or miss a sequence wait for a checkpoint before
+publishing another inventory update for that phase. Running phases send an
+initial checkpoint and refresh it about once a minute after reporting starts,
+including while a test is quiet. Terminal phase events remain usable even if
+an observer missed the entire live stream. For a disconnected stdout reader,
+the transport must still drain stdout and deliver subsequent complete lines
+from the same execution. Use `status --full` or the retained `result.json`
+to recover authoritative evidence after an interruption.
 
 On resume, optional `reconcile(step_id, row)` supplies project-owned, read-only
 outcome verification for an uncertain external phase. The executor invokes it
