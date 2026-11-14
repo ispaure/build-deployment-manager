@@ -158,28 +158,36 @@ try {
  if($path -notlike '*C:\BDM\Git\cmd*'){[Environment]::SetEnvironmentVariable('Path',$path+';C:\BDM\Git\cmd','Machine')}
  $p=Start-Process msiexec.exe -ArgumentList @('/i',('"'+$source+'Tools\Data\ARM64\ParallelsTools-ARM64.msi"'),'/qn','/norestart','/l*v','C:\BDM\tools-install.log') -Wait -PassThru
  if($p.ExitCode -notin @(0,3010)){throw 'Parallels Tools installation failed'}
- 'Setup complete; sign in again to refresh PATH.' | Set-Content C:\BDM\bootstrap-complete.txt
+ 'Setup complete; the next sign-in refreshes PATH.' | Set-Content C:\BDM\bootstrap-complete.txt
 } finally { Stop-Transcript }
 '''
 
 
 def windows_bootstrap(*, developer_mode=False):
     """Opt-in symlink capability; security and sharing settings stay unchanged."""
+    from .windows_signin import CONFIGURE
+    bootstrap = WINDOWS_BOOTSTRAP.replace('Start-Transcript', CONFIGURE + r'''
+[xml]$answer=Get-Content -LiteralPath ($source+'Autounattend.xml') -Raw
+$login=$answer.SelectSingleNode("//*[local-name()='AutoLogon']/*[local-name()='Password']/*[local-name()='Value']")
+Set-BDMTestSignIn $login.InnerText
+Remove-Variable login,answer
+Start-Transcript''', 1)
     if not developer_mode:
-        return WINDOWS_BOOTSTRAP
-    return WINDOWS_BOOTSTRAP.replace("try {", "try {\n New-Item -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Force | Out-Null\n Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Name AllowDevelopmentWithoutDevLicense -Type DWord -Value 1", 1)
+        return bootstrap
+    return bootstrap.replace("try {\n $installer", "try {\n New-Item -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Force | Out-Null\n Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock' -Name AllowDevelopmentWithoutDevLicense -Type DWord -Value 1\n $installer", 1)
 
 
 def windows_seed(root, *, developer_mode=False):
     """Bundle reviewed local installers, driver media and a protected test login."""
     root = Path(root)
     windows_helpers(root)
-    stem = 'windows-seed-symlinks' if developer_mode else 'windows-seed'
+    stem = 'windows-seed-autologon-symlinks' if developer_mode else 'windows-seed-autologon'
     folder = root / stem
     folder.mkdir(mode=0o700, exist_ok=True)
     credential = root / 'windows-login.json'
-    if credential.exists():
-        password = json.loads(credential.read_text())['password']
+    if credential.exists() or credential.is_symlink():
+        from .windows_signin import read_login
+        password = read_login(root)
     else:
         from .profiles import save_json
         password = secrets.token_urlsafe(24) + 'aA1!'

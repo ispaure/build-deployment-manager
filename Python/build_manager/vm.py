@@ -313,6 +313,35 @@ class LinuxVM(VM):
 class WindowsVM(VM):
     kind, distribution, memory = 'Windows', 'win-11', 6144
 
+    def ensure_test_session(self, selector):
+        """Get an interactive session on this checkout's unattended Windows guest."""
+        from . import windows_signin
+        uid = str(UUID(selector.strip('{}')))
+        with workspace_lock(self.root / '.provision.lock'):
+            record, row = self.resolve_owned_guest()
+            if (not record or not record.get('windows_initialized') or not row
+                    or record['uuid'] != uid or row['status'] != 'running'):
+                raise ValueError('Automatic sign-in requires the running Manager-owned Windows test guest.')
+            state = windows_signin.wait_for_session(self.client, uid, 40, accept_empty=True)
+            if state == 'present':
+                return
+            if state != 'empty':
+                raise RuntimeError('Windows guest tools did not report an interactive session state.')
+            windows_signin.configure(self.client, uid, windows_signin.read_login(self.root))
+            # A cold boot may have signed in while servicing the configuration request.
+            if windows_signin.session_state(self.client, uid) == 'empty':
+                self.run('exec', uid, 'shutdown.exe', '/r', '/t', '0', timeout=20)
+            if windows_signin.wait_for_session(self.client, uid, 120) != 'present':
+                raise RuntimeError('The dedicated Windows guest did not complete automatic sign-in.')
+
+    def power(self, action):
+        result = super().power(action)
+        if action == 'start' and result['setup'] == 'test-tools-ready':
+            record = self.read_ownership_receipt()
+            if record and record.get('windows_initialized'):
+                self.ensure_test_session(record['uuid'])
+        return result
+
     def symlink_policy(self):
         path = self.root / 'windows-policy.json'
         if linked(path):
@@ -369,6 +398,9 @@ class WindowsVM(VM):
         return 'Windows 11 ARM64, completed Windows setup/license, Parallels Tools, Python ≥3.12, Git and an interactive test user. Nested Android acceleration is a separate gate.'
 
     def probe(self, uid):
+        record = self.read_ownership_receipt()
+        if record and record.get('windows_initialized'):
+            self.ensure_test_session(uid)
         script = "$ErrorActionPreference='Stop';$env:Path=[Environment]::GetEnvironmentVariable('Path','Machine')+';'+[Environment]::GetEnvironmentVariable('Path','User');$v=& python -c 'import json,platform,sys;print(json.dumps(dict(system=platform.system(),architecture=platform.machine(),python=sys.version,python_version=list(sys.version_info[:3]))))';if($LASTEXITCODE -ne 0){throw 'Python unavailable'};$r=$v|ConvertFrom-Json;$r|Add-Member -NotePropertyName git -NotePropertyValue (Get-Command git -ErrorAction Stop).Source;$r|ConvertTo-Json -Compress"
         return json.loads(self.client.powershell(uid, script))
 
@@ -376,7 +408,7 @@ class WindowsVM(VM):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('kind', choices=('linux', 'windows'))
-    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands', 'enable-symlink-testing', 'open-console'))
+    parser.add_argument('action', choices=('status', 'ensure', 'initialize', 'initialize-cloud', 'initialize-windows', 'start', 'stop', 'readiness', 'enable-guest-commands', 'enable-symlink-testing', 'open-console', 'ensure-test-session'))
     parser.add_argument('--checkout', type=Path, required=True)
     parser.add_argument('--media', type=Path)
     parser.add_argument('--sha256', default='')
@@ -399,6 +431,14 @@ def main(argv=None):
             if not isinstance(vm, WindowsVM):
                 raise ValueError('Symlink policy applies only to Windows.')
             result = vm.enable_symlink_testing(approved=args.approve_developer_mode)
+        elif args.action == 'ensure-test-session':
+            if not isinstance(vm, WindowsVM):
+                raise ValueError('Automatic sign-in applies only to the dedicated Windows guest.')
+            record = vm.read_ownership_receipt()
+            if not record:
+                raise ValueError('Create or recover this dedicated Windows guest first.')
+            vm.ensure_test_session(record['uuid'])
+            result = dict(status='interactive-test-session-ready')
         elif args.action == 'open-console':
             result = vm.open_console()
         elif args.action in ('start', 'stop'):

@@ -238,4 +238,68 @@ class VMUITests(unittest.TestCase):
                 dialog.reject()
 
 
-if __name__ == '__main__': unittest.main()
+
+
+class WindowsSignInTests(unittest.TestCase):
+    def setUp(self):
+        folder = TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.client = Mock()
+        self.vm = WindowsVM(folder.name, self.client)
+        self.vm.root.mkdir()
+        self.uid = '00000000-0000-0000-0000-000000000001'
+        self.record = dict(uuid=self.uid, windows_initialized=True)
+        ownership = patch.object(self.vm, 'resolve_owned_guest',
+                                 return_value=(self.record, dict(status='running')))
+        self.ownership = ownership.start()
+        self.addCleanup(ownership.stop)
+
+    def test_session_reuses_existing_console_without_reading_credentials(self):
+        with patch('build_manager.windows_signin.wait_for_session', return_value='present'), \
+                patch('build_manager.windows_signin.read_login') as read:
+            self.vm.ensure_test_session(self.uid)
+        read.assert_not_called()
+
+    def test_empty_session_configures_and_restarts_once(self):
+        with patch('build_manager.windows_signin.wait_for_session', side_effect=('empty', 'present')), \
+                patch('build_manager.windows_signin.session_state', return_value='empty'), \
+                patch('build_manager.windows_signin.read_login', return_value='synthetic-password'), \
+                patch('build_manager.windows_signin.configure') as configure, \
+                patch.object(self.vm, 'run') as run:
+            self.vm.ensure_test_session(self.uid)
+        configure.assert_called_once_with(self.client, self.uid, 'synthetic-password')
+        run.assert_called_once_with('exec', self.uid, 'shutdown.exe', '/r', '/t', '0', timeout=20)
+
+    def test_wrong_guest_and_unknown_session_never_configure_or_reboot(self):
+        with patch('build_manager.windows_signin.wait_for_session', return_value='unknown') as wait, \
+                patch('build_manager.windows_signin.configure') as configure, \
+                patch.object(self.vm, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'Manager-owned'):
+                self.vm.ensure_test_session('00000000-0000-0000-0000-000000000002')
+            wait.assert_not_called()
+            with self.assertRaisesRegex(RuntimeError, 'guest tools'):
+                self.vm.ensure_test_session(self.uid)
+        configure.assert_not_called()
+        run.assert_not_called()
+
+    def test_parallels_reports_active_console_even_when_query_returns_one(self):
+        from build_manager.windows_signin import session_state
+        rows = ((1, b' bdmtest   console   1   Active   none\r\n', b'', 'present'),
+                (1, b'', b'No User exists for *', 'empty'),
+                (1, b'Unable to open a session', b'', 'unknown'))
+        for code, stdout, stderr, expected in rows:
+            with self.subTest(expected=expected), patch('build_manager.windows_signin.subprocess.run',
+                    return_value=Mock(returncode=code, stdout=stdout, stderr=stderr)):
+                self.assertEqual(session_state(self.client, self.uid), expected)
+
+    def test_setup_configures_the_same_protected_login_before_the_transcript(self):
+        from build_manager.vm_bootstrap import windows_bootstrap
+        script = windows_bootstrap()
+        self.assertLess(script.index('Set-BDMTestSignIn $login.InnerText'), script.index('Start-Transcript'))
+        self.assertIn('LsaStorePrivateData', script)
+        self.assertNotIn('IgnoreShiftOverride', script)
+        self.assertNotIn('AllowDevelopmentWithoutDevLicense', script)
+
+
+if __name__ == '__main__':
+    unittest.main()

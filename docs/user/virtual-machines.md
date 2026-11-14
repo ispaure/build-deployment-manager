@@ -85,17 +85,17 @@ the approval and requires approving it again. Host sharing stays disabled.
 Setup downloads checksum-pinned official Python ARM64 and MinGit installers into
 `VM/media` when absent. It copies bundled Parallels guest drivers/tools and creates
 a protected setup ISO. Python's Authenticode signature is also checked in the
-guest before installation. A one-time automatic login runs setup and records
-`C:\BDM\bootstrap.log`; sign in again if PATH has not refreshed. Test login data
-is in the protected `VM/windows-login.json`, outside Git. Do not share that file
-or the setup ISO. Never attach this automated disk-partitioning seed to another
-guest or a reused installation.
+guest before installation. The first automatic sign-in runs setup and records
+`C:\BDM\bootstrap.log`. Setup enables future console sign-ins for the dedicated
+`BDMTest` account. Windows keeps the automatic sign-in password in its LSA
+secret store. Keep the protected `VM/windows-login.json` and setup ISO private.
+Attach the automated disk-partitioning seed only to the recorded, empty guest.
 
-Windows tests run as the signed-in interactive user. A running VM without a
-signed-in session cannot run these checks. If guest tools return an empty failure,
-the manager makes a bounded, read-only session query and reports a missing login
-when confirmed. Sign in to the selected test VM before retrying; the manager does
-not switch the test command to the SYSTEM account.
+Windows tests run in an interactive account. **Start** and **Check readiness**
+can restore automatic sign-in on a previously provisioned Manager guest. If Windows reports
+an empty session, Manager sets up sign-in and restarts only that guest if needed.
+A running guest with an existing session keeps its current session. Manually
+installed guests continue to use their configured interactive accounts.
 
 Recovery can inspect one exact token-owned workspace without an interactive login.
 This fixed, read-only service-account query verifies the namespace and ownership
