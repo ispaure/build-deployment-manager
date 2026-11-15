@@ -2,7 +2,8 @@
 from types import SimpleNamespace
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QLabel,
-    QScrollArea, QVBoxLayout, QWidget)
+    QVBoxLayout, QWidget)
+from commonUtils.ui.pyside import resizable_scroll_area
 
 from .run_fields_ui import RunFieldsView
 from .ui_components import style_dialog_buttons
@@ -20,7 +21,7 @@ class RetainedDeliveryDialog(QDialog):
         label.setWordWrap(True); layout.addWidget(label)
         path = QLabel(str(run_directory)); path.setTextFormat(Qt.TextFormat.PlainText)
         path.setWordWrap(True); layout.addWidget(path)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll = resizable_scroll_area()
         body = QWidget(); content = QVBoxLayout(body)
         self.destinations = {}
         for name, row in (project.journey_capability or {}).get('destinations', {}).items():

@@ -4,8 +4,9 @@ import shlex
 from PySide6.QtCore import QElapsedTimer, QEvent, QSignalBlocker, Qt, Signal, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHeaderView, QHBoxLayout, QLabel, QPlainTextEdit,
-    QPushButton, QScrollArea, QSizePolicy, QSplitter, QStyle, QToolButton,
+    QPushButton, QSizePolicy, QSplitter, QStyle, QToolButton,
     QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from commonUtils.ui.pyside import resizable_scroll_area
 from .grouped_workflow_ui import GroupedFlowView
 from .plan_summary import phase_title, destination_label_for_phase
 from .review_presentation import review_data, retained_artifact_provenance
@@ -212,9 +213,7 @@ class ReviewPlanView(QWidget):
         self.inspector_tabs = EvidenceNavigator()
         self.inspector_tabs.setAccessibleName('Selected task details, command and complete plan')
         side.addWidget(self.inspector_tabs, 3)
-        self.details_scroll = QScrollArea()
-        self.details_scroll.setWidgetResizable(True)
-        self.details_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.details_scroll = resizable_scroll_area(framed=False)
         details_body = QWidget()
         detail_side = QVBoxLayout(details_body)
         detail_side.setContentsMargins(6, 6, 6, 6)

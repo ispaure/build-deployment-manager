@@ -1,8 +1,9 @@
 """Explicit delivery selections with the workflow's card and action hierarchy."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFrame,
-    QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy,
+    QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizePolicy,
     QVBoxLayout, QWidget)
+from commonUtils.ui.pyside import resizable_scroll_area
 
 from .ui_components import style_button, style_dialog_buttons, HeadingLabel
 
@@ -15,9 +16,7 @@ class EffectReviewDialog(QDialog):
         layout = QVBoxLayout(self)
         heading = HeadingLabel('Review delivery')
         layout.addWidget(heading)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll = resizable_scroll_area(framed=False)
         body = QWidget()
         content = QVBoxLayout(body)
         content.setContentsMargins(0, 0, 4, 0)

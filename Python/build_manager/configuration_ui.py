@@ -3,6 +3,7 @@ from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QToolButton, QVBoxLayout, QWidget, QTabWidget, QTableWidget, QHeaderView, QAbstractItemView, QButtonGroup, QStyle)
+from commonUtils.ui.pyside import resizable_scroll_area
 from .ui_components import SelectionSummary, ActionStrip, style_tabs, AdaptiveSplitter
 from .configuration_delivery_ui import DeliveryOptionsView, delivery_tab_label
 
@@ -44,8 +45,7 @@ class ConfigurationView(QWidget):
         self.editor = QWidget()
         configuration_layout = QVBoxLayout(self.editor)
         configuration_layout.setContentsMargins(0, 0, 4, 0)
-        self.editor_scroll = QScrollArea()
-        self.editor_scroll.setWidgetResizable(True)
+        self.editor_scroll = resizable_scroll_area()
         self.editor_scroll.setWidget(self.editor)
         self.editor_scroll.setAccessibleName('Workflow configuration sections')
         from .workflow_ui import WorkflowGraphView

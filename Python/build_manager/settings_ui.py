@@ -8,8 +8,9 @@ from PySide6.QtCore import QRunnable, QSignalBlocker, QThreadPool, QTimer, Qt, Q
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox,
     QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from commonUtils.ui.pyside import resizable_scroll_area
 
 from .redaction import Redactor
 from .providers import DELIVERY_LABELS, setting_help
@@ -315,8 +316,7 @@ class SettingsDialog(QDialog):
         style_utilities(self)
 
     def add_section(self, group, names):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        scroll = resizable_scroll_area()
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)

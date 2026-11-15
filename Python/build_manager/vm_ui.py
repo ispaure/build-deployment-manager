@@ -4,7 +4,8 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QHBoxLayout,
                               QLabel, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout, QMessageBox,
-                              QWidget, QScrollArea, QDialogButtonBox)
+                              QWidget, QDialogButtonBox)
+from commonUtils.ui.pyside import resizable_scroll_area
 from .ui_components import style_button, WrappingLayout, HeadingLabel, style_utilities, style_dialog_buttons
 from .review_ui import Disclosure
 
@@ -58,8 +59,7 @@ class VMDialog(QDialog):
         scope = QLabel('Machines owned by the manager checkout. Status is read only when requested.')
         scope.setWordWrap(True)
         outer.addWidget(scope)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        scroll = resizable_scroll_area()
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
