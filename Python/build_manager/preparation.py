@@ -85,6 +85,19 @@ def preparation_request(selection: WorkflowSelection, *, integrated=False,
     return PreparationRequest(selection, options, journey)
 
 
+def integrated_preset_backends(project, platforms, requested):
+    """Resolve a preset's selected platforms against the current project and host."""
+    capability = getattr(project, 'journey_capability', None)
+    if not capability:
+        raise ValueError('This preset needs project-declared combined journeys.')
+    if set(requested) - set(project.platforms):
+        raise ValueError('Preset contains unknown execution platforms.')
+    routes = capability['platforms']
+    if set(platforms) - set(routes):
+        raise ValueError('Unsupported journey platform.')
+    return {target: requested.get(target, routes[target]['backend']) for target in platforms}
+
+
 def validate_gui_selection(project, selection, *, integrated):
     """Validate declared combinations before the adapter worker starts."""
     if integrated:

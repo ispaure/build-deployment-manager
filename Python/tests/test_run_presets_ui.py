@@ -30,6 +30,37 @@ class RunPresetTests(unittest.TestCase):
             QTest.qWait(10)
         self.fail('Remembered selections and preset writes did not settle.')
 
+    def test_project_suggestions_restore_integrated_platforms_and_delivery(self):
+        from build_manager.ui import ManagerPanel
+        with TemporaryDirectory() as directory:
+            project = test_recipient_ui.RecipientUITests.project(self, Path(directory))
+            project.platforms = ('android', 'ios')
+            project.backend_options = lambda target, operation: ('Local',)
+            project.workflow_presets = {
+                'Both': dict(goal='validate', selected_platforms=['android', 'ios']),
+                'Phone': dict(goal='deliver', selected_platforms=['android'],
+                              selected_destinations=['phones'], run_overrides={'phones': '["phone-1"]'}),
+                'Unavailable': dict(goal='validate', selected_platforms=['ios'],
+                                    platform_backends={'ios': 'Unavailable'}),
+                'Legacy': dict(platform='ios', operation='Test', backend='Local'),
+            }
+            panel = ManagerPanel(project)
+            try:
+                self.assertTrue(panel.select_preset('Phone'), panel.preset_error)
+                self.assertEqual(panel.choices()['selected_destinations'], ['phones'])
+                self.assertEqual(panel.run_fields.controls['phones'].text(), '["phone-1"]')
+                self.assertTrue(panel.select_preset('Both'), panel.preset_error)
+                selected = panel.choices()
+                self.assertEqual(selected['goal'], 'validate')
+                self.assertEqual(set(selected['selected_platforms']), {'android', 'ios'})
+                self.assertEqual(selected['selected_destinations'], [])
+                self.assertFalse(panel.select_preset('Unavailable'))
+                self.assertIn('unavailable', panel.preset_error)
+                self.assertTrue(panel.select_preset('Legacy'), panel.preset_error)
+                self.assertEqual(panel.choices()['goal'], 'advanced')
+            finally:
+                panel.close()
+
     def test_restart_presets_and_late_defaults_preserve_specific_devices(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

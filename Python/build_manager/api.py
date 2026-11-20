@@ -10,7 +10,7 @@ from .executor import Executor
 from .history import load_run, read_report, recent_runs
 from .models import Plan
 from .locking import workspace_lock
-from .preparation import WorkflowSelection, preparation_request
+from .preparation import WorkflowSelection, integrated_preset_backends, preparation_request
 from .registry import Registry
 from .workflows import EXTERNAL, transitive_dependency_ids, approve, recover_phase_records
 
@@ -93,16 +93,9 @@ class ManagerAPI:
         choices = dict(choices, run_overrides=inputs)
         goal = choices.get('goal', 'advanced')
         if goal in ('validate', 'deliver'):
-            if not bridge.journey_capability:
-                raise ValueError('This preset needs project-declared combined journeys.')
-            platforms = choices.get('selected_platforms', [])
-            backends = choices.get('platform_backends', {})
-            if set(backends) - set(bridge.platforms):
-                raise ValueError('Preset contains unknown execution platforms.')
-            choices['platform_backends'] = {
-                target: backends.get(target, bridge.journey_capability['platforms'][target]['backend'])
-                for target in platforms
-            } if backends else {}
+            requested = choices.get('platform_backends', {})
+            resolved = integrated_preset_backends(bridge, choices.get('selected_platforms', []), requested)
+            choices['platform_backends'] = resolved if requested else {}
             return preparation_request(WorkflowSelection.from_choices(choices), integrated=True).prepare(bridge)
         if goal != 'advanced':
             raise ValueError('Unknown preset goal.')

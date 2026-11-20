@@ -3,6 +3,12 @@
 Start with [the runnable project-test walkthrough](adding-project-tests.md) when
 connecting a new project. This page is the protocol and ownership reference.
 
+Project suggestions in `presets` can declare a validation or delivery goal with
+`selected_platforms`, `selected_destinations` and optional `platform_backends`.
+The desktop picker restores those selections and run inputs before review.
+Single-operation suggestions use `platform`, `operation` and `backend`. Their
+default goal is `advanced`.
+
 Run-field descriptors may set `workflow_option: true` for a non-secret choice
 that applies to validation, delivery and advanced workflows. Guided views place
 these controls with validation settings. They use the existing per-preset

@@ -457,21 +457,13 @@ class ManagerPanel(QWidget):
             return
         self.applying_preset = True
         try:
-            self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
-            if self.configuration.platform.findText(choices['platform']) < 0:
-                raise ValueError('This workflow platform is unavailable in the selected project.')
-            self.configuration.platform.setCurrentText(choices['platform'])
-            operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(choices['platform'])
-            if choices['operation'] not in operations:
-                raise ValueError('This workflow operation is unavailable on the selected platform.')
-            self.configuration.operation.setCurrentText(choices['operation'])
-            if choices['backend'] not in self.project.backend_options(choices['platform'], choices['operation']):
-                raise ValueError('This workflow backend is unavailable on this host. Choose a supported preset or Custom run.')
-            self.configuration.backend.setCurrentText(choices['backend'])
-            index = self.configuration.suite.findData(choices.get('suite', ''))
-            if index < 0:
-                raise ValueError('This workflow test suite is unavailable for the selected operation.')
-            self.configuration.suite.setCurrentIndex(index)
+            goal = choices.get('goal', 'advanced')
+            if goal in ('validate', 'deliver'):
+                self.configuration.restore_choices(self.integrated_suggestion(choices))
+            elif goal == 'advanced':
+                self.select_advanced_suggestion(choices)
+            else:
+                raise ValueError('Unknown preset goal.')
             self.invalidate()
         except (KeyError, TypeError, ValueError) as error:
             self.invalidate()
@@ -481,6 +473,42 @@ class ManagerPanel(QWidget):
             self.applying_preset = False
             self.selection_changed.emit(self.choices())
         return not self.preset_error
+
+    def integrated_suggestion(self, choices):
+        from .journeys import build_journey_intent
+        from .preparation import integrated_preset_backends
+        from .registry import Registry
+        from .run_fields import validate_overrides
+        Registry.validate_selections(choices)
+        validate_overrides(getattr(self.project, 'run_fields', []), choices.get('run_overrides', {}))
+        platforms = choices.get('selected_platforms', [])
+        destinations = choices.get('selected_destinations', []) if choices['goal'] == 'deliver' else []
+        backends = integrated_preset_backends(self.project, platforms, choices.get('platform_backends', {}))
+        capability = self.project.journey_capability
+        build_journey_intent(capability, choices['goal'], platforms, destinations)
+        for target, backend in backends.items():
+            if backend not in self.project.backend_options(target, capability['platforms'][target]['operation']):
+                raise ValueError(f'{target}: the preset execution host is unavailable.')
+        return dict(choices, selected_platforms=platforms, selected_destinations=destinations,
+                    platform_backends=backends, revision=choices.get('revision', 'working-tree'),
+                    pattern=choices.get('pattern', ''), release_tag=choices.get('release_tag', ''))
+
+    def select_advanced_suggestion(self, choices):
+        self.configuration.goal.setCurrentIndex(self.configuration.goal.findData('advanced'))
+        if self.configuration.platform.findText(choices['platform']) < 0:
+            raise ValueError('This workflow platform is unavailable in the selected project.')
+        self.configuration.platform.setCurrentText(choices['platform'])
+        operations = getattr(self.project, 'operations_for', lambda _: self.project.operations)(choices['platform'])
+        if choices['operation'] not in operations:
+            raise ValueError('This workflow operation is unavailable on the selected platform.')
+        self.configuration.operation.setCurrentText(choices['operation'])
+        if choices['backend'] not in self.project.backend_options(choices['platform'], choices['operation']):
+            raise ValueError('This workflow backend is unavailable on this host. Choose a supported preset or Custom run.')
+        self.configuration.backend.setCurrentText(choices['backend'])
+        index = self.configuration.suite.findData(choices.get('suite', ''))
+        if index < 0:
+            raise ValueError('This workflow test suite is unavailable for the selected operation.')
+        self.configuration.suite.setCurrentIndex(index)
 
     def refresh_operations(self, *_):
         factory=getattr(self.project,'operations_for',None)
