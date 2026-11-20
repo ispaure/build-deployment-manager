@@ -196,7 +196,10 @@ def parser_for_cli():
         if name == 'status':
             command.add_argument('--full', action='store_true', help='Return complete result.json evidence')
         if name == 'logs':
+            from .infrastructure_recovery import RECOVERY_LOGS
             command.add_argument('--step', required=True)
+            command.add_argument('--recovery-log', choices=RECOVERY_LOGS,
+                                 help='Read the selected retained test attempt or recovery check')
             command.add_argument('--tail-lines', type=int, default=40)
             command.add_argument('--max-bytes', type=int, default=16384)
     return parser
@@ -317,7 +320,8 @@ def execute(args, api):
     if command == 'status':
         return read_status(args.output, full=args.full)
     if command == 'logs':
-        return read_logs(args.output, args.step, tail_lines=args.tail_lines, max_bytes=args.max_bytes)
+        return read_logs(args.output, args.step, tail_lines=args.tail_lines,
+                         max_bytes=args.max_bytes, recovery_log=args.recovery_log)
     if command == 'review':
         with cancellation() as cancelled:
             return review_run(args.output, cancelled=cancelled)

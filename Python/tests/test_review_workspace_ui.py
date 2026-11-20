@@ -74,6 +74,15 @@ class ReviewWorkspaceTests(unittest.TestCase):
         self.view.inspect_phase('android')
         self.assertEqual(self.view.fact_values['Result'].text(), 'Passed after infrastructure recovery')
         self.assertIn('first/native.log', self.view.command.toPlainText())
+        reason = 'Passed on attempt 2 of 2 after simulator boot timeout.'
+        self.view.set_facts({'android': dict(status='passed', reason=reason, recovery=dict(status='recovered',
+            attempts=[dict(status='failed', log='first/native.log'), dict(status='passed', log='second/native.log')],
+            checks=[dict(operation='diagnose', status='passed', proof=dict(stage='boot',
+                last_healthy_transition='device created', signature='simulator boot timeout'))]))})
+        self.view.inspect_phase('android')
+        self.assertEqual(self.view.fact_values['Result'].text(), reason)
+        self.assertIn('test attempt 2', self.view.command.toPlainText())
+        self.assertIn('Last healthy transition · device created', self.view.command.toPlainText())
 
     def test_sidebar_uses_independent_tree_and_details_panes_without_outer_scroll(self):
         view = self.view

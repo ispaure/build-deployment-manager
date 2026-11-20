@@ -11,7 +11,7 @@ import sys
 from uuid import UUID, uuid4
 
 from .locking import workspace_lock
-from .parallels import Parallels
+from .parallels import Parallels, ParallelsStartTimeout
 from .profiles import save_json
 from .redaction import Redactor
 
@@ -205,8 +205,13 @@ class VM:
                 record['ever_started'] = True
                 save_json(self.ownership_receipt_path, record)
             # ACPI shutdown remains usable before guest tools are installed.
-            if action == 'stop': self.run(action, record['uuid'], '--acpi')
-            else: self.run('resume' if row['status'] == 'suspended' else action, record['uuid'])
+            if action == 'stop':
+                self.run(action, record['uuid'], '--acpi')
+            else:
+                try:
+                    self.run('resume' if row['status'] == 'suspended' else action, record['uuid'])
+                except subprocess.TimeoutExpired as error:
+                    raise ParallelsStartTimeout(row, error) from error
         return self.status()
 
     def status(self):

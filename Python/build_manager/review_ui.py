@@ -792,7 +792,10 @@ class ReviewPlanView(QWidget):
         elif state == 'waiting_resource':
             self.set_fact('Result', reason)
         else:
-            self.set_fact('Result', 'Passed after infrastructure recovery' if fact.get('recovery', {}).get('status') == 'recovered' else state_label(state))
+            result = state_label(state)
+            if fact.get('recovery', {}).get('status') == 'recovered':
+                result = fact.get('reason') or 'Passed after infrastructure recovery'
+            self.set_fact('Result', result)
         self.set_fact('Outputs', '\n'.join(path.replace('\\', '/').rsplit('/', 1)[-1] for path in phase.artifacts) or 'No output files declared')
         self.fact_values['Outputs'].setToolTip('\n'.join(phase.artifacts))
         effect = phase.effect if phase.effect != 'inherit' else self.plan.effect
@@ -845,9 +848,13 @@ class ReviewPlanView(QWidget):
         evidence = fact.get('recovery', {})
         if evidence:
             technical.append('Infrastructure recovery: ' + evidence.get('status', 'unknown'))
-            for attempt in (*evidence.get('attempts', ()), *evidence.get('checks', ())):
-                technical.append('Retained ' + attempt.get('operation', 'test attempt') + ': '
+            for number, attempt in enumerate((*evidence.get('attempts', ()), *evidence.get('checks', ())), 1):
+                technical.append('Retained ' + attempt.get('operation', f'test attempt {number}') + ': '
                                  + attempt['status'] + ' · ' + attempt.get('log', 'No log captured'))
+                proof = attempt.get('proof', {})
+                for field in ('stage', 'signature', 'last_healthy_transition', 'runner'):
+                    if proof.get(field):
+                        technical.append(field.replace('_', ' ').capitalize() + ' · ' + proof[field])
         if phase.environment:
             technical.append('Environment references:\n' + '\n'.join(f'{name}={value}' for name, value in phase.environment.items()))
         self.command.setPlainText('\n\n'.join(technical))

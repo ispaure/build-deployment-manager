@@ -1,6 +1,7 @@
 from link_fixtures import directory_link
 """Dedicated machine ownership, recovery and native-readiness boundaries."""
 import json
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -79,6 +80,21 @@ class DedicatedVMTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'busy'):
                     self.vm.power('start')
                 self.assertNotIn('resume', [c.args[0] for c in run.call_args_list])
+
+    def test_resume_timeout_identifies_only_an_issued_power_request(self):
+        from build_manager.parallels import ParallelsStartTimeout
+        timeout = subprocess.TimeoutExpired(['prlctl', 'resume', self.record['uuid']], 120)
+        with self.owned(status='suspended') as run:
+            run.side_effect = [json.dumps([dict(Home=self.record['bundle'])]), timeout]
+            with self.assertRaises(ParallelsStartTimeout) as caught:
+                self.vm.power('start')
+            self.assertEqual(caught.exception.original_state, 'suspended')
+            self.assertEqual(caught.exception.uuid, self.record['uuid'])
+            run.assert_called_with('resume', self.record['uuid'])
+            run.side_effect = timeout
+            with self.assertRaises(subprocess.TimeoutExpired) as lookup:
+                self.vm.power('start')
+            self.assertNotIsInstance(lookup.exception, ParallelsStartTimeout)
 
     def test_existing_vm_reused_without_resetting_hardware_or_disks(self):
         with self.owned(), patch('build_manager.vm.platform.system', return_value='Darwin'), patch.object(self.vm, 'configure') as configure:

@@ -182,6 +182,18 @@ Compact summaries cap each diagnostic at 3,000 characters and include at most
 History reads up to 100 recent runs from the project's declared result directory.
 A custom output outside that directory is accessible by path but absent from history.
 
+For a completed test with infrastructure recovery, `status` lists each attempt
+and check with its time and log. `logs --step` opens the final test attempt.
+Select the original failure or a check explicitly when comparing outcomes.
+
+```sh
+build-manager logs /tmp/check-run --step check --recovery-log first
+build-manager logs /tmp/check-run --step check --recovery-log diagnose
+```
+
+The other selectors are `repair`, `readiness` and `second`. Each becomes
+available when the corresponding operation has run and its result is saved.
+
 SIGINT or SIGTERM requests cooperative cancellation and owned process cleanup.
 Buffered output is drained after one owned process-stop sequence; it does not
 repeat the cleanup grace for each queued line. Wait for the final result before

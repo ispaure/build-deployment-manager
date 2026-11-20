@@ -45,8 +45,9 @@ def skip_reason(phase, rows, *, cancelled):
 def final_status(plan, rows, *, cancelled):
     statuses = [rows[phase.id]['status'] for phase in plan.phases
                 if phase.id in rows and rows[phase.id]['required']]
-    cleanup_failed = any(phase.always and phase.required and phase.id in rows
-                         and rows[phase.id]['status'] != 'passed' for phase in plan.phases)
+    cleanup_failed = any(phase.required and phase.id in rows and
+                         (rows[phase.id].get('cleanup_error') or phase.always and rows[phase.id]['status'] != 'passed')
+                         for phase in plan.phases)
     if 'unknown' in statuses:
         return 'unknown'
     if cleanup_failed:

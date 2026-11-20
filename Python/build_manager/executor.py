@@ -188,7 +188,7 @@ class Executor:
                                     exit_code=None, recovery={})
                                 first_event = False
                             if value.get('log'):
-                                value['log'] = str((directory / value['log']).relative_to(output.resolve()))
+                                value['log'] = (directory / value['log']).relative_to(output.resolve()).as_posix()
                             self.event(value)
                         return self.run_phase(command, directory, plan.secret_environment, event=relay, launch=record_launch)
                     row = EvidenceCache(self.evidence_directory).reuse_or_run_phase(phase, output,
@@ -597,8 +597,9 @@ class Executor:
                 try:
                     if not stopped:
                         stop_process(process, grace=phase.stop_grace)
+                    row['process_cleanup'] = 'completed'
                 except (OSError, subprocess.SubprocessError) as error:
-                    row.update(status='failed', cleanup_error=redact(str(error)))
+                    row.update(status='failed', process_cleanup='failed', cleanup_error=redact(str(error)))
                 # Never block closing a pipe while its reader still holds it.
                 # A persistent OS cleanup error remains an explicit failed phase.
                 if reader is None or not reader.is_alive():

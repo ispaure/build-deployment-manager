@@ -106,7 +106,7 @@ if record.exists():
 
 
 class ParallelsStartTimeout(subprocess.TimeoutExpired):
-    """The exact stopped guest was sent a start request without acknowledgement."""
+    """The exact guest was sent a start or resume request without acknowledgement."""
 
     def __init__(self, original, timeout):
         super().__init__(timeout.cmd, timeout.timeout, timeout.output, timeout.stderr)

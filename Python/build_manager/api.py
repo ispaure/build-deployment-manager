@@ -185,10 +185,14 @@ def summarize_run_report(report, run_directory):
     run_directory = Path(run_directory).resolve()
     phases = []
     for row in report['phases']:
-        phase = {key: row[key] for key in ('id', 'status', 'required', 'seconds', 'exit_code', 'log') if key in row}
+        phase = {key: row[key] for key in ('id', 'status', 'required', 'seconds', 'exit_code', 'log',
+                                           'process_cleanup') if key in row}
         for key in ('error', 'cleanup_error', 'reason', 'summary'):
             if key in row:
                 phase[key] = str(row[key])[-3000:]
+        if 'recovery' in row:
+            from .infrastructure_recovery import recovery_summary
+            phase['recovery'] = recovery_summary(row['recovery'])
         failures = [case for case in row.get('tests', []) if case['status'] in {'failed', 'error'}]
         if failures:
             phase['failed_tests'] = [{key: str(case[key])[-2000:] for key in
@@ -333,7 +337,7 @@ def run_plan(plan, output, *, confirmed=False, resume=False, approval_identities
     return report
 
 
-def read_logs(output, step, *, tail_lines=40, max_bytes=16384):
+def read_logs(output, step, *, tail_lines=40, max_bytes=16384, recovery_log=None):
     """Read at most 64 KiB from a declared phase log; never follow arbitrary paths."""
     if type(tail_lines) is not int or not 1 <= tail_lines <= 1000:
         raise ValueError('Log tail must be 1–1000 lines.')
@@ -341,23 +345,29 @@ def read_logs(output, step, *, tail_lines=40, max_bytes=16384):
         raise ValueError('Log byte limit must be 1–65536.')
     output = Path(output).resolve()
     plan, report = load_run(output / 'result.json')
-    if step not in {phase.id for phase in plan.phases}:
+    phase = next((phase for phase in plan.phases if phase.id == step), None)
+    if phase is None:
         raise ValueError('Unknown plan step: ' + step)
     row = next((row for row in report['phases'] if row['id'] == step), {})
     log = row.get('log')
     if log is None and row.get('status') == 'running':
         # Active intent rows predate the worker's completed log metadata.
         log = step + '.log'
-    if log != step + '.log':
-        raise ValueError('Step has no retained log yet: ' + step)
+    if recovery_log is not None or log != step + '.log':
+        if not phase.infrastructure_recovery:
+            raise ValueError('Step has no retained log yet: ' + step)
+        from .infrastructure_recovery import recovery_log_reference
+        log = recovery_log_reference(step, row, recovery_log)
+    from .diagnostics import open_retained_log
     path = output / log
-    if path.is_symlink() or path.resolve().parent != output:
-        raise ValueError('Log must remain in its run directory.')
-    with path.open('rb') as stream:
-        size = stream.seek(0, 2)
-        start = max(0, size - max_bytes)
-        stream.seek(start)
-        raw = stream.read(max_bytes)
+    try:
+        with open_retained_log(output, log) as stream:
+            size = stream.seek(0, 2)
+            start = max(0, size - max_bytes)
+            stream.seek(start)
+            raw = stream.read(max_bytes)
+    except ValueError as error:
+        raise ValueError('Log must be a regular file inside its run directory.') from error
     lines = raw.decode('utf-8', errors='replace').splitlines()
     # Preserve even a partial last line so very long compiler errors stay useful.
     return dict(step=step, log=str(path), text='\n'.join(lines[-tail_lines:]),

@@ -18,6 +18,10 @@ from .redaction import Redactor
 from .run_recording import timestamp
 
 
+PROBE_CONTEXT = ('stage', 'signature', 'last_healthy_transition', 'runner')
+RECOVERY_LOGS = ('first', 'diagnose', 'repair', 'readiness', 'second')
+
+
 def validate_policy(phase):
     policy = phase.infrastructure_recovery
     if not isinstance(policy, dict):
@@ -25,7 +29,7 @@ def validate_policy(phase):
     if not policy:
         return
     fields = {'environment', 'target', 'resource', 'safe_to_repeat', 'probe', 'recover', 'inputs', 'timeout'}
-    if set(policy) != fields:
+    if set(policy) - {'backoff_seconds'} != fields:
         raise ValueError('Infrastructure recovery needs an explicit target, commands, inputs and bounded timeout.')
     if (phase.effect != 'test' or phase.kind != 'test' or phase.always or phase.provider
             or policy['safe_to_repeat'] is not True):
@@ -43,6 +47,9 @@ def validate_policy(phase):
             raise ValueError('Recovery commands must be structured argument lists.')
     if type(policy['timeout']) not in (int, float) or not 1 <= policy['timeout'] <= 600:
         raise ValueError('Recovery checks and repair share a deadline of 1–600 seconds.')
+    backoff = policy.get('backoff_seconds', 0)
+    if type(backoff) not in (int, float) or not 0 <= backoff < policy['timeout']:
+        raise ValueError('Recovery backoff must fit inside the shared deadline.')
     inputs = policy['inputs']
     if (not isinstance(inputs, dict) or not inputs or len(inputs) > 1000
             or any(not isinstance(path, str) or not Path(path).is_absolute() or '\x00' in path
@@ -95,10 +102,51 @@ def validate_result_recovery(row):
             raise ValueError('Invalid infrastructure recovery evidence.')
         for attempt in info[key]:
             if (not isinstance(attempt, dict)
-                    or attempt.get('status') not in ('passed', 'failed', 'timeout', 'cancelled')
+                    or attempt.get('status') not in ('passed', 'failed', 'timeout', 'cancelled', 'interrupted')
                     or any(field in attempt and not isinstance(attempt[field], str)
                            for field in ('log', 'operation'))):
                 raise ValueError('Invalid infrastructure recovery attempt evidence.')
+            if 'proof' in attempt:
+                proof = attempt['proof']
+                if not isinstance(proof, dict) or any(
+                        key in proof and not isinstance(proof[key], str) for key in PROBE_CONTEXT):
+                    raise ValueError('Invalid infrastructure recovery probe evidence.')
+
+
+def recovery_summary(info):
+    """Compact facts shared by CLI status and downstream job summaries."""
+    fields = ('status', 'started_at', 'finished_at', 'seconds', 'exit_code', 'log',
+              'process_cleanup', 'cleanup_error', 'timeout_seconds', 'operation', 'proof')
+    summary = {key: info[key] for key in ('environment', 'target', 'status', 'backoff_seconds') if key in info}
+    for key in ('attempts', 'checks'):
+        summary[key] = [{field: row[field] for field in fields if field in row} for row in info[key]]
+    return summary
+
+
+def recovery_log_reference(step, row, operation=None):
+    """Resolve a saved attempt or hook only within this step's executor layout."""
+    info = row.get('recovery', {})
+    record = row
+    if operation in ('first', 'second'):
+        index = 0 if operation == 'first' else 1
+        attempts = info.get('attempts', [])
+        record = attempts[index] if index < len(attempts) else {}
+    elif operation is not None:
+        if operation not in RECOVERY_LOGS:
+            raise ValueError('Unknown recovery log for step: ' + step)
+        record = next((check for check in info.get('checks', [])
+                       if check.get('operation') == operation), {})
+    log = record.get('log')
+    if not isinstance(log, str):
+        raise ValueError('Step has no retained log yet: ' + step)
+    # Historical Windows receipts use native separators.
+    parts = log.replace('\\', '/').split('/')
+    allowed = (operation,) if operation else ('first', 'second')
+    if (len(parts) != 5 or parts[:2] != ['infrastructure-recovery', step]
+            or not re.fullmatch('[0-9a-f]{32}', parts[2])
+            or parts[3] not in allowed or parts[4] != step + '.log'):
+        raise ValueError('Invalid retained log for step: ' + step)
+    return '/'.join(parts)
 
 
 def _read_journal(path, policy, phase_id):
@@ -110,6 +158,11 @@ def _read_journal(path, policy, phase_id):
             or not isinstance(row.get('recovery'), dict)):
         raise ValueError('Invalid infrastructure recovery record: ' + str(path))
     info = row['recovery']
+    pending = saved.get('in_flight')
+    if pending is not None and (not isinstance(pending, dict) or saved['state'] != 'admitted'
+            or pending.get('operation') not in ('repair', 'readiness', 'second')
+            or not all(isinstance(pending.get(key), str) for key in ('log', 'started_at'))):
+        raise ValueError('Invalid infrastructure recovery record: ' + str(path))
     try:
         validate_result_recovery(row)
     except ValueError as error:
@@ -150,6 +203,10 @@ def execute(phase, output, run, *, cancelled, event):
         saved = _read_journal(journal, policy, phase.id)
         row = dict(saved['result'], required=phase.required, kind=phase.kind)
         if saved['state'] != 'finished':
+            pending = saved.get('in_flight')
+            if pending:
+                key = 'attempts' if pending['operation'] == 'second' else 'checks'
+                row['recovery'][key].append(dict(pending, status='interrupted'))
             row = dict(row, status='failed', failure_kind='infrastructure',
                        recovery=dict(row.get('recovery', {}), status='interrupted'),
                        reason='Infrastructure recovery was interrupted; inspect retained evidence and start a new run.')
@@ -198,19 +255,34 @@ def execute(phase, output, run, *, cancelled, event):
         previous = {value: signature(value) for value in command.artifacts}
         destination = attempt_root / label
         destination.mkdir(parents=True, exist_ok=False)
+        if label in ('repair', 'readiness', 'second'):
+            # A supervisor can disappear before the child publishes its exit.
+            # Preserve completed checks and the path to the in-flight log.
+            in_flight = dict(operation=label, started_at=timestamp(),
+                             log=(destination / (phase.id + '.log')).relative_to(root).as_posix())
+            save_json(journal, dict(state='admitted', in_flight=in_flight,
+                                    result=dict(attempts[0], failure_kind='infrastructure', recovery=info)))
         row = run(command, destination)
         if row['status'] == 'passed' and row.get('observed_test_failures'):
             row.update(status='failed', error='Runner reported app/test failures despite a successful exit.')
         if row['status'] == 'passed' and any(signature(value) == old for value, old in previous.items()):
             row.update(status='failed', error='Test runner did not produce fresh declared output.')
         if row.get('log'):
-            row['log'] = str((destination / row['log']).relative_to(root))
+            row['log'] = (destination / row['log']).relative_to(root).as_posix()
+        if row['status'] == 'timeout':
+            row['timeout_seconds'] = command.timeout
         return row
 
     def finish(row):
         row = dict(row, recovery=info, seconds=time.monotonic() - started, finished_at=timestamp())
         if attempts:
             row['started_at'] = attempts[0]['started_at']
+        cleanup_error = next((entry['cleanup_error'] for entry in (*attempts, *checks)
+                              if entry.get('cleanup_error')), None)
+        if cleanup_error:
+            info['status'] = 'not-safe'
+            row.update(status='failed', process_cleanup='failed', cleanup_error=cleanup_error,
+                       reason='Inspect the retained log and reconcile the worker before starting a new run.')
         if journal.exists():
             save_json(journal, dict(state='finished', result=row))
             save_json(budget, dict(phase=phase.id, target=policy['target'],
@@ -224,13 +296,15 @@ def execute(phase, output, run, *, cancelled, event):
             raise RuntimeError('Infrastructure recovery deadline expired.')
         command = replace(phase, argv=tuple(policy[key]), timeout=remaining,
             environment=dict(phase.environment, BUILD_MANAGER_RECOVERY_TARGET=policy['target'],
-                             BUILD_MANAGER_RECOVERY_ACTION=action),
+                             BUILD_MANAGER_RECOVERY_ACTION=action,
+                             BUILD_MANAGER_RECOVERY_FIRST_LOG=str(root / attempts[0]['log'])),
             artifacts=(), artifact_types={}, test_files=(), infrastructure_recovery={},
             reuse_key='', reuse_probe=())
         row = invoke(command, label)
         checks.append(dict(row, operation=label))
         if row['status'] != 'passed' or row.get('cleanup_error'):
-            raise RuntimeError('Infrastructure ' + label + ' did not complete successfully.')
+            raise RuntimeError(f'Infrastructure {label} ended with status {row["status"]}. '
+                               'Inspect its log and verify the target and worker state before another run.')
         return row
 
     def probe(label):
@@ -245,35 +319,52 @@ def execute(phase, output, run, *, cancelled, event):
                 or any(proof.get(key) is not True for key in ('owned', 'exclusive', 'worker_stopped'))
                 or proof.get('held') is not False):
             raise ValueError('Probe did not establish an owned, unheld target with no surviving test worker.')
-        if proof['state'] in ('stopped', 'disconnected') and proof.get('failure_kind') != 'infrastructure':
-            raise ValueError('Probe did not classify the interrupted test as an infrastructure failure.')
-        # Keep the bounded protocol fields, not arbitrary unredacted diagnostics.
+        # Retain only bounded fields from the supervisor's redacted probe log.
         checks[-1]['proof'] = {key: proof[key] for key in
             ('schema', 'target', 'state', 'owned', 'exclusive', 'worker_stopped', 'held')}
-        checks[-1]['proof']['failure_kind'] = proof.get('failure_kind', '')
-        return proof['state']
+        for key in ('failure_kind', *PROBE_CONTEXT):
+            if key in proof:
+                value = proof[key]
+                if not isinstance(value, str) or len(value) > 256 or not value.isprintable():
+                    raise ValueError('Invalid infrastructure probe field: ' + key)
+                checks[-1]['proof'][key] = value
+        return checks[-1]['proof']
 
     row = dict(id=phase.id, required=phase.required, kind=phase.kind, status='failed')
     try:
         verify_inputs()
         row = invoke(phase, 'first')
         attempts.append(dict(row))
-        if row['status'] not in ('failed', 'timeout') or cancelled():
+        if row['status'] == 'cancelled' or cancelled():
+            info['status'] = 'cancelled'
+            return finish(dict(row, status='cancelled'))
+        if row['status'] not in ('failed', 'timeout'):
             info['status'] = 'not-needed'
             return finish(row)
+        if (row['status'] == 'failed' and isinstance(row.get('exit_code'), int)
+                and row['exit_code'] < 0):
+            info['status'] = 'not-safe'
+            row['reason'] = 'The test process terminated by signal. Inspect the first log and crash evidence.'
+            return finish(row)
         # A known test failure cannot be erased by a coincident environment failure.
-        if row.get('cleanup_error') or row.get('observed_test_failures') or any(
+        if row.get('cleanup_error'):
+            return finish(row)
+        if row.get('observed_test_failures') or any(
                 case.get('status') in ('failed', 'error', 'crashed', 'timeout')
                 for key in ('tests', 'live_tests', 'test_files') for case in row.get(key, ())):
             info['status'] = 'not-safe'
-            row['reason'] = ('Automatic recovery withheld because process cleanup was incomplete.'
-                             if row.get('cleanup_error') else
-                             'Automatic recovery withheld because an app/test failure was reported.')
+            row['reason'] = 'Automatic recovery withheld because an app/test failure was reported.'
+            return finish(row)
+        if row.get('error'):
+            info['status'] = 'not-safe'
+            row['reason'] = 'Inspect the runner or report error in the first attempt before repeating the test.'
             return finish(row)
         deadline = time.monotonic() + policy['timeout']
-        state = probe('diagnose')
-        if state not in ('stopped', 'disconnected'):
+        diagnosis = probe('diagnose')
+        state = diagnosis['state']
+        if state not in ('stopped', 'disconnected') or diagnosis.get('failure_kind') != 'infrastructure':
             info['status'] = 'not-confirmed'
+            row['reason'] = 'Inspect the first test log and diagnosis before starting a new run.'
             return finish(row)
         row = dict(row, failure_kind='infrastructure')
         if budget.exists():
@@ -291,8 +382,17 @@ def execute(phase, output, run, *, cancelled, event):
         save_json(journal, dict(state='admitted', result=dict(row, recovery=info)))
         event(dict(type='phase', id=phase.id, status='running',
                    reason='Recovering test infrastructure (one attempt).'))
+        if policy.get('backoff_seconds'):
+            wait_started = time.monotonic()
+            until = min(deadline, wait_started + policy['backoff_seconds'])
+            try:
+                while (remaining := until - time.monotonic()) > 0:
+                    check_cancelled(cancelled)
+                    time.sleep(min(.05, remaining))
+            finally:
+                info['backoff_seconds'] = time.monotonic() - wait_started
         hook('recover', 'repair', 'restart' if state == 'stopped' else 'reconnect')
-        if probe('readiness') != 'ready':
+        if probe('readiness')['state'] != 'ready':
             raise RuntimeError('Recovered environment did not prove readiness.')
         verify_inputs()
         check_cancelled(cancelled)
@@ -300,9 +400,14 @@ def execute(phase, output, run, *, cancelled, event):
             raise RuntimeError('Infrastructure recovery deadline expired before replay.')
         row = invoke(phase, 'second')
         attempts.append(dict(row))
-        if row['status'] == 'passed':
+        if row['status'] == 'cancelled' or cancelled():
+            info['status'] = 'cancelled'
+            row['status'] = 'cancelled'
+        elif row['status'] == 'passed':
             info['status'] = 'recovered'
-            row['reason'] = 'Passed after infrastructure recovery.'
+            signature = diagnosis.get('signature')
+            row['reason'] = ('Passed on attempt 2 of 2 after ' + signature + '.' if signature
+                             else 'Passed after infrastructure recovery.')
         else:
             info['status'] = 'exhausted'
             row['reason'] = 'Test did not pass after the single infrastructure recovery attempt.'

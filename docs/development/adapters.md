@@ -94,7 +94,10 @@ repair commands using the appropriate lifecycle/transport APIs. It must define
 a repeatable test boundary and verify ownership and worker state on that platform.
 This contract does not add platform-specific repair commands to existing adapters.
 
-The policy is a dictionary with exactly these fields:
+The policy requires the fields in this example. An adapter can also set
+`backoff_seconds` to a nonnegative delay shorter than `timeout`. Its default is
+zero. The Manager holds the same resource during the delay and counts it
+against the shared recovery deadline. Cancellation during the delay stops repair.
 
 ```python
 infrastructure_recovery = {
@@ -133,7 +136,11 @@ both streams in the same log. Example evidence for a confirmed stopped environme
   "owned": true,
   "exclusive": true,
   "worker_stopped": true,
-  "held": false
+  "held": false,
+  "stage": "boot",
+  "signature": "simulator boot timeout",
+  "last_healthy_transition": "device created",
+  "runner": "local-test-runner"
 }
 ```
 
@@ -146,13 +153,21 @@ worker/receipt state first. Known JUnit or streamed test failures, and incomplet
 local process cleanup, prevent automatic repair/replay even if a probe would
 otherwise authorize it. Unknown ownership, live workers, held VMs and personal
 devices must never yield the affirmative proof above.
+The optional `stage`, `signature`, `last_healthy_transition` and `runner` fields
+hold up to 256 printable characters each. Record the last verified transition,
+such as device creation, app launch or suite completion. Supply a non-secret
+runner identity. A collection timeout after suite completion belongs to the
+collection stage. A compiler error or app crash can be reported with
+`failure_kind` set to `compilation` or `app-crash`. Those classifications
+end the attempt even when the target has also disconnected.
 Reported streamed crashes, failures and timeouts remain recovery vetoes even
 when a later final report omits them; the result retains those observations.
 For these opted-in test units, a successful command exit that contradicts a
 reported failure also remains a failure, including on the repeated attempt.
 
-Hooks receive `BUILD_MANAGER_RECOVERY_TARGET` and
-`BUILD_MANAGER_RECOVERY_ACTION`. The action is `probe`, `restart` for a confirmed
+Hooks receive `BUILD_MANAGER_RECOVERY_TARGET`, `BUILD_MANAGER_RECOVERY_ACTION`
+and `BUILD_MANAGER_RECOVERY_FIRST_LOG`. The last variable identifies the original
+test attempt's redacted log in this run. The action is `probe`, `restart` for a confirmed
 stopped target, or `reconnect` for a disconnected target. Repair must recheck
 ownership, holds and worker state immediately before mutation and honor the
 requested action. Reconnect must not reset a running guest. Restart must use
@@ -165,9 +180,18 @@ The repeated test has the original phase timeout and exact command/environment.
 
 Each test attempt and hook retains a separate log and artifact directory under
 the run's `infrastructure-recovery/`. The result's `recovery` object includes
-attempts, checks and status. Admission is persisted before repair; a supervisor
+attempts, checks and status. Compact CLI status includes their timestamps,
+elapsed seconds, exit codes, timeout limits for timed-out commands and relative
+log paths. `process_cleanup` records the local supervisor's cleanup outcome.
+For a remote guest, the adapter separately proves worker retirement and
+resource cleanup. Hooks carry an `operation` label and successful
+probes retain their evidence in `proof`. Hosted adapters can include these facts
+in the job summary and upload the run directory with its nested logs.
+Admission is persisted before repair; a supervisor
 restart cannot reset the target budget. An interrupted admission requires
-inspection and a new run. A completed journal can reconcile an interrupted
+inspection and a new run. If supervision stops inside repair, readiness or the
+repeat, the journal identifies the in-flight log and previously completed checks.
+The interrupted operation has no verified exit code. A completed journal can reconcile an interrupted
 budget update without running commands again; restored successful phase evidence
 rechecks the prepared inputs. Malformed records fail closed. A successful repeat remains `status='passed'`, with
 `recovery.status='recovered'` and the visible result “Passed after infrastructure

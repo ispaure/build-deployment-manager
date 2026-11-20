@@ -98,8 +98,10 @@ the old test worker is stopped. A timeout alone does not trigger a restart.
 Known app/test failures remain failures. Recovery checks and repair have a
 deadline; the target gets only one recovery attempt for the whole run.
 
-A successful repeat is labelled **Passed after infrastructure recovery**. Both
-test attempts and the environment checks remain in the result folder; select
+A successful repeat is labelled **Passed after infrastructure recovery**. When
+the probe supplies a cause, the step inspector shows it with the attempt number,
+for example **Passed on attempt 2 of 2 after simulator boot timeout**. Both
+test attempts and the environment checks remain in the result folder. Open
 the step's Command details for their log paths. If repair fails or the test
 fails again, inspect that evidence before starting a new run. Cancelling stops
 recovery through the normal owned-process cleanup. Existing project adapters

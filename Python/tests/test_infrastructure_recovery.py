@@ -2,6 +2,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -66,6 +67,109 @@ class InfrastructureRecoveryTests(unittest.TestCase):
         self.proof_update(state='disconnected')
         self.assertEqual(self.execute()['status'], 'passed')
         self.assertEqual((self.root / 'repair').read_text(), 'reconnect')
+
+    def test_status_and_logs_expose_each_attempt_and_its_diagnosis(self):
+        from build_manager.api import read_status, read_logs
+        self.policy.update(environment='ios', backoff_seconds=.08)
+        self.proof_update(stage='boot', signature='simulator boot timeout',
+                          last_healthy_transition='device created', runner='fixture-runner')
+        self.policy['probe'] = self.command(
+            "import os; from pathlib import Path; "
+            "assert 'attempt 1' in Path(os.environ['BUILD_MANAGER_RECOVERY_FIRST_LOG']).read_text(); "
+            "print(Path('proof.json').read_text())")
+        self.execute()
+        output = self.root / 'result'
+        phase = read_status(output)['phases'][0]
+        self.assertEqual(phase['reason'], 'Passed on attempt 2 of 2 after simulator boot timeout.')
+        info = phase['recovery']
+        self.assertGreaterEqual(info['backoff_seconds'], .075)
+        self.assertEqual([a['exit_code'] for a in info['attempts']], [7, 0])
+        for row in [*info['attempts'], *info['checks']]:
+            self.assertLessEqual(row['started_at'], row['finished_at'])
+            self.assertEqual(row['process_cleanup'], 'completed')
+            self.assertTrue((output / row['log']).is_file())
+        self.assertEqual(info['checks'][0]['proof']['last_healthy_transition'], 'device created')
+        self.assertEqual(info['checks'][0]['proof']['runner'], 'fixture-runner')
+        self.assertEqual(read_logs(output, 'native')['text'], 'attempt 2')
+        for label, expected in (('first', 'attempt 1'), ('second', 'attempt 2'),
+                                ('diagnose', 'stopped'), ('repair', ''), ('readiness', 'ready')):
+            with self.subTest(label=label):
+                self.assertIn(expected, read_logs(output, 'native', recovery_log=label)['text'])
+        first_log = output / info['attempts'][0]['log']
+        from build_manager.diagnostics import read_log
+        legacy = info['attempts'][0]['log'].replace('/', '\\')
+        self.assertEqual(read_log(output, legacy).text.strip(), 'attempt 1')
+        first_log.rename(first_log.with_suffix('.retained'))
+        first_log.hardlink_to(output / 'plan.json')
+        with self.assertRaisesRegex(ValueError, 'run directory'):
+            read_logs(output, 'native', recovery_log='first')
+
+    def test_compile_error_reported_by_probe_stops_even_if_guest_disconnected(self):
+        (self.root / 'broken.py').write_text('def invalid(:')
+        self.code = "import py_compile; py_compile.compile('broken.py', doraise=True)"
+        self.proof_update(state='disconnected', failure_kind='compilation', stage='compile')
+        row = self.execute()['phases'][0]
+        self.assertEqual(row['status'], 'failed')
+        self.assertEqual(len(row['recovery']['attempts']), 1)
+        self.assertEqual(row['recovery']['checks'][0]['proof']['failure_kind'], 'compilation')
+        self.assertIn('SyntaxError', (self.root / 'result' / row['log']).read_text())
+        self.assertFalse((self.root / 'repair').exists())
+
+    def test_probe_context_uses_redacted_log_in_summary_and_journal(self):
+        from unittest.mock import patch
+        from build_manager.api import read_status
+        secret = 'fixture-secret-for-redaction'
+        self.proof_update(signature='boot failed on ' + secret)
+        with patch.dict(os.environ, GITHUB_TOKEN=secret):
+            result = self.execute()
+        self.assertEqual(result['status'], 'passed')
+        output = self.root / 'result'
+        self.assertNotIn(secret, json.dumps(read_status(output)))
+        for file in (output / 'infrastructure-recovery').rglob('*'):
+            if file.is_file():
+                self.assertNotIn(secret, file.read_text())
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX signal exit codes')
+    def test_signalled_test_process_precedes_coincident_unhealthy_probe(self):
+        self.code = "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"
+        row = self.execute()['phases'][0]
+        self.assertEqual(row['recovery']['status'], 'not-safe')
+        self.assertFalse(row['recovery']['checks'])
+
+    def test_cancellation_during_backoff_preserves_first_attempt(self):
+        from threading import Timer
+        self.policy['backoff_seconds'] = 3
+        cancelled = Event()
+        timer = Timer(.1, cancelled.set)
+        self.addCleanup(timer.cancel)
+        def event(value):
+            if value.get('reason', '').startswith('Recovering test infrastructure'):
+                timer.start()
+        row = self.execute(event=event, cancelled=cancelled)['phases'][0]
+        self.assertEqual(row['recovery']['status'], 'cancelled')
+        self.assertLess(row['recovery']['backoff_seconds'], 3)
+        self.assertEqual(len(row['recovery']['attempts']), 1)
+        self.assertFalse((self.root / 'repair').exists())
+
+    def test_invalid_backoff_cannot_exceed_shared_deadline(self):
+        for delay in (-1, True, float('nan'), self.policy['timeout']):
+            with self.subTest(delay=delay), self.assertRaisesRegex(ValueError, 'backoff'):
+                self.phase(infrastructure_recovery=dict(self.policy, backoff_seconds=delay))
+
+    def test_concurrent_cancellation_preserves_cleanup_failure(self):
+        from unittest.mock import patch
+        cancelled = Event()
+        def failed_cleanup(*args, **kwargs):
+            cancelled.set()
+            raise PermissionError('fixture cleanup incomplete')
+        with patch('build_manager.executor.stop_process', side_effect=failed_cleanup):
+            result = self.execute(cancelled=cancelled)
+        self.assertEqual(result['status'], 'failed')
+        row = result['phases'][0]
+        self.assertEqual(row['status'], 'failed')
+        self.assertEqual(row['process_cleanup'], 'failed')
+        self.assertEqual(row['cleanup_error'], 'fixture cleanup incomplete')
+        self.assertFalse(row['recovery']['checks'])
 
     def test_second_failure_does_not_repair_again_even_on_resume(self):
         self.code = self.code.replace('7 if n==1 else 0', '7')
@@ -144,6 +248,26 @@ class InfrastructureRecoveryTests(unittest.TestCase):
         row = self.execute(resume=True)['phases'][0]
         self.assertEqual(row['status'], 'failed')
         self.assertIn('interrupted', row['reason'])
+        self.assertEqual((self.root / 'runs').read_text(), '2')
+
+    def test_lost_supervisor_preserves_inflight_log_and_completed_checks(self):
+        from unittest.mock import patch
+        from build_manager.api import read_logs
+        run = Executor.run_phase
+        def lose_completion(executor, phase, destination, *args, **kwargs):
+            row = run(executor, phase, destination, *args, **kwargs)
+            if destination.name == 'second':
+                raise KeyboardInterrupt('lost before the second result was committed')
+            return row
+        with patch.object(Executor, 'run_phase', lose_completion), self.assertRaises(KeyboardInterrupt):
+            self.execute()
+        row = self.execute(resume=True)['phases'][0]
+        self.assertEqual(row['recovery']['status'], 'interrupted')
+        self.assertEqual([r['operation'] for r in row['recovery']['checks']], ['diagnose', 'repair', 'readiness'])
+        second = row['recovery']['attempts'][1]
+        self.assertEqual(second['status'], 'interrupted')
+        self.assertNotIn('exit_code', second)
+        self.assertEqual(read_logs(self.root / 'result', 'native', recovery_log='second')['text'], 'attempt 2')
         self.assertEqual((self.root / 'runs').read_text(), '2')
 
     def test_policy_validation_and_legacy_serialization(self):

@@ -1,4 +1,5 @@
 """Bounded diagnosis and manual-sharing projection; no execution or Qt imports."""
+from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -38,31 +39,42 @@ def bounded(text, limit):
     return raw[:max(0, limit - len(suffix))].decode('utf-8', errors='ignore') + suffix
 
 
-def read_log(root, reference):
-    """Read a complete-line prefix of a regular, non-linked retained log only."""
+@contextmanager
+def open_retained_log(root, reference):
+    """Open a regular, non-linked log underneath the retained run directory."""
+    from .retention import linked
     root = Path(root)
+    if isinstance(reference, str) and reference.startswith('infrastructure-recovery\\'):
+        # Older Windows executors saved native separators in these log paths.
+        reference = reference.replace('\\', '/')
     if (not isinstance(reference, str) or not reference or '\\' in reference
             or ':' in reference or Path(reference).is_absolute() or '..' in Path(reference).parts
-            or root.is_symlink()):
+            or linked(root)):
         raise ValueError('Invalid retained log reference.')
     root = root.resolve()
     path = root / reference
     for part in (path, *path.parents):
         if part == root:
             break
-        if part.is_symlink():
+        if linked(part):
             raise ValueError('Linked retained logs are unavailable.')
     if not path.resolve().is_relative_to(root):
         raise ValueError('Retained log must remain within its run.')
-    try:
-        # Avoid opening device/FIFO paths and reject final symlink replacement.
-        if not stat.S_ISREG(path.stat().st_mode):
+    # Avoid opening device/FIFO paths and reject final symlink replacement.
+    if not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError('Retained log is not a regular file.')
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValueError('Retained log is not a regular file.')
-        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
-        with os.fdopen(descriptor, 'rb') as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise ValueError('Retained log is not a regular file.')
+        yield stream
+
+
+def read_log(root, reference):
+    """Read a complete-line prefix of a regular, non-linked retained log only."""
+    try:
+        with open_retained_log(root, reference) as stream:
             raw = stream.read(MAX_LOG_BYTES + 1)
     except FileNotFoundError:
         return EvidenceRead('', 'missing')
