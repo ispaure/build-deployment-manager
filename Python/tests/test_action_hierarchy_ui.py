@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Full-window action reachability and direct, evidence-preserving attention routes."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

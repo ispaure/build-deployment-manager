@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Prepare review data without Qt, project imports, or changes to the execution plan."""
 from collections import Counter
 from dataclasses import asdict, dataclass, replace

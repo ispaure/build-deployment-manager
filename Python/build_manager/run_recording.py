@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Private run report persistence and attempt timing, without scheduling policy."""
 from datetime import datetime, timezone
 import os

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Run summary presentation from explicit plan and RunState facts."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget

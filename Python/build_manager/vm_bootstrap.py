@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reproducible first-boot resources for dedicated test guests."""
 import json
 import hashlib

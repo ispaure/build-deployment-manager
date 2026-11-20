@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Prepare an ordinary manager plan for explicit cross-consumer test commands.
 
 No sibling discovery, pin replacement, interpreter installation or custom executor.

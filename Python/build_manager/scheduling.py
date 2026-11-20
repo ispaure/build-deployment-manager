@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Pure scheduling decisions; execution, approvals and resource admission stay separate."""
 
 

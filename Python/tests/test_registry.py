@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Trust, environment isolation, registration and private settings contracts."""
 import json
 import os

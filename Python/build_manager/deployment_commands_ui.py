@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional Qt controls for project-supplied interactive deployment commands."""
 import codecs
 from dataclasses import dataclass

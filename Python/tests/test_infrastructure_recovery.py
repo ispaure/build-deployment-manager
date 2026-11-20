@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable recovery acceptance using real harmless subprocesses, never devices."""
 from dataclasses import replace
 import hashlib

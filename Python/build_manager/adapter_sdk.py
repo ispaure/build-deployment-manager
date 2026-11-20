@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """API-1 facade for project adapters. Headless; never imports a project or Qt.
 
 Projects retain dependency pins and policy. Specialized transports are extension

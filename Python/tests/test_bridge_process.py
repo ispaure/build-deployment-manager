@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned session subgroups cannot mutate after bridge cancellation or early exit."""
 import io
 import json

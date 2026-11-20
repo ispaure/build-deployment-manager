@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable bootstrap contracts; no VM start or public tool download."""
 import copy
 import json

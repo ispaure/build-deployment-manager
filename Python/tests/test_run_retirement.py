@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Retirement preserves evidence/outcomes, serializes with execution and survives interruption."""
 import json
 from pathlib import Path

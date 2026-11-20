@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Credential material is never configuration; references remain non-secret data."""
 import os
 from pathlib import Path

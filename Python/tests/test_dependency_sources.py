@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Exact committed transfer owns mechanics independently of any consumer."""
 import hashlib
 import io

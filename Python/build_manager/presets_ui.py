@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """One preset picker and the per-run baseline for its selected preset."""
 from PySide6.QtCore import QObject, QSignalBlocker, Qt
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox, QToolButton

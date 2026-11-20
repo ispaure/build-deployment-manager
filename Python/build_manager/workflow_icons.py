@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bundled, palette-aware platform and service badges for workflow cards."""
 from functools import lru_cache
 from importlib.resources import files

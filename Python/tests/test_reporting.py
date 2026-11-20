@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Actual stdlib case production, failure semantics and unknown durations."""
 from contextlib import redirect_stderr
 import io

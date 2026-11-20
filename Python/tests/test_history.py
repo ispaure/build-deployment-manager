@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Read-only project result discovery and identity checks."""
 import json
 from pathlib import Path

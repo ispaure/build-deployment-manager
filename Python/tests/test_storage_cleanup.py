@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reviewed cleanup delegates only current selections to the real storage owners."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, nullcontext

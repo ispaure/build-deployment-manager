@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 from link_fixtures import directory_link
 """Retention safety: active work, pins and external links survive pruning."""
 import os

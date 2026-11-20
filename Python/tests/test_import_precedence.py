@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit project context preserves interpreter roots in either import order."""
 from pathlib import Path
 import os

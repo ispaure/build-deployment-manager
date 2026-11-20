@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reviewed retirement releases a run's holds without rewriting its outcome."""
 from datetime import datetime, timezone
 from pathlib import Path

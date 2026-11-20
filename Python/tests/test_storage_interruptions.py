@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Interrupted cleanup and concurrent controllers preserve ownership and run state."""
 from contextlib import contextmanager
 import json

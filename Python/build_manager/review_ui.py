@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """One review map and a persistent, synchronized task/evidence inspector."""
 import json
 import shlex

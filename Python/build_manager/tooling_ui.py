@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project bootstrap readiness independent of ordinary adapter/settings imports."""
 from queue import Empty, Queue
 from threading import Event

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Advisory case events cannot complete a phase or replace final test evidence."""
 import json
 import os

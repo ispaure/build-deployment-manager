@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """First-failure evidence and existing bounded cleanup for owned test fixtures."""
 import ctypes as c
 from ctypes import wintypes as w

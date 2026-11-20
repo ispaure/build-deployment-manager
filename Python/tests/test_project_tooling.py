@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bootstrap works without a project manager package and never guesses an installer."""
 from contextlib import redirect_stdout
 from copy import deepcopy

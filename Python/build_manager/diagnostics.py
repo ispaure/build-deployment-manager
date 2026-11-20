@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded diagnosis and manual-sharing projection; no execution or Qt imports."""
 from contextlib import contextmanager
 from dataclasses import dataclass

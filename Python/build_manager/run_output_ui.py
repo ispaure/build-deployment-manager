@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded execution logs and explicit evidence availability for the selected scope."""
 from collections import deque
 

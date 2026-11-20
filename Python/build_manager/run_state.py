@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Headless phase facts and event buffering shared by live and retained runs."""
 import json
 import time

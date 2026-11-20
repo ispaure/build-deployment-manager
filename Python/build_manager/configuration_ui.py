@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Editable workflow intent beside a non-executable, live dependency sketch."""
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon

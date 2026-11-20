@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Automatic console sign-in for the Manager-owned Windows test account."""
 import json
 import os

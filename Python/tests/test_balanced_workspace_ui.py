@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Balanced presentation keeps scope, editability and explicit action contracts."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

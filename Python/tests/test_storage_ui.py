@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 from link_fixtures import directory_link
 """Exercise asynchronous storage review against real owned fixture directories."""
 import os

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Concurrency fixtures keep strict interval checks when wall-clock samples coincide."""
 import json
 from pathlib import Path

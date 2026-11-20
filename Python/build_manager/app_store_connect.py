@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reusable App Store Connect signing and HTTP transport; no project destinations."""
 import base64
 import json

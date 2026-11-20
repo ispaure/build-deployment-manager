@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit host policy, separate from project and hosted capabilities."""
 from dataclasses import asdict,dataclass
 import platform

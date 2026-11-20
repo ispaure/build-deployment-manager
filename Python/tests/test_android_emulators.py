@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Missing tools and mismatched identities never authorize emulator actions."""
 import json
 import os

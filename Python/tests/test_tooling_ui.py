@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project tooling is visible and repair stays explicit, isolated and asynchronous."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Review attaches tasks without rebuilding the configuration's intent graph."""
 from dataclasses import replace
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Application preferences, distinct from project-owned settings."""
 from pathlib import Path
 from PySide6.QtCore import QUrl

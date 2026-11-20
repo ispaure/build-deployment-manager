@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Prepared review yields between batches and exposes every exact task."""
 import json
 import os

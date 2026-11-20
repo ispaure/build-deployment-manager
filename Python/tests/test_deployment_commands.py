@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Compatibility sequences inherit terminal prompts and never hide earlier failures."""
 from contextlib import redirect_stdout
 import io

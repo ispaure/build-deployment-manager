@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Controlled GitHub transport: no live dispatch, upload or notification."""
 from threading import Event
 import unittest

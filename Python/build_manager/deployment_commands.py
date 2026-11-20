@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Interactive local commands; project policy supplies arguments and order.
 
 Unlike execution plans, these compatibility commands inherit terminal input.

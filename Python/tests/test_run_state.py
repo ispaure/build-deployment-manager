@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Run snapshots and partial events retain measured evidence across UI refreshes."""
 from types import SimpleNamespace
 import unittest

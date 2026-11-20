@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Declarative discovery, dependency ordering and isolated interpreter contracts."""
 import json
 from pathlib import Path

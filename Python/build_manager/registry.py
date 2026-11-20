@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Private registrations; reading a descriptor never imports project code."""
 import copy
 import hashlib

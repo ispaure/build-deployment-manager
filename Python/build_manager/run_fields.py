@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project-declared, non-secret inputs captured for one reviewed run."""
 import re
 import json

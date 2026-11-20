@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real chained processes, retained artifact review and interrupted recovery."""
 import json
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Publicly verifiable exports of authenticated local test receipts.
 
 The project supplies exact coverage bindings and the receiver's trust file.

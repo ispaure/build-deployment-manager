@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """A second project's harmless processes exercise generic deployment controls."""
 import json
 import os

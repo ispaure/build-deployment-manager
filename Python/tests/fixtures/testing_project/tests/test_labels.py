@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Observable input/output contracts; no services or native SDKs required."""
 import unittest
 

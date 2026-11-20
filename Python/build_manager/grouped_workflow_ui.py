@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Familiar journey cards with an in-place desktop subtask browser."""
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QTextCursor

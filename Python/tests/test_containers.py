@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Container plans retain normal-user and ownership protections."""
 import unittest
 from build_manager.containers import RootlessContainer

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Settings must show before loading, remain responsive and preserve failed edits."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Migration, hand edits, checkout identity and cross-project discovery."""
 import json
 from pathlib import Path

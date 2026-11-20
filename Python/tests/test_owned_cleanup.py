@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned fixture recovery preserves first-failure evidence and fails closed."""
 from contextlib import redirect_stderr
 from io import StringIO

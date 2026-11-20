@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """The fitted workflow can be read at full size without losing its corners."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

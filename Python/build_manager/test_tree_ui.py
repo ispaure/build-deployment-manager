@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Stable file/case tree synchronization and measured timing cells."""
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QColor, QPainterPath, QPalette

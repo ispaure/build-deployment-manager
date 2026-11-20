@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Build intent uses project preparation without tests or external effects."""
 from dataclasses import replace
 import unittest

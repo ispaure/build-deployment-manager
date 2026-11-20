@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Asynchronous settings editor; project code never runs on the Qt thread."""
 from pathlib import Path
 from queue import Empty, Queue

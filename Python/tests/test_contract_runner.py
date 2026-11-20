@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """All modules remain mandatory and native child aborts remain failures."""
 from pathlib import Path
 import os

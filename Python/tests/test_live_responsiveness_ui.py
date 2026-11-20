@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Live bursts yield to input and selection clearing preserves the current scope."""
 import json
 import unittest

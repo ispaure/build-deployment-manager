@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Declarative local commands; source membership and commands remain project policy."""
 import hashlib
 import json

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real registration/planning/execution without a project bridge or Python environment."""
 import json
 from pathlib import Path

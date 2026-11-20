@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded, dependency-free ingestion of explicitly declared JUnit evidence."""
 import math
 from pathlib import Path

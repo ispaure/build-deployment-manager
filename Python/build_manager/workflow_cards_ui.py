@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Workflow cards, dependency paths and canvas rendering."""
 from PySide6.QtCore import Qt, QPointF, Signal, QRectF, QEvent, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF, QTransform, QTextLayout, QTextOption

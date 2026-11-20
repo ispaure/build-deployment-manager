@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """GUI makes an uncertain device retry explicit and leaves the old run untouched."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

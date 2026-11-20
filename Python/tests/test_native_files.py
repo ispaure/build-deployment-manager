@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Contracts exposed by native Windows acceptance."""
 import os
 from pathlib import Path

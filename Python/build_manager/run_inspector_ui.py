@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Selected-phase presentation with explicit plan/facts and stable text selection."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPlainTextEdit, QVBoxLayout, QWidget

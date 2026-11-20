@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned disposable Android AVD lifecycle; no application/package policy."""
 import json
 from contextlib import contextmanager

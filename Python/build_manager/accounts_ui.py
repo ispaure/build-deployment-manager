@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Protected account references; no secret entry or unavailable store setup."""
 from PySide6.QtWidgets import (QComboBox,QDialog,QDialogButtonBox,QFileDialog,
     QFormLayout,QLabel,QLineEdit,QPushButton,QVBoxLayout,QMessageBox)

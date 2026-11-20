@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Searchable retained-run inventory; opening and continuation stay with the panel."""
 from datetime import datetime
 from pathlib import PurePath

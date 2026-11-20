@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real harmless child processes prove the generic second-project boundary."""
 import json
 import os

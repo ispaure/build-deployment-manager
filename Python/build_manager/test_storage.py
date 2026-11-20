@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Inventory and explicitly delete evidence from declared project result folders."""
 from contextlib import ExitStack
 from pathlib import Path, PureWindowsPath

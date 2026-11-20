@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Inputs for this run, initialized asynchronously from project defaults."""
 from queue import Queue,Empty
 from threading import Event

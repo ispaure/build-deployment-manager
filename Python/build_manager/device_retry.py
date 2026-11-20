@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit, separately reviewed device reinstallation; never resume an unknown intent."""
 from dataclasses import replace
 import hashlib

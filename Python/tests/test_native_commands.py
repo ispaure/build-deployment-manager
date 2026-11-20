@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Native preparation preserves command outcomes and always retires owned children."""
 import os
 import subprocess

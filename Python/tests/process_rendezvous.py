@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real child-process rendezvous for concurrency contracts, without startup races."""
 from pathlib import Path
 import sys

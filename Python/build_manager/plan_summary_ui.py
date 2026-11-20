@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Native desktop summary shared by review, live runs and retained results."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QGroupBox, QHBoxLayout, QLabel,

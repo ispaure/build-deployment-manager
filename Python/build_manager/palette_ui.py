@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Refresh manager-local palette styles together after a native theme change."""
 from PySide6.QtCore import QObject, QEvent, QTimer
 from PySide6.QtGui import QPalette

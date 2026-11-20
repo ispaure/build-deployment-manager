@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 PROJECT_ROOT="$(cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG_FILE="$PROJECT_ROOT/launch_config.ini"
 

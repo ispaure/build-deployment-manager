@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real GUI-to-CLI workflow pause/review/resume with harmless processes."""
 import json
 import os

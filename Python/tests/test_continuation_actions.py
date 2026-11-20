@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Partial delivery guidance keeps failed and unknown branches explicit."""
 from copy import deepcopy
 import unittest

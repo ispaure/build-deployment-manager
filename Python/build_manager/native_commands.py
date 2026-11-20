@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Synchronous POSIX commands with owned descendant cleanup and caller policy."""
 import subprocess
 from .executor import stop_process

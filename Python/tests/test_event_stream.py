@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Compact run events recover advisory inventory without changing execution evidence."""
 import json
 import os

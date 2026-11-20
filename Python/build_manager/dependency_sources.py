@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Exact committed manager/dependency transfer; callers own pins and scratch policy."""
 import io
 import hashlib

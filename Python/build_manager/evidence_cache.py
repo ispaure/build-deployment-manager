@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Authenticated local test receipts; projects declare the complete input identity.
 
 An evidence hit is labelled reuse, never a new execution. Missing, tampered or

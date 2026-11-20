@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned Windows guest workspaces over an explicitly supplied provider client."""
 import base64
 import hashlib

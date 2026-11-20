@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Live summary updates keep evidence readable and problems directly accessible."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

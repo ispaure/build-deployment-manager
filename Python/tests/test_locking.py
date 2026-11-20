@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Workspace adapters retain their contention message and directory policy."""
 from pathlib import Path
 from tempfile import TemporaryDirectory

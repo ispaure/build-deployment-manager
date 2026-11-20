@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Background verification preserves exact artifact review and UI lifetime."""
 import hashlib
 import json

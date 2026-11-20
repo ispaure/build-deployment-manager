@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Visible intent, contextual presets and compact navigation over unchanged requests."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

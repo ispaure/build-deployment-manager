@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Existing Parallels guest transport; project adapters own suites and VM policy."""
 import base64
 import hashlib

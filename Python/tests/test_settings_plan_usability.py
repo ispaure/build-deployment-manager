@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Visible recovery at the action that was blocked, without project approval prompts."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Compose workflow browsers; retained imports preserve existing view callers."""
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (QLabel, QPushButton, QHBoxLayout, QSizePolicy,

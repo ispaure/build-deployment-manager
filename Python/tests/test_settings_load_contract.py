@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Clock controls distinguish external bridge completion from Qt rendering."""
 import ast
 import importlib.util

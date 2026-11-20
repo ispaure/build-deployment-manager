@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Summary contract and desktop navigation over real retained plan data."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

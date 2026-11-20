@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Saved runs remain independently addressable across a results-root change."""
 from hashlib import sha256
 import json

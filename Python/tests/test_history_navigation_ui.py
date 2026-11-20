@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Returning to runs is searchable without launching or implicitly resuming work."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

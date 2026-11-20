@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real process overlap and cross-process host resource exclusion."""
 import json
 from dataclasses import replace

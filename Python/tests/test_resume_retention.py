@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Pure retention decisions preserve failures and external effects across retries."""
 import sys
 import unittest

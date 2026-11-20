@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Regression coverage for storage ownership changes and diagnostic visibility."""
 from contextlib import contextmanager, nullcontext
 import json

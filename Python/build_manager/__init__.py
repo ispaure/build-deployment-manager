@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project-independent operation planning and execution; no application imports."""
 
 # Standalone tools bind the manager pin. An adapter subprocess explicitly opts

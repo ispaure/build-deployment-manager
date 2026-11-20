@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned Linux guest child lifetime; callable through a provider transport."""
 import argparse
 import hashlib

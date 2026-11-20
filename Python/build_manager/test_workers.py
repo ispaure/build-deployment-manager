@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Opt-in test worker reservations shared across platforms and manager processes."""
 from contextlib import ExitStack
 from dataclasses import replace

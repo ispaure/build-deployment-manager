@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Shared action hierarchy for the optional Qt presentation."""
 from PySide6.QtCore import Qt, QSize, QEvent, Signal, QRect, QPoint, QObject, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut, QFont

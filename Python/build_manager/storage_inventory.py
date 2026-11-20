@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Headless storage review for adapter declarations and manager-owned evidence."""
 from collections import defaultdict
 from contextlib import nullcontext

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Integrated intent, isolated bridge, real bounded delivery and credential boundaries."""
 from dataclasses import replace
 import hashlib

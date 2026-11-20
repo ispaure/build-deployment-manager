@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Normalize workflow choices without importing widgets or project modules."""
 from dataclasses import dataclass, field
 from typing import Any, Mapping

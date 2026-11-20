@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Disposable upstream CPython testbed setup, independent of project acceptance."""
 import importlib.util
 from pathlib import Path

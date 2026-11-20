@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project storage overview, reviewed cleanup and cooperative worker lifetimes."""
 from functools import partial
 from datetime import datetime

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded protocol transport whose process group/job outlives every request."""
 import json
 import os

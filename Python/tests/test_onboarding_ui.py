@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project onboarding, searchable settings and a review that explains effects."""
 import json
 import os

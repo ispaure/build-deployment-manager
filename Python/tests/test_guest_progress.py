@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Advisory waiting updates cannot become passes or delay owned cancellation."""
 import unittest
 

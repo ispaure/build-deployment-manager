@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Guest lifecycle failure injection; transport/native acceptance remains separate."""
 import json
 import io

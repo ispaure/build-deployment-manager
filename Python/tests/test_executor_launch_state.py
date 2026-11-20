@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Durable boundary proof distinguishes safe admission retries from unknown effects."""
 import errno
 import json

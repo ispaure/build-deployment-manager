@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable automation contracts using isolated adapters and real harmless children."""
 from contextlib import redirect_stdout
 from io import StringIO

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Run every generic contract module in its own interpreter, without importing Qt here."""
 from pathlib import Path
 import os

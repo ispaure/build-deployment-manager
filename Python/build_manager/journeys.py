@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Versioned intent and evidence contracts for project-owned integrated plans."""
 import re
 from copy import deepcopy

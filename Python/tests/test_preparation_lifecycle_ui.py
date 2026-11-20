@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Pending plan preparation cannot execute, replace newer choices, or outlive close."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

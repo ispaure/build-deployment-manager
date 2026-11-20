@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real cross-process admission for nested test pools and idle configuration."""
 from dataclasses import replace
 import json

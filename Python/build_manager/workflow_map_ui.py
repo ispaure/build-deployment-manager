@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Map viewport interaction, fitting and saved view preferences."""
 from PySide6.QtCore import Qt, Signal, QRectF, QEvent
 from PySide6.QtGui import QPainter, QPalette

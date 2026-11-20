@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional Qt presentation for an explicitly supplied project adapter."""
 from .adapter_sdk import supports
 import json

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Dedicated, ownership-checked Parallels test machines. No Qt or project imports."""
 import argparse
 import hashlib

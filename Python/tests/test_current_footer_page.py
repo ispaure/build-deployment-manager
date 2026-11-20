@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """An invisible footer page must not set the window's minimum width."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

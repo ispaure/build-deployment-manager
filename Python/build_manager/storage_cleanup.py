@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reviewed cleanup orchestration; existing project owners authorize each removal.
 
 Index values estimate space only. These helpers run on a worker and never import Qt

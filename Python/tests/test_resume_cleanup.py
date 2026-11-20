@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Resume invalidates attempt-bound cleanup guards without replaying external effects."""
 from pathlib import Path
 import sys

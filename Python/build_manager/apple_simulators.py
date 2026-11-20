@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Simulator lifecycle only; callers supply model/runtime and ownership labels."""
 import json
 import os

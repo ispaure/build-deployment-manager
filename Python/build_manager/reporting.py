@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional stdlib JUnit production for project-owned runners, without Qt."""
 import argparse
 import os

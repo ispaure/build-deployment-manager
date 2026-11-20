@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Retained, cancellable verification with no widget or adapter access."""
 from dataclasses import dataclass
 from pathlib import Path

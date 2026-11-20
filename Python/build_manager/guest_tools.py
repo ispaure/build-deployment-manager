@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Transport-independent isolated guest tool preparation; callers supply all pins.
 
 Run only inside an explicitly selected guest and an owned workspace. Preparation

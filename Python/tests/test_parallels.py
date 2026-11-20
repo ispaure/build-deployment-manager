@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Transport contracts use literal arguments and only explicitly selected guests."""
 import base64
 import io

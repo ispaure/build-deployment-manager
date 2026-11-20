@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Mocked GUI process transport and internal CLI preserve the selected retry policy."""
 from contextlib import redirect_stdout
 import importlib.util

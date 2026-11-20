@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Saved-input delivery prepares a reviewable new plan, never an automatic install."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

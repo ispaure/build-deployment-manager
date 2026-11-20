@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Synthetic first-use walkthrough through real Qt/CLI retention and approvals."""
 import json
 import os

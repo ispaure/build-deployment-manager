@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Private project choices and named presets survive manager recreation."""
 import json
 import os

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit local diagnostic preview, isolated clipboard boundary and recovery offer."""
 from queue import Empty, Queue
 from PySide6.QtCore import QRunnable, QThreadPool, QTimer, Qt

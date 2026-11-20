@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit delivery selections with the workflow's card and action hierarchy."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFrame,

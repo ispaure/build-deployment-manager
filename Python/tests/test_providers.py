@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Unsupported stores fail before credentials/transport; host policy is explicit."""
 import sys
 from unittest.mock import Mock

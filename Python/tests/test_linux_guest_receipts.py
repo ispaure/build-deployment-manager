@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """An uncertain transport must never duplicate a guest command."""
 import base64
 import json

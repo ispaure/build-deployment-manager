@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """One explicitly opted-in test recovery, supervised by the normal executor.
 
 Trusted project subprocesses supply platform/worker evidence; no project or Qt

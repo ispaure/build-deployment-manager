@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded retention for explicitly owned directories, respecting active leases."""
 from contextlib import contextmanager
 from datetime import datetime, timezone

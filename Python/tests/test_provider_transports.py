@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Injected provider responses and a harmless CLI; no credentials or real upload."""
 import io
 import json

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Storage requests, sliced rendering and close own their full Qt lifetime."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

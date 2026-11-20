@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Readiness and final outcomes keep dependency, cleanup and retry semantics distinct."""
 from dataclasses import replace
 import unittest

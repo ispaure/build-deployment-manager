@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real source extractors survive lost sessions without replaying admitted work."""
 import json
 import os

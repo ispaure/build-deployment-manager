@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Read-only review of selected old checks, never a replacement test outcome.
 
 Projects separately decide coverage applicability to new source and toolchains.

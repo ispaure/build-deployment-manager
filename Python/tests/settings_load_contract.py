@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Test-only request/retirement timing, distinct from Qt rendering readiness."""
 import inspect
 from threading import Event, Lock

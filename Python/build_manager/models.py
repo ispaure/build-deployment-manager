@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Small serializable contracts supplied by trusted local project adapters."""
 from dataclasses import asdict, dataclass, field
 import hashlib

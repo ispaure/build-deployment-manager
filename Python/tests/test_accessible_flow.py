@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Guided navigation, settings recovery and reported timing contracts."""
 import json
 import os

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Non-secret profile values and explicit precedence; providers own credentials."""
 import json
 import os

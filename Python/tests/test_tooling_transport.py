@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Real tooling worker dispatch with Qt mocked, never an installer invocation."""
 import importlib.util
 from pathlib import Path

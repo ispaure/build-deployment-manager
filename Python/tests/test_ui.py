@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Actual Qt-to-CLI execution for a harmless second project, without Logistics."""
 import json
 import os

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned background preparation; a retired request never touches its widgets."""
 from dataclasses import dataclass
 from queue import Queue

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Live intent sketches never prepare a plan, and cards reveal the owning settings."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

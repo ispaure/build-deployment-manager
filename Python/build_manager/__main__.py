@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Execute an explicitly selected trusted local plan; adapters own its policy."""
 import argparse
 import json

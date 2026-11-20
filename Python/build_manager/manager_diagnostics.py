@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Private, bounded GUI diagnostics; never reads or writes execution evidence."""
 from contextlib import contextmanager
 from datetime import datetime, timezone

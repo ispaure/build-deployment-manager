@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Generic checkable run recipients supplied by a project, without device access."""
 import json
 from PySide6.QtCore import Qt, Signal, QEvent

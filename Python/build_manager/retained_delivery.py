@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional retained-input preparation: generic scope, project-owned policy."""
 from dataclasses import replace
 from pathlib import Path

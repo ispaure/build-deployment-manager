@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Disposable test directories wait briefly for Windows executable/file release."""
 import os
 from tempfile import TemporaryDirectory as StandardTemporaryDirectory

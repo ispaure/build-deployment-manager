@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Choose-work proportions and review dependency maps remain usable and read-only."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

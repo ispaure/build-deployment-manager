@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Generic local interpreter prerequisite inspection; projects supply packages."""
 import json
 from pathlib import Path

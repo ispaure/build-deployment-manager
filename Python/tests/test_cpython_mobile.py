@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable CPython cache/compiler contracts; no native SDK or device required."""
 import io
 import json

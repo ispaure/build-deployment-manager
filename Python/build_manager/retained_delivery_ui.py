@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Declared recipients/options for a fresh delivery from a selected saved run."""
 from types import SimpleNamespace
 from PySide6.QtCore import Qt

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Non-blocking controls for this checkout's two dedicated test VMs."""
 from pathlib import Path
 

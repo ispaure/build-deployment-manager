@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Versioned non-secret settings layers and explicit legacy migration."""
 from dataclasses import dataclass
 from contextlib import contextmanager

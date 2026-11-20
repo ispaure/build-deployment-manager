@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Checkout identity for reproducibility, without importing any project."""
 import hashlib
 from pathlib import Path

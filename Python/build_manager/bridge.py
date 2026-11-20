@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Trusted adapters run in project processes, never in the manager interpreter."""
 import json
 import os

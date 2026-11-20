@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Attach exact tasks to the chosen journey without changing its overview graph."""
 from dataclasses import dataclass, field, replace
 import json

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Plain presentation data for a retained plan; no UI or project imports."""
 EXTERNAL = {'upload', 'deploy', 'publish', 'dispatch'}
 

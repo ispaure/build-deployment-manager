@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional project-owned bootstrap results; installation policy stays in projects."""
 
 

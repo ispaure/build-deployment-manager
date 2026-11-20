@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Declared artifact DAGs show real sharing and keep build variants separate."""
 from copy import deepcopy
 import unittest

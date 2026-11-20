@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Behavioral coverage for the guided UI using real fixture commands."""
 import json
 import os

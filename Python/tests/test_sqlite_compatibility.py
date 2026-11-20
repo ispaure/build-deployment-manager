@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """The manager consumes its own shared pin without adding a database workflow."""
 from contextlib import closing
 import importlib

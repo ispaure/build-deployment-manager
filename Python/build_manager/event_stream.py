@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Versioned, advisory inventory transport shared by the CLI, API and UI."""
 from itertools import batched
 from threading import Lock

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Standalone project selector; trusted adapters remain in separate processes."""
 from .adapter_sdk import supports
 import argparse

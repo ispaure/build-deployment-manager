@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable storage accounting against real disposable scopes and the pinned index."""
 import json
 import os

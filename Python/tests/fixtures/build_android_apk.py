@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Build an inert APK for disposable-emulator acceptance; no personal signing."""
 import argparse
 import hashlib

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Headless continuation choices; guidance never authorizes or executes work."""
 from dataclasses import dataclass
 from pathlib import Path

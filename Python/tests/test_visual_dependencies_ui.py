@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reduce map clutter without weakening declared scheduling or failure semantics."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

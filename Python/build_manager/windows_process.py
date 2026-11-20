@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Race-free Windows child ownership using a job before the first thread runs.
 
 Only the selected phase joins this job, never the embedding UI/application.

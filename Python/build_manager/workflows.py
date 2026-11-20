@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Durable step recovery and artifact-scoped, session-only effect review."""
 from dataclasses import dataclass
 import hashlib

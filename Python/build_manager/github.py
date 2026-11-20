@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit GitHub repository transport; project adapters supply workflows/policy."""
 import json
 from math import isfinite

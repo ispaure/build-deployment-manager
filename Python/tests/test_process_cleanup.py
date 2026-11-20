@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """A wrapper exiting first must not cut off its descendant's cleanup grace."""
 import os
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Throttled advisory transport heartbeats, never guest execution evidence."""
 import time
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded workflow orchestration, dependency gates and owned process cleanup."""
 from contextlib import ExitStack
 import errno

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Owned POSIX Go-cache removal; no real project caches or SDK state touched."""
 import os
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Retained reports preserve attempt history, timing and redaction."""
 import json
 from pathlib import Path

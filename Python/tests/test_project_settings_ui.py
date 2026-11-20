@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Exercise the project settings journey with a disposable adapter and profile."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Editable device labels. Selecting recipients remains a checkout decision."""
 import configparser
 import json

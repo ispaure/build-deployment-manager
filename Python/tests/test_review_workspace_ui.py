@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """A single review workspace synchronizes map, task list and crash evidence."""
 import json
 import os

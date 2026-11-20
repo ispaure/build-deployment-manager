@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Per-platform execution, explicit remote effects and one-run inputs."""
 import json,os,sys,time
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')

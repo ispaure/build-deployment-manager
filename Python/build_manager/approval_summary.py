@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Approval card data from a retained plan and its prerequisite results only."""
 import json
 from pathlib import PurePath

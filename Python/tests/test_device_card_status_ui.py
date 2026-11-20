@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """A successful recipient stays successful while another device reconnects."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

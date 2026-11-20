@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Manager environment policy around shared line-oriented diagnostic filtering."""
 import os
 import re

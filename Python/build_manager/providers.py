@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Small provider contract; store publication is explicitly unavailable."""
 from dataclasses import dataclass
 

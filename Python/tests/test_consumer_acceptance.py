@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Cross-consumer evidence binds explicit sources, interpreters and completion."""
 import json
 from pathlib import Path

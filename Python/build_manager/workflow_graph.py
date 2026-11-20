@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Pure display-graph calculations; executable dependencies remain unchanged."""
 
 def layout_positions(phases):

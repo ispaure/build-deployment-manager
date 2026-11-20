@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bounded, advisory test-runner events; never execution or release evidence."""
 import json
 import math

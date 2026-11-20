@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Maintenance requires both explicit recorded identity and the current original adapter."""
 from types import SimpleNamespace
 import unittest

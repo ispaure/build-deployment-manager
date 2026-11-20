@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Project suite and case evidence contracts with real harmless subprocesses."""
 import json
 from pathlib import Path

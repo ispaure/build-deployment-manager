@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Declarative project-owned test inventory; discovery never imports project code."""
 import json
 from pathlib import Path

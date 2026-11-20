@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """The live review map classifies actual work and declared retained provenance."""
 from dataclasses import replace
 import os

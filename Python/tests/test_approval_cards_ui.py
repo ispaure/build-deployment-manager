@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Retained approval scope, identity presentation and compact dialog behavior."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Run-local cooperative requests; no process signals or result-report writes."""
 from contextlib import contextmanager
 import hashlib

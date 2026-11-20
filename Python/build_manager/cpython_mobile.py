@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """CPython mobile preparation mechanics; callers supply pins, paths and commands.
 
 Cache paths and receipts remain caller-owned. Preparation never selects a project

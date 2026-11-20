@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Local prerequisite inspection uses the explicitly selected interpreter."""
 import sys
 import unittest

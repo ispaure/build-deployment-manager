@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Host-wide bounded slots acquired in stable order across manager processes."""
 from contextlib import contextmanager,ExitStack
 import hashlib

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Test and timing presentation from explicit scoped run facts; no coordinator access."""
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,

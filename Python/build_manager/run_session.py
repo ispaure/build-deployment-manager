@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """One Qt-owned execution process, cancellation marker and output/timing state."""
 from uuid import uuid4
 from pathlib import Path

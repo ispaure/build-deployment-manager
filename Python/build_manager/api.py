@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Headless automation API. Project policy remains in isolated adapter processes."""
 from collections import Counter
 from pathlib import Path

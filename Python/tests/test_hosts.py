@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Unsupported stores fail before credentials/transport; host policy is explicit."""
 import unittest
 from build_manager.hosts import capabilities,android_abi

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Portable diagnosis, share-text and retained-log contracts."""
 from copy import deepcopy
 import os

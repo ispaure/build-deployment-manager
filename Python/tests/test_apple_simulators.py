@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Cleanup is limited to the exact device and ownership label created by a run."""
 import json
 import subprocess

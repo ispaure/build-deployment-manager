@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Publish a private, editable configuration tree from legacy data exactly once."""
 from pathlib import Path
 import os

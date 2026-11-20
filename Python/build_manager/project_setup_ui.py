@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Descriptor-only project setup. No project interpreter runs during inspection."""
 import json
 from pathlib import Path

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Bound source extraction to one admission and reconcile only durable evidence."""
 import hashlib
 import io

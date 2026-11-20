@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Headless workflow labels, predicted display states and plan descriptions."""
 
 FAILED = {'failed', 'error', 'timeout', 'cancelled', 'interrupted', 'unknown', 'skipped'}

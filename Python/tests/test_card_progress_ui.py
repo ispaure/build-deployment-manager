@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Card outcomes and progress reflect execution evidence, including dependencies."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

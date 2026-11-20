@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Native palette changes refresh cached local styles without resetting views."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

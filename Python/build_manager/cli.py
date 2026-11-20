@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Argument-based planning, execution and bounded evidence for automation."""
 import argparse
 from contextlib import contextmanager

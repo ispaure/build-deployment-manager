@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Offscreen preview and clipboard tests using an isolated write callback."""
 from copy import deepcopy
 import json

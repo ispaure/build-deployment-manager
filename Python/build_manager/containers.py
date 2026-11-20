@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Rootless Podman commands and exact owned-container cleanup, with no app policy."""
 from pathlib import PurePosixPath
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Recheck process creation identity before touching a persistent owned process."""
 import os
 import signal

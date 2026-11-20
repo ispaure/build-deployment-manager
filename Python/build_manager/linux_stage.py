@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Receipt-bound source transfer; reconciling a lost transport never re-extracts."""
 
 IDENTITY = '''import hashlib,json,os,pathlib,sys

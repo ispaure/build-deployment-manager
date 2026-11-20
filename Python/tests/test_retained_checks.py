@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Retained checks preserve failed siblings and reject incomplete old evidence."""
 from dataclasses import replace
 import hashlib

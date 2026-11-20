@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Recipient choices, compact navigation and fitted maps remain read-only."""
 import json
 import os

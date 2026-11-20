@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """One supervised portable emulator session; preserves personal AVDs and SDKs."""
 import argparse
 import json

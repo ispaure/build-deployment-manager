@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit scaffolding and staged readiness diagnostics; never runs a workload."""
 import json
 from pathlib import Path

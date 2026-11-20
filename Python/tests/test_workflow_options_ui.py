@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Workflow-wide choices are visible for validation and isolated between presets."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

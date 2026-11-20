@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Reusable guest workload lifecycle over the existing ownership-checked transports.
 
 Source membership, dependency recipes and plans are supplied by the project.

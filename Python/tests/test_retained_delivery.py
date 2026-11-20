@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Optional retained delivery scopes callbacks without executing project policy."""
 from contextlib import redirect_stdout
 from dataclasses import replace

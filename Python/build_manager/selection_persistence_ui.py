@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Coalesce remembered GUI choices without blocking event dispatch on storage."""
 from copy import deepcopy
 from queue import Empty, Queue

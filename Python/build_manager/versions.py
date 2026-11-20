@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Local monotonic reservations; remote uniqueness remains provider-owned."""
 import json
 import os

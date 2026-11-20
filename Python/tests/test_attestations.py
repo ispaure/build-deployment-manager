@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Actual SSH signatures over authentic local cache entries, with fail-closed bindings."""
 from datetime import datetime, timedelta, timezone
 import hashlib

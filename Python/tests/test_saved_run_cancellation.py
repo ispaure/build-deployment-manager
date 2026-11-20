@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Requests reach the existing scheduler without process discovery/signals."""
 import os
 import subprocess

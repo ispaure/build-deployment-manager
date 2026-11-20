@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Receipt reuse verifies provenance and bytes instead of translating failure to pass."""
 from dataclasses import replace
 import hashlib

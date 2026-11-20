@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Start authorizes tester uploads without weakening evidence or recovery gates."""
 from dataclasses import replace
 import json

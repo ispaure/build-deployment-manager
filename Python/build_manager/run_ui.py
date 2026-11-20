@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Qt-only workflow board shared by live execution and retained results."""
 import json
 from pathlib import Path, PurePath

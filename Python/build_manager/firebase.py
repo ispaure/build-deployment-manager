@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Firebase CLI transport; callers own installation, identities and upload approval."""
 import json
 from pathlib import Path

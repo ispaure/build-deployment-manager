@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Keep the project-onboarding example executable and its evidence truthful."""
 import json
 from pathlib import Path

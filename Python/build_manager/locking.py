@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Workspace contention policy around shared advisory process locks."""
 from contextlib import contextmanager
 from pathlib import Path

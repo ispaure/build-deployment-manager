@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Windows evidence ZIPs retain directory structure on a non-Windows host."""
 import base64
 import hashlib

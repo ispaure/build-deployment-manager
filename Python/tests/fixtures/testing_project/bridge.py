@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Minimal API-1 test adapter. See docs/development/adding-project-tests.md."""
 from dataclasses import replace
 import hashlib

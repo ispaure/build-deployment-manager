@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Explicit device retry preserves unknown intent and revalidates prepared inputs."""
 from dataclasses import replace
 import hashlib

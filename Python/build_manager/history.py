@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Read-only bounded project-owned run discovery; never executes retained plans."""
 import json
 import math

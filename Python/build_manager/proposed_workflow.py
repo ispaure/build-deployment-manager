@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Non-executable workflow sketches from UI choices, without adapter calls or I/O."""
 from dataclasses import dataclass, replace
 import json

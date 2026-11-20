@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Activity navigation and stopping are distinct from completed outcomes."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')

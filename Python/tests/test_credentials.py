@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """Credential checks for nested configuration and inherited environment values."""
 import unittest
 from unittest.mock import Mock, patch

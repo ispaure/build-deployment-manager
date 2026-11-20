@@ -1,3 +1,6 @@
+# Copyright (c) 2026 ispaure
+# SPDX-License-Identifier: MIT
+
 """GUI entry for the shared commonUtils launcher."""
 from build_manager.app import main
 
