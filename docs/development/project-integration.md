@@ -156,7 +156,7 @@ complete session runner without copying Logistics' backend modules.
 
 ### Preserve history when changing a result directory
 
-`results` is the checkout-relative destination for new runs. Declare prior
+`results` is the descriptor's checkout-relative default for new runs. Declare prior
 run directories in the optional `legacy_results` list to include their existing
 records in History and storage review. The Manager leaves saved plans, artifacts
 and hold owner paths at their original locations. Use an absolute path from
@@ -168,6 +168,22 @@ can still use the original plan and artifacts. Automatic adapter storage
 maintenance requires the original descriptor identity and reports a separate
 failure if the current descriptor differs. Refreshing registration preserves
 that check.
+
+To preserve eligibility for saved-plan maintenance across a writer change,
+select the `tmp` results layout in the reviewed checkout's private registration.
+Manager keeps the raw descriptor digest as the adapter identity and includes the
+descriptor root and `tmp/test-results/build-manager/` in History and storage
+review. Cleanup still observes active locks, `.keep` pins and workflow holds.
+Retirement uses the selected run's original hold owner.
+
+Once a registration has opted in, API-1 plan preparation requests include
+`results_directory` in their top-level context. A custom adapter can use this
+absolute checkout-local directory for its own per-run evidence. Direct project
+launchers own their output configuration. Command projects prepare their source
+and artifacts in the selected directory. CLI `run --output`, explicit `start
+--output` and retained-run continuation keep their caller-selected locations.
+The adapter's `storage_maintenance` action receives its existing request and
+applies its project-owned policy. See the [CLI layout commands](../user/cli.md).
 
 ## Validation and compatibility
 

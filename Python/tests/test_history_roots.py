@@ -15,7 +15,7 @@ from build_manager.api import ManagerAPI, review_run, run_plan
 from build_manager.history import load_run
 from build_manager.registry import read_project_descriptor
 from build_manager.retention import has_retention_protection, set_workflow_hold
-from build_manager.test_storage import result_roots
+from build_manager.test_storage import delete, inventory, result_roots
 
 
 class HistoryRootsTests(unittest.TestCase):
@@ -134,3 +134,78 @@ class HistoryRootsTests(unittest.TestCase):
                 self.write_descriptor(legacy_results=value)
                 with self.assertRaisesRegex(ValueError, 'checkout-relative'):
                     read_project_descriptor(self.project)
+
+    def test_layout_requires_reviewed_registration_and_ignores_checkout_supplied_layout(self):
+        registry = self.api.registry
+        self.write_descriptor(results_layout='tmp')
+        with self.assertRaisesRegex(ValueError, 'reviewed registration'):
+            registry.set_results_layout(self.key, 'tmp')
+        registry.trust(self.key)
+        bridge = self.api._project(self.key)
+        self.assertEqual(bridge.checked_results_directory(), self.legacy)
+        registry.set_results_layout(self.key, 'tmp')
+        with self.assertRaisesRegex(ValueError, 'registration changed'):
+            bridge.checked_results_directory()
+        bridge = self.api._project(self.key)
+        registry.mutate(lambda data: data['projects'][self.key].update(trusted=False))
+        with self.assertRaisesRegex(ValueError, 'reviewed registration'):
+            bridge.checked_results_directory()
+        with self.assertRaisesRegex(ValueError, 'reviewed registration'):
+            registry.set_results_layout(self.key, 'tmp')
+        for value in ('../outside', str(self.root), None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'Unknown registered results layout'):
+                registry.mutate(lambda data: data['projects'][self.key].update(results_layout=value))
+
+    def test_maintenance_rechecks_raw_descriptor_bytes_at_bridge_dispatch(self):
+        bridge = self.api._project(self.key)
+        self.file.write_bytes(self.file.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'reviewed registration'):
+            bridge.call('storage_maintenance')
+        self.api.registry.trust(self.key)
+        with self.assertRaisesRegex(ValueError, 'registration changed'):
+            bridge.call('storage_maintenance')
+
+    def test_cutover_storage_rechecks_pins_holds_locks_and_registration(self):
+        from build_manager.locking import workspace_lock
+        pinned, _ = self.saved_run(self.legacy, 'pinned')
+        self.api.registry.set_results_layout(self.key, 'tmp')
+        bridge = self.api._project(self.key)
+        held, _ = self.saved_run(bridge.results_directory, 'held')
+        active, _ = self.saved_run(bridge.results_directory, 'active')
+        rows = inventory(bridge)
+        self.assertEqual({row['path'] for row in rows}, {str(p) for p in (pinned, held, active)})
+        (pinned / '.keep').touch()
+        set_workflow_hold(held, str(held))
+        with workspace_lock(active / 'supervisor.lock'):
+            result = delete(bridge, rows, entire=True)
+        self.assertEqual(result['removed'], [])
+        self.assertEqual(len(result['skipped']), 3)
+        self.api.registry.set_results_layout(self.key, 'descriptor')
+        with self.assertRaisesRegex(ValueError, 'registration changed'):
+            delete(bridge, rows, entire=True)
+        self.assertTrue(all((path / 'result.json').is_file() for path in (pinned, held, active)))
+
+    def test_descriptor_results_reject_out_of_project_and_invalid_paths(self):
+        for value in ('.', '../outside', str(self.root), 'C:/outside', 'C:\\outside', '', None, []):
+            with self.subTest(value=value):
+                self.write_descriptor(results=value)
+                with self.assertRaisesRegex(ValueError, 'checkout-relative'):
+                    read_project_descriptor(self.project)
+
+    def test_selected_writer_refuses_linked_parent_and_leaf_even_after_selection(self):
+        self.api.registry.set_results_layout(self.key, 'tmp')
+        bridge = self.api._project(self.key)
+        chosen = bridge.checked_results_directory()
+        for link, target in ((self.project / 'tmp', self.root), (chosen, self.project / 'inside')):
+            with self.subTest(link=link):
+                target.mkdir(exist_ok=True)
+                link.parent.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(target, target_is_directory=True)
+                try:
+                    with self.assertRaisesRegex(ValueError, 'without links'):
+                        bridge.checked_results_directory()
+                    with self.assertRaisesRegex(ValueError, 'without links'):
+                        self.api.registry.set_results_layout(self.key, 'tmp')
+                    self.assertNotIn(chosen, result_roots(bridge))
+                finally:
+                    link.unlink()

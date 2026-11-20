@@ -103,7 +103,7 @@ def inventory(root, names, *, public_only=True):
     return files
 
 
-def make_plan(root, descriptor, values, cancelled=lambda: False):
+def make_plan(root, descriptor, values, cancelled=lambda: False, *, output_root=None):
     allowed = {'operation', 'target', 'backend', 'revision', 'suite', 'pattern', 'release_tag', 'run_overrides', 'build_override'}
     if (set(values) - allowed or values.get('revision', 'working-tree') != 'working-tree'
             or any(values.get(k) for k in ('suite', 'pattern', 'release_tag', 'run_overrides', 'build_override'))):
@@ -114,9 +114,10 @@ def make_plan(root, descriptor, values, cancelled=lambda: False):
         raise ValueError('Unsupported command operation/target/backend.')
     root = Path(root).resolve()
     files = inventory(root, descriptor['commands']['source'])
-    output_root = root / relative(descriptor.get('results', 'test-results/build-manager'))
-    if not output_root.resolve().is_relative_to(root) or any(p.is_symlink() for p in (output_root, *output_root.parents) if root in p.parents):
-        raise ValueError('Results must remain inside the project without links.')
+    from .test_storage import checked_writer, layout_roots
+    if output_root is None:
+        output_root, = layout_roots(root, descriptor, None)
+    checked_writer(root, output_root)
     workspace = output_root / ('prepared-' + uuid4().hex)
     snapshot, artifact_directory = workspace / 'source', workspace / 'artifacts'
     snapshot.mkdir(parents=True)
@@ -152,11 +153,11 @@ def make_plan(root, descriptor, values, cancelled=lambda: False):
         raise
 
 
-def call(root, descriptor, action, values, cancelled=lambda: False):
+def call(root, descriptor, action, values, cancelled=lambda: False, *, output_root=None):
     if cancelled():
         raise ValueError('Project request cancelled.')
     if action == 'plan':
-        return make_plan(root, descriptor, values, cancelled).data()
+        return make_plan(root, descriptor, values, cancelled, output_root=output_root).data()
     if action in {'settings', 'run_defaults', 'run_choices'}:
         return {}
     if action == 'save_settings' and not values.get('changes'):

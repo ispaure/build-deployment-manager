@@ -21,6 +21,8 @@ def check_registry(data):
         if not isinstance(row, dict) or any(not isinstance(row.get(key), str)
                 for key in ('root', 'project_id', 'name', 'descriptor')):
             raise ValueError('Invalid project registration.')
+        if 'results_layout' in row and row['results_layout'] not in ('tmp', 'descriptor'):
+            raise ValueError('Unknown registered results layout.')
 
 
 def collect_saved_recipient_ids(catalogs, registration):

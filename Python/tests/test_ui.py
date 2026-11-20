@@ -104,6 +104,28 @@ with TemporaryDirectory() as folder:
         self.assertIn('passed', panel.status.text())
         panel.close()
 
+    def test_registered_tmp_layout_writes_gui_run_and_command_snapshot_together(self):
+        from build_manager.bridge import ProjectBridge
+        from build_manager.onboarding import scaffold
+        from build_manager.registry import Registry
+        checkout = self.root / 'consumer'
+        checkout.mkdir()
+        scaffold(checkout, 'Consumer', 'fixture.layout', [sys.executable, '-c', "print('GUI fixture log')"])
+        registry = Registry(self.root / 'registry')
+        key = registry.add(checkout)
+        registry.set_results_layout(key, 'tmp')
+        panel = ManagerPanel(ProjectBridge(registry, key))
+        self.addCleanup(panel.close)
+        self.inspect(panel)
+        self.assertTrue(panel.start.isEnabled(), panel.status.text())
+        directory = checkout.resolve() / 'tmp/test-results/build-manager'
+        self.assertEqual(Path(panel.plan.workspace).parent, directory)
+        panel.run_plan()
+        self.assertEqual(self.finish(panel)['status'], 'passed')
+        self.assertEqual(panel.result.parent.parent, directory)
+        self.assertIn('GUI fixture log', panel.preview.toPlainText())
+        self.assertFalse((checkout / 'test-results').exists())
+
     def test_compact_runner_shows_live_case_in_the_results_model(self):
         code = '''
 from pathlib import Path

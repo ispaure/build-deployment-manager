@@ -10,6 +10,7 @@ import sys
 
 from .models import Plan
 from .redaction import Redactor
+from .test_storage import check_storage_registration, checked_writer, layout_roots
 
 
 class ProjectBridge:
@@ -23,9 +24,9 @@ class ProjectBridge:
         self.description = f"{self.descriptor['name']} · {self.root} · source/destination shown in each plan"
         self.runner_directory = Path(__file__).resolve().parents[2]
         self.interpreter = sys.executable
-        self.results_directory = self.root / self.descriptor.get('results', 'test-results/build-manager')
-        if not self.results_directory.resolve().is_relative_to(self.root):
-            raise ValueError('Result storage must remain project-owned.')
+        self.results_directory, *self.other_results_directories = layout_roots(
+            self.root, self.descriptor, self.row.get('results_layout'))
+        checked_writer(self.root, self.results_directory)
         self.run_options = self.descriptor.get('run_options', {})
         self.workflow_presets = self.descriptor.get('presets', {})
         self.test_suites = self.descriptor.get('test_suites', [])
@@ -81,16 +82,26 @@ class ProjectBridge:
         request._request_cancelled = cancelled
         return request
 
+    def checked_results_directory(self):
+        check_storage_registration(self)
+        return checked_writer(self.root, self.results_directory)
+
     def call(self, action, *, cancelled=None, timeout=300, **values):
         cancelled = cancelled or getattr(self, '_request_cancelled', lambda: False)
         if cancelled():
             raise ValueError('Project request cancelled.')
-        row, descriptor = self.registry.resolve(self.key, trusted=True)
-        if row['root'] != str(self.root) or descriptor != self.descriptor:
-            raise ValueError('Adapter registration changed; select this project again.')
+        preparing = action in {'plan', 'journey_plan', 'verification', 'retained_delivery_plan'}
+        if preparing:
+            row, descriptor = check_storage_registration(self)
+        else:
+            maintenance = action == 'storage_maintenance'
+            row, descriptor = self.registry.resolve(self.key, trusted=True, reviewed=maintenance)
+            if (row['root'] != str(self.root) or descriptor != self.descriptor
+                    or maintenance and row['descriptor'] != self.row['descriptor']):
+                raise ValueError('Adapter registration changed; select this project again.')
         if 'commands' in descriptor:
             from .command_project import call
-            return call(self.root, descriptor, action, values, cancelled)
+            return call(self.root, descriptor, action, values, cancelled, output_root=self.results_directory)
         interpreter = descriptor['interpreter']
         if isinstance(interpreter, dict):
             interpreter = interpreter[sys.platform]
@@ -118,6 +129,8 @@ class ProjectBridge:
             descriptor['project_id'], descriptor.get('account_fields', {}))
         request = dict(schema=1, action=action, values=values, account_defaults=account_defaults,
             settings_profile=str(self.registry.path.parent / row['name'] / 'profile.json'))
+        if preparing and 'results_layout' in row:
+            request['results_directory'] = str(checked_writer(self.root, self.results_directory))
         # Bootstrap repair must resolve the project's declared dependency itself.
         # The GUI's running checkout is unrelated to that installation authority.
         if action not in {'tooling_status', 'tooling_update'}:

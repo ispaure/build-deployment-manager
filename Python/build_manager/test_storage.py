@@ -16,9 +16,13 @@ BULKY_SUFFIXES = {'.apk', '.aab', '.ipa', '.log', '.jsonl', '.stderr',
                   '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov'}
 LOOSE_SUFFIXES = {'.log', '.jsonl', '.stderr', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.mov'}
 MIN_LOOSE_AGE = 24 * 60 * 60
+DEFAULT_RESULTS = 'test-results/build-manager'
+TMP_RESULTS = 'tmp/test-results/build-manager'
 
 
 def evidence_root(project, value):
+    if not isinstance(value, str):
+        raise ValueError('Test evidence folders must be checkout-relative.')
     path = Path(value)
     windows = PureWindowsPath(value)
     if (not path.parts or path.is_absolute() or windows.drive or windows.root
@@ -27,11 +31,46 @@ def evidence_root(project, value):
     return project / path
 
 
+def layout_roots(root, descriptor, layout):
+    original = evidence_root(root, descriptor.get('results', DEFAULT_RESULTS))
+    if layout is None:
+        return (original,)
+    temporary = root / TMP_RESULTS
+    if layout == 'tmp':
+        return temporary, original
+    if layout == 'descriptor':
+        return original, temporary
+    raise ValueError('Unknown registered results layout.')
+
+
+def checked_writer(root, directory):
+    if (not directory.is_relative_to(root) or directory == root or '..' in directory.parts
+            or any(linked(part) for part in (directory, *directory.parents))
+            or root not in directory.resolve().parents):
+        raise ValueError('Result storage must remain inside the project checkout without links.')
+    if any(part.exists() and not part.is_dir() for part in (directory, *directory.parents)):
+        raise ValueError('Result storage requires a directory.')
+    return directory
+
+
+def check_storage_registration(project):
+    if hasattr(project, 'registry'):
+        original = getattr(project, 'row', {})
+        layout = original.get('results_layout')
+        row, descriptor = project.registry.resolve(project.key, trusted=True, reviewed=layout is not None)
+        if (row['root'] != str(project.root) or descriptor != project.descriptor
+                or row.get('results_layout') != layout
+                or layout is not None and row['descriptor'] != original['descriptor']):
+            raise ValueError('Project registration changed. Reopen the project to use its current storage settings.')
+        return row, descriptor
+
+
 def history_roots(project):
     primary = Path(project.results_directory).absolute()
     root = Path(getattr(project, 'root', primary.parent)).absolute()
     declared = getattr(project, 'descriptor', {}).get('legacy_results', [])
-    roots = (primary, *(evidence_root(root, value) for value in declared))
+    roots = (primary, *getattr(project, 'other_results_directories', ()),
+             *(evidence_root(root, value) for value in declared))
     return tuple(dict.fromkeys(folder for folder in roots if folder != root
                               and folder.is_relative_to(root) and '..' not in folder.parts
                               and not any(linked(part) for part in (folder, *folder.parents))))
@@ -141,10 +180,7 @@ def inventory(project):
 
 
 def delete(project, rows, *, entire=False):
-    if hasattr(project, 'registry'):
-        registered, descriptor = project.registry.resolve(project.key, trusted=True)
-        if registered['root'] != str(project.root) or descriptor != project.descriptor:
-            raise ValueError('Project registration changed. Reopen storage to review it.')
+    check_storage_registration(project)
     result = dict(removed=[], skipped=[])
     roots = result_roots(project)
     for row in rows:

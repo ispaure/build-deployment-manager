@@ -26,9 +26,10 @@ def list_held_or_retired_runs(runs_directory):
 
 
 def retire_project_run(project, selection, *, confirmed=False):
-    from .test_storage import history_roots
+    from .test_storage import check_storage_registration, history_roots
     if not confirmed:
         raise ValueError('Review the workflow and confirm retirement first.')
+    check_storage_registration(project)
     roots = history_roots(project)
     if not isinstance(selection, (str, Path)):
         raise ValueError('Choose a saved run name or path.')

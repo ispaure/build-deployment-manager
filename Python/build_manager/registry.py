@@ -37,20 +37,21 @@ def read_project_descriptor(root):
     if not isinstance(data,dict):raise ValueError('Project descriptor must be a JSON object.')
     if data.get('schema') != 1 or data.get('adapter_api') != 1:
         raise ValueError('Unsupported project/adapter schema; API 1 is required.')
+    from .test_storage import evidence_root
+    if 'results' in data:
+        evidence_root(root, data['results'])
     if 'adapter_actions' in data and (not isinstance(data['adapter_actions'], list) or any(not isinstance(v, str) or not v for v in data['adapter_actions'])):
         raise ValueError('Adapter actions must be a list of supported action names.')
     evidence = data.get('test_evidence', [])
     if not isinstance(evidence, list) or any(not isinstance(value, str) or not value for value in evidence):
         raise ValueError('Test evidence must list checkout-relative folders.')
     if evidence:
-        from .test_storage import evidence_root
         for value in evidence:
             evidence_root(root, value)
     legacy = data.get('legacy_results', [])
     if not isinstance(legacy, list) or any(not isinstance(value, str) or not value for value in legacy):
         raise ValueError('Legacy result folders must be a list of checkout-relative paths.')
     if legacy:
-        from .test_storage import evidence_root
         for value in legacy:
             evidence_root(root, value)
     if 'commands' in data:
@@ -206,6 +207,30 @@ class Registry:
             row.update(trusted=True, descriptor=descriptor_digest)
         self.mutate(update)
 
+    @staticmethod
+    def _require_reviewed(row, digest, key):
+        if row.get('trusted') is not True or row['descriptor'] != digest:
+            raise ValueError('Storage requires a reviewed registration for the current descriptor. '
+                             f'Review it with build-manager inspect {key} before build-manager trust {key}.')
+
+    def set_results_layout(self, key, layout):
+        """Select the run writer for one reviewed checkout, retaining both histories after cutover."""
+        from .test_storage import checked_writer, layout_roots
+        if layout not in ('tmp', 'descriptor'):
+            raise ValueError('Choose the tmp or descriptor results layout.')
+        def update(data):
+            row = data['projects'][key]
+            root = Path(row['root'])
+            descriptor, digest = read_project_descriptor(root)
+            if descriptor['project_id'] != row['project_id']:
+                raise ValueError('Project identity changed; register the intended checkout.')
+            self._require_reviewed(row, digest, key)
+            directory = checked_writer(root, layout_roots(root, descriptor, layout)[0])
+            if layout == 'tmp' or 'results_layout' in row:
+                row['results_layout'] = layout
+            return dict(layout=layout, directory=str(directory))
+        return self.mutate(update)
+
     def select(self, key, *, run_active=False, active=False):
         # Older automation calls use active for the same active-run guard.
         if run_active or active:
@@ -280,12 +305,15 @@ class Registry:
             raise ValueError('Select a unique registered project ID, name or checkout path.')
         return matches[0]
 
-    def resolve(self, key=None, *, trusted=False):
+    def resolve(self, key=None, *, trusted=False, reviewed=False):
         data = self.read()
-        row = dict(data['projects'][key or data.get('selected')])
+        key = key or data.get('selected')
+        row = dict(data['projects'][key])
         descriptor, descriptor_digest = read_project_descriptor(row['root'])
         if descriptor['project_id'] != row['project_id']:
             raise ValueError('Project identity changed; register the intended checkout.')
+        if reviewed:
+            self._require_reviewed(row, descriptor_digest, key)
         # Registration authorizes this checkout, including older registrations
         # and descriptor updates. Inspection and identity checks still apply.
         row['trusted'] = True

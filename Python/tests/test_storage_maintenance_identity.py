@@ -10,7 +10,7 @@ from build_manager.api import ManagerAPI
 
 class StorageMaintenanceIdentityTests(unittest.TestCase):
     def setUp(self):
-        self.row = dict(root='/fixture/project', project_id='fixture', descriptor='a' * 64)
+        self.row = dict(root='/fixture/project', project_id='fixture', descriptor='a' * 64, trusted=True)
         self.bridge = Mock(row=dict(self.row))
         self.bridge.supports_action.return_value = True
         self.bridge.call.return_value = dict(status='passed')
@@ -33,6 +33,16 @@ class StorageMaintenanceIdentityTests(unittest.TestCase):
     def test_explicitly_refreshed_original_identity_allows_declared_maintenance(self):
         self.assertEqual(self.api.storage_maintenance(self.plan), dict(status='passed'))
         self.bridge.call.assert_called_once_with('storage_maintenance', timeout=600)
+
+    def test_matching_digest_with_untrusted_registration_or_relocated_checkout_is_refused(self):
+        self.row['trusted'] = False
+        with self.assertRaisesRegex(ValueError, 'saved registration differs'):
+            self.api.storage_maintenance(self.plan)
+        self.row['trusted'] = True
+        self.bridge.row['root'] = '/another/checkout'
+        with self.assertRaisesRegex(ValueError, 'current adapter differs'):
+            self.api.storage_maintenance(self.plan)
+        self.bridge.call.assert_not_called()
 
     def test_current_adapter_change_is_rejected_even_if_saved_registration_matches_plan(self):
         for field in ('descriptor', 'project_id'):

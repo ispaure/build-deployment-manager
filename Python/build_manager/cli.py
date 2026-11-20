@@ -106,6 +106,10 @@ def parser_for_cli():
     locate = sub.add_parser('locate')
     locate.add_argument('project')
     locate.add_argument('path', type=Path)
+    layout = sub.add_parser('set-results-layout', help='Choose where this registration writes fresh Manager runs')
+    layout.add_argument('project')
+    layout.add_argument('layout', choices=('tmp', 'descriptor'),
+                        help='Use tmp/test-results/build-manager or the descriptor results directory')
     for name in ('capabilities', 'inputs', 'history', 'presets'):
         command = sub.add_parser(name, help={
             'capabilities': 'Discover declared operations, suites, inputs and host backends',
@@ -230,6 +234,8 @@ def execute(args, api):
     if command == 'locate':
         registry.locate(args.project, args.path)
         return dict(status='located')
+    if command == 'set-results-layout':
+        return registry.set_results_layout(registry.project_key(args.project), args.layout)
     if command == 'inspect':
         row, descriptor = registry.resolve(registry.project_key(args.project))
         return dict(registration=row, descriptor=descriptor)
@@ -336,14 +342,16 @@ def execute(args, api):
                 raise ValueError('Authorizing delivery at start requires --confirm.')
             from datetime import datetime, timezone
             from uuid import uuid4
-            if args.output is None:
-                bridge = api._project(args.project)
-                args.output = bridge.results_directory / (datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:8])
-            if args.output.exists():
+            bridge = api._project(args.project) if args.output is None else None
+            if bridge is not None:
+                bridge.checked_results_directory()
+            elif args.output.exists():
                 raise ValueError('Use a fresh output directory or resume the retained run.')
-            prepared = api.prepare_preset(args.preset, project=args.project,
+            prepared = api.prepare_preset(args.preset, project=bridge.key if bridge else args.project,
                 run_overrides=assignments(args.run_value) if args.run_value else None,
                 exclude_destinations=args.exclude_destination)
+            if bridge is not None:
+                args.output = bridge.checked_results_directory() / (datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + uuid4().hex[:8])
             if args.authorize_deliveries:
                 prepared = authorize_deliveries(prepared)
         lock = Lock()

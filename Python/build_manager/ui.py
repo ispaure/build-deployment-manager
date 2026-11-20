@@ -870,9 +870,11 @@ class ManagerPanel(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
-        run = self.project.results_directory / uuid4().hex
-        path = run.with_suffix('.plan.json')
         try:
+            writer = (self.project.checked_results_directory() if hasattr(self.project, 'checked_results_directory')
+                      else self.project.results_directory)
+            run = writer / uuid4().hex
+            path = run.with_suffix('.plan.json')
             run.parent.mkdir(parents=True, exist_ok=True)
             self.plan.save(path)
         except (OSError, ValueError) as error:

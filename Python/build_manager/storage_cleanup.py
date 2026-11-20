@@ -50,10 +50,8 @@ def project_identity(project):
     """Validate current registration, then capture the scope without writing it."""
     root = str(getattr(project, 'root', Path(getattr(project, 'results_directory', '.')).parent))
     descriptor = getattr(project, 'descriptor', {})
-    if hasattr(project, 'registry'):
-        row, current = project.registry.resolve(project.key, trusted=True)
-        if row['root'] != root or current != descriptor:
-            raise ValueError('Project registration changed. Reopen storage to review it.')
+    from .test_storage import check_storage_registration
+    check_storage_registration(project)
     return json.dumps((getattr(project, 'key', None), root, descriptor,
                        str(getattr(project, 'results_directory', ''))), sort_keys=True, default=str)
 

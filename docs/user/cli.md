@@ -62,6 +62,23 @@ In the window, **More → Add project** lets you review and add the same registe
 checkout again with its existing registration name to refresh its recorded
 descriptor. Review the displayed checkout and descriptor before adding it; existing unknown run outcomes remain unchanged.
 
+To place fresh Manager runs under `tmp/test-results/build-manager/`, keep the
+project's `build-project.json` at its reviewed revision. Use the same private
+registry as the GUI and each CLI invocation.
+
+```sh
+build-manager set-results-layout REGISTRATION_ID tmp
+build-manager history --project REGISTRATION_ID
+```
+
+The command reports the absolute destination. Reopen an existing project tab
+after switching. New GUI runs and `start` without `--output` use that directory.
+History and storage review include both directories. Use the returned run path
+with `logs`, `review` or `resume` to open the original evidence. To switch the
+writer back and retain both histories, run
+`build-manager set-results-layout REGISTRATION_ID descriptor`. Each private
+registration has its own selection.
+
 Use the IDs and case-sensitive names returned by discovery. Omitting `--project`
 uses the selected registration. Put `--registry /private/config` **before** the
 command to use a separate manager configuration directory.

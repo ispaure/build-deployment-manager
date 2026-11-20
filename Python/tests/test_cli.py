@@ -57,7 +57,7 @@ class CLITests(unittest.TestCase):
     def phase(self, name, code, **values):
         return Phase(name, (sys.executable, '-c', code), str(self.root), **values)
 
-    def fixture_project(self):
+    def fixture_project(self, **descriptor_fields):
         root = self.root / 'project'
         root.mkdir()
         subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(root / '.venv')], check=True)
@@ -65,7 +65,7 @@ class CLITests(unittest.TestCase):
         descriptor = dict(schema=1, adapter_api=1, project_id='fixture.cli', name='Fixture',
             interpreter=interpreter, bridge='bridge.py', capabilities=dict(
                 platforms=['native'], operations=['Check'], backends={'native': ['Local']}),
-            run_fields=[dict(id='notes', label='Notes')])
+            run_fields=[dict(id='notes', label='Notes')], **descriptor_fields)
         (root / 'build-project.json').write_text(json.dumps(descriptor))
         (root / 'bridge.py').write_text('''import json, sys
 from pathlib import Path
@@ -76,8 +76,13 @@ if request['action'] == 'plan':
     result = dict(project='Fixture', operation='Check', source=request['values'],
         workspace=str(Path.cwd() / 'workspace'), phases=[dict(id='check',
         argv=[sys.executable, '-c', "print('project child')"], cwd=str(Path.cwd()))])
+    if 'results_directory' in request:
+        result['source']['fixture_results_directory'] = request['results_directory']
 elif request['action'] == 'storage_inventory':
     result = [dict(group='Fixtures', name='old', path=str(Path.cwd() / 'generated/old'), protected='')]
+elif request['action'] == 'storage_maintenance':
+    assert 'results_directory' not in request
+    result = dict(status='passed', owner=str(Path.cwd()))
 elif request['action'] == 'delete_storage':
     assert request['values']['selections'] == {'Fixtures': ['old']}
     result = dict(removed=['old'], skipped=[])
@@ -94,6 +99,38 @@ print(json.dumps(dict(schema=1, result=result)))
 ''')
         key = self.invoke('add', root)['registration']
         return root, key
+
+    def test_registered_layout_preserves_old_plan_maintenance_history_and_original_log(self):
+        root, key = self.fixture_project(adapter_actions=['plan', 'storage_maintenance'],
+            presets={'check': dict(operation='Check', platform='native', backend='Local')})
+        descriptor = (root / 'build-project.json').read_bytes()
+        origin = self.invoke('list')['projects'][key]['descriptor']
+        old = Path(self.invoke('start', '--project', key, '--preset', 'check')['output'])
+        self.assertEqual(old.parent, root.resolve() / 'test-results/build-manager')
+        old_plan = (old / 'plan.json').read_bytes()
+        old_log = self.invoke('logs', old, '--step', 'check')
+        self.invoke('set-results-layout', key, 'tmp')
+        resumed = self.invoke('resume', old)
+        self.assertEqual(resumed['storage_maintenance'], dict(status='passed', owner=str(root.resolve())))
+        self.assertEqual((old / 'plan.json').read_bytes(), old_plan)
+        legacy_files = {p: p.stat().st_mtime_ns for p in old.parent.rglob('*') if p.is_file()}
+        new = Path(self.invoke('start', '--project', key, '--preset', 'check')['output'])
+        self.assertEqual(new.parent, root.resolve() / 'tmp/test-results/build-manager')
+        self.assertEqual({p: p.stat().st_mtime_ns for p in old.parent.rglob('*') if p.is_file()}, legacy_files)
+        new_plan = json.loads((new / 'plan.json').read_bytes())
+        self.assertEqual(new_plan['adapter'], json.loads(old_plan)['adapter'])
+        self.assertNotIn('fixture_results_directory', json.loads(old_plan)['source'])
+        self.assertEqual(new_plan['source']['fixture_results_directory'], str(new.parent))
+        self.assertEqual((root / 'build-project.json').read_bytes(), descriptor)
+        self.assertEqual(self.invoke('list')['projects'][key]['descriptor'], origin)
+        for layout, directory in [('tmp', new.parent), ('descriptor', old.parent)]:
+            self.invoke('set-results-layout', key, layout)
+            history = self.invoke('history', '--project', key)
+            self.assertEqual(history['directory'], str(directory))
+            self.assertEqual({row['path'] for row in history['runs']}, {str(p / 'result.json') for p in (old, new)})
+        self.assertEqual(self.invoke('logs', old, '--step', 'check'), old_log)
+        self.assertEqual(old_log['log'], str(old / 'check.log'))
+        self.assertEqual(self.invoke('logs', new, '--step', 'check')['text'], old_log['text'])
 
     def test_version_edit_uses_trusted_project_bridge_and_propagates_rejection(self):
         root, key = self.fixture_project()

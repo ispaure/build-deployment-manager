@@ -77,7 +77,8 @@ chosen disposable locations. See [storage management](storage-management.md).
 
 ### Test evidence folders
 
-The storage dialog lists saved runs in the descriptor's `results` directory.
+The storage dialog lists saved runs in the descriptor's `results` directory and
+the [registered results layout](project-integration.md#preserve-history-when-changing-a-result-directory).
 Projects can declare a `test_evidence` list of checkout-relative folders to
 include older saved runs and loose logs, screenshots or recordings. Declare
 only generated evidence folders. The manager inspects direct entries, requires

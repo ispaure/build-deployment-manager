@@ -143,12 +143,13 @@ class ManagerAPI:
             if row['root'] != plan.adapter.get('checkout'):
                 continue
             bridge = ProjectBridge(self.registry, key)
-            if (bridge.row['descriptor'] != plan.adapter.get('descriptor_sha256')
+            if (bridge.row['root'] != plan.adapter.get('checkout')
+                    or bridge.row['descriptor'] != plan.adapter.get('descriptor_sha256')
                     or bridge.row['project_id'] != plan.adapter.get('project_id')):
                 raise ValueError('Storage maintenance requires the original trusted adapter identity. '
                     'The current adapter differs from this saved plan; review the original checkout '
                     'or prepare a fresh plan. Refreshing registration cannot authorize a changed adapter for an old plan.')
-            if (row['descriptor'] != plan.adapter.get('descriptor_sha256')
+            if (row.get('trusted') is not True or row['descriptor'] != plan.adapter.get('descriptor_sha256')
                     or row['project_id'] != plan.adapter.get('project_id')):
                 raise ValueError('Storage maintenance requires the original trusted adapter identity. '
                     'The saved registration differs from the current adapter. Review it with '
