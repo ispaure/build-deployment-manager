@@ -140,7 +140,7 @@ Manager preferences and registrations live outside the checkout; see
 [stored settings](user.md#remember-choices-and-save-run-presets). Preserve `.venv/`
 and editable-install `.egg-info/` metadata while using the installed checkout.
 Build retention belongs to project policy, using manager lease/pin mechanisms.
-Do not sweep `VM/`, credentials, application data or `test-results/` as caches.
+Do not sweep `VM/`, credentials, application data or retained evidence under `tmp/test-results/` and the legacy `test-results/` as caches.
 Dedicated [test machines](virtual-machines.md) have a separate authorized lifecycle.
 
 [User guide](user.md)

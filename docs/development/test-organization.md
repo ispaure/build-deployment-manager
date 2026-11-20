@@ -17,7 +17,7 @@ Keep a project-owned test root. Use `unit`, `contracts`, `integration`, `ui`,
 `native` and `acceptance` to describe test kinds; existing folders can map to
 those kinds without moving their files.
 Fixtures belong alongside the narrowest owning group. Keep raw reports, logs,
-screenshots and temporary packages in ignored project test-results storage.
+screenshots and temporary packages in the project’s ignored run-evidence directory. For Manager-owned runs use `tmp/test-results/<run-id>/`.
 Use stable suite IDs such as `portable.contracts`, `desktop.ui`, `android.native`,
 `ios.native`, `blender.integration` and `release.acceptance`. Case IDs come from
 JUnit classname/name; parameterized cases need distinct names. A suite ID cannot

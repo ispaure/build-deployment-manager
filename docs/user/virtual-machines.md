@@ -129,7 +129,7 @@ have platform limitations; an unavailable Android emulator must remain unavailab
 rather than falling back to a physical device, another guest or a different ABI.
 See [host capabilities](hosts.md). Keep native launcher/process/locking results
 distinct from Android acceptance and from controlled portable transport tests.
-Save exact source/toolchain evidence under ignored `test-results/`.
+Save exact source/toolchain evidence under ignored `tmp/test-results/<run-id>/`.
 
 Windows guest commands publish an atomic completion receipt tied to the workspace,
 operation and individual invocation before returning their result. If Parallels

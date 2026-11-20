@@ -180,7 +180,7 @@ Do not update a dependency pin to an uncommitted or unavailable revision.
 Portable guest tests inject staging, setup, execution, retrieval and cleanup
 failures. They do not certify native VM bootstrap, OS tools or platform acceptance.
 Native checks require explicitly authorized dedicated guests; held VMs and personal
-devices remain excluded. Keep raw logs under ignored test-results.
+devices remain excluded. Keep new checkout-local logs under ignored `tmp/test-results/<run-id>/`.
 
 [Developer guide](development.md)
 

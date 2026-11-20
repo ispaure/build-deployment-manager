@@ -87,7 +87,7 @@ Restart Manager resource owners before deletion. This does not establish a cause
 or a cleanup fix: the archived setup-python x64 distribution differs from the
 managed guest runtime. No retry, ignored cleanup error, containment relaxation or
 antivirus explanation was added. Raw attempts, provenance and cleanup receipts remain
-under ignored `test-results/`.
+under ignored `tmp/test-results/<run-id>/`.
 
 Subsequent test-only diagnostics in `ab6e8e2` preserve the original cleanup call
 and exception. Only a matching Windows deletion failure for the exact owned,
@@ -564,7 +564,7 @@ Portable tests use real harmless Qt-to-CLI subprocesses to exercise failure gate
 case reports on nonzero exit, exact suite forwarding, stale selections, declined
 approval, changed artifacts, unknown outcomes, recovery and read-only history.
 Offscreen Qt screenshots cover configure, review, mixed results and compact sizing;
-raw captures and test output belong under ignored test-results.
+new raw captures and test output belong under ignored `tmp/test-results/<run-id>/`.
 
 Briefs 1–11 are implemented in this repository. Brief 12 now has source adoption
 in Logistics and Blue Hole: descriptor catalogs, matching suite routing, JUnit

@@ -143,7 +143,7 @@ signing and storage policy belong in the project. commonUtils APIs stay in that
 library's wiki. Update [operator guidance](../user/user.md) when a change affects
 review, retries or troubleshooting. Keep every folder's same-named landing linked
 from its parent. Raw logs, screenshots and timing reports stay under ignored
-`test-results/`; public pages explain reproducible scope instead of linking them.
+`tmp/test-results/<run-id>/`. Public pages describe the reproducible scope.
 
 Write each task guide for a reader with a concrete goal: state prerequisites and
 working directory, show a short sequence, then describe success and likely recovery.

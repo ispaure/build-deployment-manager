@@ -12,7 +12,10 @@ Documentation lives in the root docs wiki, starting at docs/docs.md.
 User setup and workflows belong in docs/user/; architecture, adapter contracts
 and validation belong in docs/development/. Each folder
 has a same-named landing linking every child. Every page begins with an H1.
-Raw evidence belongs under ignored test-results, not in public documentation.
+Save new Manager repository test evidence under ignored `tmp/test-results/<run-id>/`
+and other repository-local scratch under `tmp/`. Keep raw evidence outside public
+documentation. Resolve historical receipts from their recorded paths. Project
+adapters own storage policy for their checkouts.
 
 Preserve the dormant nested workflow-card browser in
 Python/build_manager/grouped_workflow_ui.py and its supporting grouping/map code

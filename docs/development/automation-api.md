@@ -161,7 +161,7 @@ artifacts, uncertain outcomes, credential redaction, headless imports, existing
 module execution and POSIX signal cancellation. They do not establish native
 Windows process cancellation, VM/device operation or actual provider deployment
 acceptance. No production build, publish or dispatch is needed to validate these
-contracts. Keep raw evidence under ignored `test-results/`.
+contracts. Keep raw evidence under ignored `tmp/test-results/<run-id>/`.
 
 ## Shared presets and reviewed engine continuation
 
