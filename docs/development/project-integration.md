@@ -182,8 +182,14 @@ absolute checkout-local directory for its own per-run evidence. Direct project
 launchers own their output configuration. Command projects prepare their source
 and artifacts in the selected directory. CLI `run --output`, explicit `start
 --output` and retained-run continuation keep their caller-selected locations.
-The adapter's `storage_maintenance` action receives its existing request and
-applies its project-owned policy. See the [CLI layout commands](../user/cli.md).
+The adapter's `storage_maintenance` action applies project-wide policy after
+execution releases its leases. The optional `run_storage_maintenance` action
+takes precedence for CLI runs and receives `values.run` with the
+plan identity, workspace and output directory. The same request provides the
+registered results directory and `manager_python`, the current Manager Python
+interpreter, when available. A policy that acts on the completed run must
+recheck the saved result under the run and workspace locks. The original
+`storage_maintenance` request remains unchanged. See the [CLI layout commands](../user/cli.md).
 
 ## Validation and compatibility
 

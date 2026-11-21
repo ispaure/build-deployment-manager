@@ -366,7 +366,7 @@ def execute(args, api):
                               approve_steps=args.approve_step if command == 'resume' else (),
                               expected_identity=args.expect_identity, engine_review=args.engine_review_identity if command == 'resume' else None, cancelled=cancelled,
                               event=event if args.events else None, event_format=args.event_format,
-                              maintenance=api.storage_maintenance)
+                              maintenance=lambda plan: api.storage_maintenance(plan, output=args.output))
         return summarize_run_report(report, args.output)
     raise ValueError('Unsupported command.')
 

@@ -83,6 +83,15 @@ elif request['action'] == 'storage_inventory':
 elif request['action'] == 'storage_maintenance':
     assert 'results_directory' not in request
     result = dict(status='passed', owner=str(Path.cwd()))
+elif request['action'] == 'run_storage_maintenance':
+    run = request['values']['run']
+    assert Path(request['manager_checkout']).is_absolute()
+    assert Path(request['manager_python']).is_file()
+    assert Path(request['results_directory']).is_absolute()
+    saved = json.loads((Path(run['output']) / 'result.json').read_text())
+    assert saved['plan_identity'] == run['plan_identity']
+    assert run['workspace'] == str(Path.cwd() / 'workspace')
+    result = dict(status='passed', output=run['output'])
 elif request['action'] == 'delete_storage':
     assert request['values']['selections'] == {'Fixtures': ['old']}
     result = dict(removed=['old'], skipped=[])
@@ -99,6 +108,12 @@ print(json.dumps(dict(schema=1, result=result)))
 ''')
         key = self.invoke('add', root)['registration']
         return root, key
+
+    def test_run_storage_maintenance_gets_exact_run_context(self):
+        _, key = self.fixture_project(adapter_actions=['plan', 'run_storage_maintenance'],
+            presets={'check': dict(operation='Check', platform='native', backend='Local')})
+        result = self.invoke('start', '--project', key, '--preset', 'check')
+        self.assertEqual(result['storage_maintenance'], dict(status='passed', output=result['output']))
 
     def test_registered_layout_preserves_old_plan_maintenance_history_and_original_log(self):
         root, key = self.fixture_project(adapter_actions=['plan', 'storage_maintenance'],

@@ -127,7 +127,7 @@ class ManagerAPI:
         from .run_retirement import retire_project_run
         return retire_project_run(self._project(project), run_name, confirmed=confirmed)
 
-    def storage_maintenance(self, plan):
+    def storage_maintenance(self, plan, *, output=None):
         """Invoke only a still-trusted originating adapter's declared policy."""
         from .bridge import ProjectBridge
         if not plan.adapter:
@@ -149,6 +149,10 @@ class ManagerAPI:
                     f'build-manager inspect {key}; if it matches the original plan, explicitly record it with '
                     f'build-manager trust {key} using the same --registry configuration. '
                     'No trust was changed and no maintenance was started.')
+            if output is not None and bridge.supports_action('run_storage_maintenance'):
+                run = dict(plan_identity=plan.identity, workspace=plan.workspace,
+                           output=str(Path(output).resolve()))
+                return bridge.call('run_storage_maintenance', timeout=600, run=run)
             if bridge.supports_action('storage_maintenance'):
                 return bridge.call('storage_maintenance', timeout=600)
         return dict(status='unavailable')

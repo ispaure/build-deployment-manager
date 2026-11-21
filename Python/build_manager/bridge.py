@@ -94,7 +94,7 @@ class ProjectBridge:
         if preparing:
             row, descriptor = check_storage_registration(self)
         else:
-            maintenance = action == 'storage_maintenance'
+            maintenance = action in {'storage_maintenance', 'run_storage_maintenance'}
             row, descriptor = self.registry.resolve(self.key, trusted=True, reviewed=maintenance)
             if (row['root'] != str(self.root) or descriptor != self.descriptor
                     or maintenance and row['descriptor'] != self.row['descriptor']):
@@ -135,6 +135,9 @@ class ProjectBridge:
         # The GUI's running checkout is unrelated to that installation authority.
         if action not in {'tooling_status', 'tooling_update'}:
             request['manager_checkout'] = str(self.runner_directory)
+        if action == 'run_storage_maintenance':
+            request['manager_python'] = self.interpreter if not getattr(sys, 'frozen', False) else None
+            request['results_directory'] = str(checked_writer(self.root, self.results_directory))
         payload = json.dumps(request)
         from .credentials import reject_secrets
         reject_secrets(values)
