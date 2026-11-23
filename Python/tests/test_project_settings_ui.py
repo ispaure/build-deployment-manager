@@ -247,3 +247,27 @@ class ProjectSettingsTests(unittest.TestCase):
         dialog.save()
         self.wait(dialog)
         writer.assert_called_once_with({'tools.hosted_evidence': 'New disposable evidence'})
+
+    def test_shared_sections_show_unsupported_providers_without_editable_fields(self):
+        supported = self.open_settings()
+        self.assertEqual(supported.sections[('Delivery', 'TestFlight')][0].text(0), 'TestFlight')
+        top_level = [supported.sidebar.topLevelItem(i).text(0) for i in range(5)]
+
+        settings = {'retail.path': dict(value='Private retail data'), 'ios.team': dict(value='Development team')}
+        self.project = SimpleNamespace(settings_view=lambda: settings,
+                                       journey_capability={'destinations': {'ios-device': {}}})
+        limited = self.open_settings()
+        self.assertEqual(limited.sidebar.topLevelItemCount(), len(top_level))
+        self.assertEqual([limited.sidebar.topLevelItem(i).text(0) for i in range(5)], top_level)
+        page = ('Delivery', 'TestFlight')
+        for provider in ('TestFlight', 'Firebase', 'GitHub', 'App Store', 'Google Play'):
+            item, _ = limited.sections[('Delivery', provider)]
+            self.assertFalse(item.isHidden())
+            self.assertEqual(item.text(0), provider + ' · Unavailable')
+        limited.search.setText('testflight')
+        self.assertIs(limited.sidebar.currentItem(), limited.sections[page][0])
+        self.assertEqual(limited.forms[page].rowCount(), 0)
+        self.assertIn('This project does not support TestFlight delivery.',
+                      [label.text() for label in limited.stack.currentWidget().findChildren(QLabel)])
+        self.assertEqual(set(limited.controls), set(settings))
+        self.assertEqual(limited.field_rows['ios.team'][0], ('Builds & signing', 'Apple signing'))

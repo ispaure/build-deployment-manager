@@ -1,7 +1,9 @@
 # Set up delivery destinations
 
-Open **Project settings → Delivery** and select the provider. The project
-decides which providers and fields are available. Select **Help** beside a field
+Open **Project settings → Delivery** and select the provider. The sidebar shows
+the same provider pages across projects. Unavailable pages explain why delivery
+is disabled. Each project supplies the fields for the providers it supports.
+Select **Help** beside a field
 for the exact input and a link to the provider’s instructions. Tester groups and
 messages that seed a new run are under **Run defaults**, with links from the
 provider pages. Review the destination and recipient group before starting a run.

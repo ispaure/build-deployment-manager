@@ -3,7 +3,7 @@
 
 """Generic checkable run recipients supplied by a project, without device access."""
 import json
-from PySide6.QtCore import Qt, Signal, QEvent
+from PySide6.QtCore import Qt, Signal, QEvent, QSignalBlocker
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem, QLineEdit, QPushButton
 
 from .run_fields import parse_multiselect_ids
@@ -14,8 +14,9 @@ class RecipientPicker(QWidget):
     textChanged = Signal()
     reload_requested = Signal()
 
-    def __init__(self):
+    def __init__(self, *, single_recipient=False):
         super().__init__()
+        self.single_recipient = single_recipient
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(8)
         self.note = QLabel('Loading saved recipients…'); self.note.setWordWrap(True)
         self.items = QListWidget(); self.items.setFixedHeight(52)
@@ -52,6 +53,12 @@ class RecipientPicker(QWidget):
             self.size_rows()
 
     def selection_changed(self, item):
+        if self.single_recipient and item.checkState() == Qt.CheckState.Checked:
+            with QSignalBlocker(self.items):
+                for index in range(self.items.count()):
+                    other = self.items.item(index)
+                    if other is not item:
+                        other.setCheckState(Qt.CheckState.Unchecked)
         try:
             parse_multiselect_ids(self.text())
         except ValueError as error:
@@ -80,6 +87,8 @@ class RecipientPicker(QWidget):
 
     def set_choices(self, rows, selected=None):
         selected = parse_multiselect_ids(self.text()) if selected is None else selected
+        if self.single_recipient and len(selected) > 1:
+            selected = []
         names = {row['id']: row['label'] for row in rows}
         for key in selected:
             names.setdefault(key, key + ' · saved selection')
@@ -90,7 +99,8 @@ class RecipientPicker(QWidget):
             item.setCheckState(Qt.CheckState.Checked if key in selected else Qt.CheckState.Unchecked)
         self.items.blockSignals(False)
         self.size_rows()
-        self.note.setText('Select devices below.' if names else 'No saved devices. Add a paired, connected device ID below.')
+        prompt = 'Select one device below.' if self.single_recipient else 'Select devices below.'
+        self.note.setText(prompt if names else 'No saved devices. Add a paired, connected device ID below.')
         self.note.setToolTip('Saved status may be out of date. Connection is checked at installation; unavailable devices are never replaced with another recipient.')
 
     def add_manual(self):
@@ -99,7 +109,7 @@ class RecipientPicker(QWidget):
             parse_multiselect_ids(json.dumps([key]))
         except ValueError as error:
             self.note.setText(str(error)); return
-        selected = parse_multiselect_ids(self.text())
+        selected = [] if self.single_recipient else parse_multiselect_ids(self.text())
         if key not in selected:
             selected.append(key)
             try:

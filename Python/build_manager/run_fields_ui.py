@@ -58,7 +58,8 @@ class RunFieldsView(QWidget):
         self.status.setWordWrap(True);self.form.addRow(self.status)
         from .recipient_ui import RecipientPicker
         for row in self.fields:
-            field=(RunChoice(row) if row.get('kind') == 'choice' else RecipientPicker() if row.get('kind') == 'multiselect' else
+            field=(RunChoice(row) if row.get('kind') == 'choice' else RecipientPicker(
+                single_recipient=row.get('single_recipient', False)) if row.get('kind') == 'multiselect' else
                    QPlainTextEdit() if row.get('kind')=='multiline' else QLineEdit())
             if isinstance(field, RecipientPicker):
                 field.reload_requested.connect(self.reload_choices)
@@ -181,14 +182,18 @@ class RunFieldsView(QWidget):
         self.updateGeometry()
 
     def restore(self, values):
-        from .run_fields import validate_overrides
+        from .run_fields import parse_multiselect_ids, validate_overrides
         # Ignore fields removed by a newer project descriptor.
         values = {name: value for name, value in values.items() if name in self.controls}
         # A preset saved before an option existed uses its declared default;
         # it must not inherit the previous preset's debug-only override.
         for row in self.fields:
+            name = row['id']
             if row.get('workflow_option'):
-                values.setdefault(row['id'], row.get('default', ''))
+                values.setdefault(name, row.get('default', ''))
+            if row.get('single_recipient') and name in values and len(parse_multiselect_ids(values[name])) > 1:
+                # An older picker could save several IDs. Require an explicit new choice.
+                values[name] = '[]'
         validate_overrides(self.fields, values)
         for name, value in values.items():
             self.edited.add(name)  # Pending defaults must not overwrite restored choices.

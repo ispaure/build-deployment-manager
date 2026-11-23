@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 from build_manager.configuration_ui import ConfigurationView
 from build_manager.recipient_ui import RecipientPicker
 from build_manager.run_fields import parse_multiselect_ids, validate_fields, validate_overrides
+from build_manager.run_fields_ui import RunFieldsView
 from build_manager.ui import ManagerPanel
 from test_ui import OtherProject
 from test_journeys import CAPABILITY
@@ -74,6 +75,25 @@ class RecipientUITests(unittest.TestCase):
                 self.assertTrue(page.isAncestorOf(view.destination_checks[destination]))
                 self.assertTrue(view.delivery_categories[category][0].isAncestorOf(page))
             self.assertEqual(view.choices(), before)
+
+    def test_single_recipient_picker_replaces_the_previously_selected_device(self):
+        picker = RecipientPicker(single_recipient=True)
+        self.addCleanup(picker.close)
+        picker.set_choices([dict(id='phone-1', label='Phone'), dict(id='tablet-1', label='Tablet')])
+        picker.setText('["phone-1"]')
+        picker.items.item(1).setCheckState(Qt.CheckState.Checked)
+        self.assertEqual(picker.text(), '["tablet-1"]')
+        picker.manual.setText('phone-2')
+        picker.add.click()
+        self.assertEqual(picker.text(), '["phone-2"]')
+        field = dict(id='devices.ios', label='iOS device', kind='multiselect', single_recipient=True)
+        with self.assertRaisesRegex(ValueError, 'Choose one recipient'):
+            validate_overrides([field], {'devices.ios': '["phone-1", "tablet-1"]'})
+        from types import SimpleNamespace
+        view = RunFieldsView(SimpleNamespace(run_fields=[field]))
+        self.addCleanup(view.stop)
+        view.restore({'devices.ios': '["phone-1", "tablet-1"]'})
+        self.assertEqual(view.saved_values(), {'devices.ios': '[]'})
 
     def test_development_counts_selected_devices_per_platform_and_total(self):
         with TemporaryDirectory() as directory:

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 from commonUtils.ui.pyside import resizable_scroll_area
 
 from .redaction import Redactor
-from .providers import DELIVERY_LABELS, setting_help
+from .providers import CAPABILITIES, DELIVERY_LABELS, setting_help
 from .settings import setting_reset, validate_settings_resets
 from .ui_components import style_button, style_dialog_buttons, search_shortcut, HeadingLabel, style_utilities
 
@@ -42,12 +42,17 @@ SETTING_SECTIONS = {
 def setting_section(name, entry, run_fields):
     if name in run_fields or entry.get('section') in ('Defaults for new runs', 'Run defaults'):
         return RUN_DEFAULTS
+    if name in ('distribution.app-store', 'distribution.google-play'):
+        return (*DELIVERY, DELIVERY_LABELS[name.partition('.')[2]])
+    if name in ('ios.team', 'ios.profile'):
+        return SETTING_SECTIONS['signing']
     prefix, separator, _ = name.partition('.')
     if separator and prefix in DELIVERY_LABELS:
         return (*DELIVERY, DELIVERY_LABELS[prefix])
     if separator and prefix in SETTING_SECTIONS:
         return SETTING_SECTIONS[prefix]
-    return (entry.get('section', prefix.replace('_', ' ').title()),)
+    label = entry.get('section', prefix.replace('_', ' ').title())
+    return (label,) if label in INTENTS else (ADVANCED, label)
 
 
 def control_value(control):
@@ -108,6 +113,7 @@ class SettingsDialog(QDialog):
         self.rows = {}
         self.field_rows, self.forms, self.origins = {}, {}, []
         self.sections, self.page_resets, self.reset_buttons = {}, {}, {}
+        self.section_notes = {}
         self.initial_values, self.edits, self.resets = {}, {}, {}
         self.origin_labels = {}
         self.setWindowTitle('Project settings')
@@ -300,37 +306,54 @@ class SettingsDialog(QDialog):
         self.resets.clear()
 
         run_fields = {field['id'] for field in getattr(self.project, 'run_fields', ())}
-        groups = {}
+        groups = {(intent,): [] for intent in INTENTS}
+        groups.update({(*DELIVERY, label): [] for label in DELIVERY_LABELS.values()})
         for name, entry in rows.items():
             group = setting_section(name, entry, run_fields)
             groups.setdefault(group, []).append(name)
 
-        def order(group):
-            return INTENTS.index(group[0]) if group[0] in INTENTS else len(INTENTS)
+        destinations = (getattr(self.project, 'journey_capability', None) or {}).get('destinations', {})
+        provider_fields = {name.partition('.')[0] for name in rows}
+        provider_fields.update(name.partition('.')[0] for name in run_fields)
+        self.section_notes = {
+            (intent,): 'This project has no settings in this section.'
+            for intent in INTENTS
+            if not groups[(intent,)] and not any(group[0] == intent and len(group) > 1 for group in groups)
+        }
+        unavailable = {}
+        for provider, label in DELIVERY_LABELS.items():
+            group = (*DELIVERY, label)
+            capability = CAPABILITIES[provider]
+            if capability.status != 'implemented':
+                unavailable[group] = capability.reason
+            elif provider not in destinations and provider not in provider_fields:
+                unavailable[group] = 'This project does not support ' + label + ' delivery.'
+            elif not groups[group]:
+                self.section_notes[group] = 'This project exposes no checkout settings for ' + label + '.'
+        self.section_notes.update(unavailable)
 
-        for group in sorted(groups, key=order):
-            if len(group) > 1 and group[:1] not in self.sections:
-                self.add_section(group[:1], groups.get(group[:1], ()))
-            if group not in self.sections:
-                self.add_section(group, groups[group])
+        for group in sorted(groups, key=lambda page: INTENTS.index(page[0])):
+            self.add_section(group, groups[group], unavailable=group in unavailable)
         self.add_section_links(groups)
         self.sidebar.expandAll()
         self.filter_fields()
         style_utilities(self)
 
-    def add_section(self, group, names):
+    def add_section(self, group, names, *, unavailable=False):
         scroll = resizable_scroll_area()
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.addWidget(HeadingLabel(group[-1], section=True))
+        if group in self.section_notes:
+            layout.addWidget(plain_label(self.section_notes[group]))
         links = QVBoxLayout()
         layout.addLayout(links)
         scroll.setWidget(content)
         index = self.stack.addWidget(scroll)
-        item = QTreeWidgetItem([group[-1]])
+        item = QTreeWidgetItem([group[-1] + (' · Unavailable' if unavailable else '')])
         item.setData(0, Qt.ItemDataRole.UserRole, index)
-        item.setToolTip(0, ' → '.join(group))
+        item.setToolTip(0, self.section_notes.get(group, ' → '.join(group)))
         if len(group) == 1:
             self.sidebar.addTopLevelItem(item)
         else:
@@ -356,16 +379,14 @@ class SettingsDialog(QDialog):
 
     def add_section_links(self, groups):
         for group, (_, links) in self.sections.items():
-            for child in self.sections:
+            for child, (item, _) in self.sections.items():
                 if len(child) == len(group) + 1 and child[:-1] == group:
-                    self.add_section_link(links, child[-1], child)
+                    self.add_section_link(links, item.text(0), child)
 
-        if RUN_DEFAULTS not in groups:
-            return
         _, run_links = self.sections[RUN_DEFAULTS]
         for provider, label in DELIVERY_LABELS.items():
             page = (*DELIVERY, label)
-            if page in groups and any(name.startswith(provider + '.') for name in groups[RUN_DEFAULTS]):
+            if any(name.startswith(provider + '.') for name in groups[RUN_DEFAULTS]):
                 _, links = self.sections[page]
                 self.add_section_link(links, 'Open ' + label + ' run defaults', RUN_DEFAULTS)
                 self.add_section_link(run_links, 'Open ' + label + ' delivery settings', page)
@@ -604,6 +625,9 @@ class SettingsDialog(QDialog):
 
     def filter_fields(self, *_):
         words = self.search.text().strip().casefold().split()
+        notes = {group for group, note in self.section_notes.items()
+                 if all(word in ' '.join((*group, note, self.sections[group][0].text(0))).casefold()
+                        for word in words)}
         groups = set()
         for name, (group, heading, search_text) in self.field_rows.items():
             dependencies = self.rows[name].get('visible_when', {})
@@ -614,13 +638,14 @@ class SettingsDialog(QDialog):
             if visible:
                 groups.add(group)
 
-        first = None
+        matches = groups | notes
+        if not words:
+            matches.update((intent,) for intent in INTENTS)
         for group, (item, _) in self.sections.items():
-            item.setHidden(not any(match[:len(group)] == group for match in groups))
+            item.setHidden(not any(match[:len(group)] == group for match in matches))
             if words and not item.isHidden():
                 item.setExpanded(True)
-            if first is None and group in groups:
-                first = item
+        first = next((item for group, (item, _) in self.sections.items() if group in (groups or notes)), None)
         selected = self.sidebar.currentItem()
         if first is not None and (selected is None or selected.isHidden() or
                 (words and selected.childCount())):
@@ -628,8 +653,8 @@ class SettingsDialog(QDialog):
         for group, reset in self.page_resets.items():
             reset.setEnabled(not words and any(
                 self.can_reset(name) for name, (page, _, _) in self.field_rows.items() if page == group))
-        self.stack.setVisible(bool(groups))
-        self.search_hint.setVisible(bool(self.rows) and not groups)
+        self.stack.setVisible(bool(matches))
+        self.search_hint.setVisible(bool(words) and not matches)
         self.toggle_origins(self.show_origins.isChecked())
 
     def select_section(self, item, previous):

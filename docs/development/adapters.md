@@ -16,6 +16,13 @@ these controls with validation settings. They use the existing per-preset
 option resets it to its declared default, rather than inheriting a prior preset's
 debug override. Projects own the choice's meaning and enforcement.
 
+Set `single_recipient: true` on a `multiselect` field for a delivery route
+that accepts one device per run. Both new and retained delivery use the same
+picker and send the usual JSON array of device IDs. Choosing another device
+replaces the current selection. The manager validates the upper limit for
+overrides. The adapter enforces any required recipient and checks provisioning
+and eligibility for the specific artifact.
+
 Adapter API 1 returns immutable `Plan`/`Phase` data. Plans declare structured
 commands, source identity, dependencies, timeouts, cleanup and owned artifacts.
 The headless engine imports neither Qt nor project code. Projects retain their

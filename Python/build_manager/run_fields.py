@@ -22,6 +22,9 @@ def validate_fields(fields, capabilities, journey=None):
                 raise ValueError('Run field applicability must be declared as lists of names.')
         if type(row.get('workflow_option', False)) is not bool:
             raise ValueError('Workflow-wide input applicability must be a boolean.')
+        if 'single_recipient' in row and (type(row['single_recipient']) is not bool
+                                          or row.get('kind') != 'multiselect'):
+            raise ValueError('Single-recipient mode must be a boolean on a recipient field.')
         if any(value not in capabilities['operations'] for value in row.get('operations',[])):
             raise ValueError('Run field has an unsupported operation.')
         if any(value not in (journey or {}).get('destinations',{}) for value in row.get('destinations',[])):
@@ -58,7 +61,9 @@ def validate_overrides(fields, values):
         if row.get('kind') == 'choice' and row['id'] in values and values[row['id']] not in row['options']:
             raise ValueError('Choose a declared option for ' + row['label'] + '.')
         if row.get('kind') == 'multiselect' and row['id'] in values:
-            parse_multiselect_ids(values[row['id']])
+            recipients = parse_multiselect_ids(values[row['id']])
+            if row.get('single_recipient') and len(recipients) > 1:
+                raise ValueError('Choose one recipient for ' + row['label'] + '.')
     return dict(values)
 
 
