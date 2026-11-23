@@ -78,6 +78,16 @@ Host-specific and operation-specific backend mappings are resolved identically
 on both sides. Projects retain their interpreter, manager version and commonUtils
 pin; importing the facade never installs or upgrades anything.
 
+### Retained delivery evidence
+
+`retained_evidence.passed_phase_rows` checks the exact phase IDs an adapter
+requires. `select_artifact` matches a declared output to its saved receipt and
+can require a canonical copy under the original run's artifact directory. Use
+the recorded path when locating a historical copy. `verify_artifact` checks both
+paths by default. Set `verify_original=False` when the project's delivery policy
+allows a retained copy to outlive its original. Adapters still decide which
+gates qualify and how to verify the package and its source.
+
 ### Project settings
 
 The `settings` action returns rows keyed by field ID. Each row declares its

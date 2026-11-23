@@ -3,11 +3,13 @@
 
 """Durable step recovery and artifact-scoped, session-only effect review."""
 from dataclasses import dataclass
+from functools import partial
 import hashlib
 import json
-from pathlib import Path
 from commonUtils.runtime.streams import file_sha256
 from commonUtils.runtime.operations import check_cancelled
+
+from .retained_evidence import verify_artifact
 
 EXTERNAL={'deploy','upload','publish','dispatch'}
 
@@ -40,14 +42,10 @@ def apply_start_review_policy(plan):
 
 
 def verify_artifacts(row, *, cancelled=lambda: False):
-    for artifact in row.get('artifacts',[]):
+    digest = partial(file_sha256, cancelled=cancelled)
+    for artifact in row.get('artifacts', ()):
         check_cancelled(cancelled)
-        path=Path(artifact['path'])
-        original=Path(artifact.get('original_path',artifact['path']))
-        if (not path.is_file() or not original.is_file()
-                or file_sha256(path, cancelled=cancelled)!=artifact['sha256']
-                or file_sha256(original, cancelled=cancelled)!=artifact['sha256']):
-            raise ValueError('Retained artifact is missing or changed; inspect a new preparation: '+str(path))
+        verify_artifact(artifact, digest)
 
 
 def transitive_dependency_ids(plan, phase_id):

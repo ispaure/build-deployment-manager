@@ -17,6 +17,16 @@ preflight, exact review/effect declarations and read-only outcome reconciliation
 Future store work requires store-specific policy, implementation and real acceptance
 before enabling the capability; none is inferred from TestFlight or Firebase success.
 
+## iOS device queries
+
+`apple_devices.device_json(arguments, env=..., cwd=..., timeout=...)` runs a
+single `xcrun devicectl` command, checks its reported outcome and returns its
+JSON result object. It sets a tool deadline and bounds the subprocess wait.
+Callers provide their selected Xcode environment and decide which devices and
+app identities qualify. The transport runs each command once.
+
+The module uses only the standard library. NOLF copies it from the explicitly
+supplied Manager checkout into a fresh workspace for retained delivery.
 
 ## GitHub attempt recovery
 
