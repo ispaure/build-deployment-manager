@@ -78,9 +78,10 @@ class OnboardingUITests(unittest.TestCase):
         try:
             dialog.controls['tools.python'].setText('changed')
             dialog.search.setText('desktop python');self.app.processEvents()
-            self.assertTrue(dialog.sidebar.topLevelItem(1).isHidden())
+            self.assertFalse(dialog.sections[('Environments & tools',)][0].isHidden())
+            self.assertTrue(dialog.sections[('Delivery',)][0].isHidden())
             self.assertIn('Unsaved changes',dialog.status.text())
-            self.assertEqual(dialog.origins[0].text(), 'Unsaved checkout edit')
+            self.assertEqual(dialog.origin_labels['tools.python'].text(), 'Unsaved checkout edit')
             dialog.show_origins.setChecked(False)
             self.assertTrue(all(label.isHidden() for label in dialog.origins))
             dialog.search.setText('no matches');self.assertFalse(dialog.search_hint.isHidden())
