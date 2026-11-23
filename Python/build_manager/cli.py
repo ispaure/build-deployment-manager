@@ -151,9 +151,10 @@ def parser_for_cli():
                          help='Exact group and direct output name from storage inventory; repeat for each output')
     storage.add_argument('--confirm', action='store_true', help='Confirm reviewed generated-output deletion')
     storage.add_argument('--retire-workflow', metavar='NAME_OR_PATH', help='Retire a saved workflow by unique name or exact history path; retain its evidence')
-    retry = sub.add_parser('retry-device', help='Prepare a separate, explicit retry of an uncertain device install')
+    retry = sub.add_parser('retry-device', help='Prepare a separate retry of a failed device connection or uncertain install')
     retry.add_argument('run', type=Path)
     retry.add_argument('--step', required=True)
+    retry.add_argument('--connection', metavar='IP:PORT', help='New wireless debugging endpoint for the same supported Android recipient')
     retry.add_argument('--output', type=Path, required=True, help='New plan file; does not execute the install')
     retained = sub.add_parser('retained-delivery', help='Prepare a new project-owned delivery from a saved run; does not execute it')
     retained.add_argument('run_directory', type=Path)
@@ -313,7 +314,7 @@ def execute(args, api):
         from .device_retry import prepare
         if args.output.exists():
             raise ValueError('Choose a new retry plan path; preserve existing evidence.')
-        prepared = prepare(args.run, args.step)
+        prepared = prepare(args.run, args.step, connection=args.connection)
         prepared.save(args.output)
         return dict(plan=str(args.output.resolve()), identity=prepared.identity, warning=prepared.settings['warning'])
     if command == 'retained-delivery':

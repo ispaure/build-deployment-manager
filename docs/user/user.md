@@ -125,15 +125,16 @@ files require a fresh preparation. Each external phase can require its own revie
 
 An unknown upload/deployment outcome needs provider reconciliation before retry.
 
-For an uncertain device installation, click **Retry install** on that device's
-workflow card, or **Retry uncertain device install…** in the footer. Clicking
-authorizes reinstallation of the same prepared app on that device; no additional
-approval dialog is required. The earlier installation may have completed.
-The manager verifies the prepared files before starting. A separate run and new
-receipt preserve the original unknown outcome. Successful deliveries, uploads
-and release actions do not repeat.
-This option requires passed preparation and declared receipt output paths; it
-does not repair a disconnected device or rebuild the app.
+Click **Retry install** on the device's workflow card or **Retry device install…**
+in the footer to try the same prepared app on the same device. If a supported
+Android device could not connect or its install is uncertain, enter its current
+Wireless debugging IP address and port. Leave the field blank to retry the
+existing connection. The project saves a replacement address after verifying the
+device and signing identity.
+
+An uncertain install may already have completed. The manager checks the prepared
+files before starting a separate attempt and saves a new receipt. The original
+outcome and other deliveries are preserved.
 
 The manager verifies retained files in the background before opening delivery
 review. The window remains responsive; Cancel operation also cancels this check.

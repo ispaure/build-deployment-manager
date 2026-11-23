@@ -269,7 +269,7 @@ rescheduled. Unaffected host proofs remain retained. Completed or unknown
 external actions are never automatically repeated; a stale external cleanup
 requires separate outcome review rather than automatic replay.
 
-## Retry an uncertain device installation
+## Retry a device installation
 
 Use this only after deciding to install the same prepared app on the same device
 again. The original installation may already have completed. Obtain the exact
@@ -291,12 +291,13 @@ CLI preparation leaves the installation awaiting review after the verification
 step. Inspect the returned review identity, then use `resume --confirm` with the
 retry plan identity and `--approval-identity INSTALL_STEP=REVIEW_SHA256` as in the
 delivery sequence above. `--confirm` alone cannot approve the installation.
-Eligibility requires an unknown `deploy` step with passed prerequisites, retained
-prepared artifacts and declared receipt paths present as command arguments.
-Uploads, failed preparation and active runs are ineligible. Changed original
-reports or prepared bytes block execution; this is not a general force-retry path.
-The GUI's explicit Retry install click supplies authorization for its separate
-attempt, so it does not show this additional CLI review sequence.
+An unknown installation is eligible when preparation passed and the receipt
+paths and prepared artifacts can be verified. An Android adapter may also allow a
+retry after its connection check failed and installation was skipped. Add
+`--connection 192.168.1.10:43521` to try a new Wireless debugging endpoint for
+the same device. The project saves the address after verifying the device and
+signing identity. The GUI's Retry install action supplies authorization for its
+separate attempt. The CLI uses the review sequence above.
 
 ## Continuing after manager maintenance
 

@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from build_manager import Phase, Plan
-from build_manager.device_retry import candidates, verify_retry_inputs, prepare
+from build_manager.device_retry import RETRY_CONNECTION, candidates, connection_endpoint, verify_retry_inputs, prepare
 from build_manager.api import run_plan, review_run
 
 
@@ -61,6 +61,41 @@ class DeviceRetryTests(unittest.TestCase):
         self.assertEqual((self.output / 'result.json').read_bytes(), before)
         self.assertEqual(self.intent.read_text(), 'unknown original intent')
         self.assertFalse(self.receipt.exists())
+
+    def connection_failure(self):
+        build, install, other = self.plan.phases
+        ready = replace(build, id='ready', kind='connection', effect='inspect', dependencies=('prepare',))
+        install = replace(install, dependencies=('prepare', 'ready'), environment={RETRY_CONNECTION: ''})
+        self.plan = replace(self.plan, phases=(build, ready, install, other))
+        self.report.update(status='failed', plan_identity=self.plan.identity)
+        self.report['phases'][1]['status'] = 'skipped'
+        self.report['phases'].insert(1, dict(id='ready', status='failed'))
+        self.save()
+
+    def test_connection_retry_reuses_prepared_bytes_and_captures_exact_new_endpoint(self):
+        self.connection_failure()
+        self.assertEqual([phase.id for phase in candidates(self.plan, self.report)], ['install-ipad'])
+        retry = prepare(self.output, 'install-ipad', connection=' 192.168.2.234:42821 ')
+        self.assertEqual(retry.phases[-1].environment[RETRY_CONNECTION], '192.168.2.234:42821')
+        self.assertIn('before installation', retry.settings['warning'])
+        self.assertEqual(retry.phases[-1].dependencies, ('verify-original-inputs',))
+        self.assertEqual(self.plan.phases[2].environment[RETRY_CONNECTION], '')
+        self.plan.phases[2].environment[RETRY_CONNECTION] = '192.168.2.234:42821'
+        self.report['plan_identity'] = self.plan.identity
+        self.save()
+        self.assertEqual(prepare(self.output, 'install-ipad', connection='').phases[-1].environment[RETRY_CONNECTION], '')
+        self.report['phases'][0]['status'] = 'failed'
+        self.save()
+        self.assertEqual(candidates(self.plan, self.report), [])
+
+    def test_connection_retry_rejects_invalid_address_and_unsupported_device(self):
+        for input_value in ('192.168.2.234', '192.168.2.234:0', '192.168.2.234:65536', 'other.local:4000',
+                            '[192.168.2.234]:4000', '2001:db8::12:4000', '192.168.2.234:abc'):
+            with self.subTest(input_value=input_value), self.assertRaises(ValueError):
+                connection_endpoint(input_value)
+        self.assertEqual(connection_endpoint('[2001:0db8::12]:4000'), '[2001:db8::12]:4000')
+        with self.assertRaisesRegex(ValueError, 'does not accept'):
+            prepare(self.output, 'install-ipad', connection='192.168.2.234:42821')
 
     def test_changed_original_or_prepared_bytes_block_retry(self):
         digest = verify_retry_inputs(self.output, 'install-ipad')[-1]

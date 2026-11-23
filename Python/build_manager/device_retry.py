@@ -4,6 +4,7 @@
 """Explicit, separately reviewed device reinstallation; never resume an unknown intent."""
 from dataclasses import replace
 import hashlib
+from ipaddress import ip_address
 import json
 from pathlib import Path
 import sys
@@ -14,14 +15,49 @@ from .models import Phase, Plan
 from .workflows import transitive_dependency_ids, verify_artifacts
 
 
+RETRY_CONNECTION = 'BUILD_MANAGER_DEVICE_RETRY_CONNECTION'
+
+
+def connection_endpoint(value):
+    """Return the canonical IP:port accepted by the Android retry field."""
+    host, separator, port = value.strip().rpartition(':')
+    try:
+        if not separator or not port.isascii() or not port.isdecimal() or len(port) > 5:
+            raise ValueError
+        port = int(port)
+        bracketed = host.startswith('[') and host.endswith(']')
+        address = ip_address(host[1:-1] if bracketed else host)
+        if not 1 <= port <= 65535 or bracketed != (address.version == 6) or '%' in host:
+            raise ValueError
+    except ValueError as error:
+        raise ValueError('Enter the Wireless debugging IP address and port, such as 192.168.1.10:43521.') from error
+    return f'[{address}]:{port}' if address.version == 6 else f'{address}:{port}'
+
+
+def failed_connections(plan, phase, states):
+    if RETRY_CONNECTION not in phase.environment or states.get(phase.id) != 'skipped':
+        return set()
+    return {dependency.id for dependency in plan.phases
+            if dependency.id in phase.dependencies and dependency.kind == 'connection'
+            and states.get(dependency.id) in {'failed', 'timeout'}}
+
+
 def candidates(plan, report):
     states = {row['id']: row['status'] for row in report['phases']}
     if report['status'] not in {'unknown', 'failed', 'cancelled'}:
         return []
-    return [phase for phase in plan.phases if phase.effect == 'deploy'
-            and states.get(phase.id) == 'unknown' and phase.artifacts
-            and all(states.get(key) == 'passed' for key in transitive_dependency_ids(plan, phase.id))
-            and all(path in phase.argv for path in phase.artifacts)]
+    result = []
+    for phase in plan.phases:
+        if (phase.effect != 'deploy' or not phase.artifacts
+                or not all(path in phase.argv for path in phase.artifacts)):
+            continue
+        connections = failed_connections(plan, phase, states)
+        if states.get(phase.id) != 'unknown' and not connections:
+            continue
+        needed = transitive_dependency_ids(plan, phase.id) - connections
+        if all(states.get(key) == 'passed' for key in needed):
+            result.append(phase)
+    return result
 
 
 def verify_retry_inputs(output, step, expected_review_digest=None):
@@ -29,8 +65,9 @@ def verify_retry_inputs(output, step, expected_review_digest=None):
     plan, report = load_run(output / 'result.json')
     phase = next((item for item in candidates(plan, report) if item.id == step), None)
     if phase is None:
-        raise ValueError('Choose an uncertain device installation with passed preparation and declared receipt outputs.')
-    needed = transitive_dependency_ids(plan, step)
+        raise ValueError('Choose a failed device connection or uncertain installation with passed preparation.')
+    states = {row['id']: row['status'] for row in report['phases']}
+    needed = transitive_dependency_ids(plan, step) - failed_connections(plan, phase, states)
     rows = [row for row in report['phases'] if row['id'] in needed]
     for row in rows:
         verify_artifacts(row)
@@ -40,9 +77,14 @@ def verify_retry_inputs(output, step, expected_review_digest=None):
     return plan, phase, rows, digest
 
 
-def prepare(output, step, *, authorized=False):
+def prepare(output, step, *, authorized=False, connection=None):
     """Produce a fresh plan with fresh receipt paths and an input-verification gate."""
     plan, phase, rows, digest = verify_retry_inputs(output, step)
+    if connection is not None and RETRY_CONNECTION not in phase.environment:
+        raise ValueError('This device step does not accept a replacement connection.')
+    environment = dict(phase.environment)
+    if connection is not None:
+        environment[RETRY_CONNECTION] = connection_endpoint(connection) if connection.strip() else ''
     workspace = Path(plan.workspace) / 'explicit-device-retries' / uuid4().hex
     paths = {path: str(workspace / ('receipt-' + str(index) + Path(path).suffix))
              for index, path in enumerate(phase.artifacts)}
@@ -54,16 +96,20 @@ def prepare(output, step, *, authorized=False):
         (sys.executable, '-m', 'build_manager.device_retry', str(Path(output).resolve()), step, digest),
         str(Path(__file__).resolve().parents[2]), effect='inspect', kind='verification', artifacts=artifacts,
         label='Verify original prepared app and retry provenance')
-    retry = replace(phase, dependencies=(verify.id,), waits_for=(),
+    retry = replace(phase, dependencies=(verify.id,), waits_for=(), environment=environment,
         argv=tuple(paths.get(arg, arg) for arg in phase.argv), artifacts=tuple(paths.values()),
         artifact_types={paths.get(key, key): value for key, value in phase.artifact_types.items()},
         approval_required=not authorized, label='Explicit retry: ' + (phase.label or phase.id))
+    connection_failed = len(rows) < len(transitive_dependency_ids(plan, step))
+    warning = ('The device connection failed before installation. Retry uses the same prepared app and verifies the same recipient.'
+               if connection_failed else
+               'The earlier install may have completed. This explicitly requests another installation of the same prepared app; its unknown outcome remains unchanged.')
     return Plan(plan.project, 'Explicit device install retry', plan.source, (verify, retry), str(workspace),
         backend=plan.backend, effect='deploy', secret_environment=plan.secret_environment,
         resource_locks=tuple(dict.fromkeys((*plan.resource_locks, str(Path(plan.workspace) / 'operation.lock')))),
         capacities=plan.capacities, settings={'original_run': str(Path(output).resolve()),
             'original_plan_identity': plan.identity, 'original_step': step, 'retry_review_identity': digest,
-            'warning': 'The earlier install may have completed. This explicitly requests another installation of the same prepared app; its unknown outcome remains unchanged.'},
+            'warning': warning},
         adapter=plan.adapter)
 
 

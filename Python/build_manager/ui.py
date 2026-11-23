@@ -265,7 +265,7 @@ class ManagerPanel(QWidget):
         self.continue_run.setEnabled(False)
         self.continue_run.hide()
         self.continue_run.clicked.connect(lambda: self.resume_workflow(self.result))
-        self.retry_device = QPushButton('Retry uncertain device install…', self)
+        self.retry_device = QPushButton('Retry device install…', self)
         self.retry_device.hide()
         self.retry_device.clicked.connect(self.retry_device_install)
         self.retained_delivery = QPushButton('Prepare delivery from saved run…', self)
@@ -923,7 +923,7 @@ class ManagerPanel(QWidget):
         self.session.launch(self.project.interpreter, path, run, confirmed=confirmed)
 
     def retry_device_install(self, step=None):
-        from .device_retry import candidates, prepare
+        from .device_retry import RETRY_CONNECTION, candidates, prepare
         from .history import load_run
         if self.closing or self.close_requested or getattr(self, 'is_busy', False) or not self.result:
             return
@@ -934,7 +934,7 @@ class ManagerPanel(QWidget):
                 raise ValueError('Choose a run from this registered project checkout.')
             phases = candidates(plan, report)
             if not phases:
-                raise ValueError('No uncertain device installation is eligible for an explicit retry.')
+                raise ValueError('No failed device connection or uncertain installation is eligible for a retry.')
             labels = [phase.id for phase in phases]
             if not isinstance(step, str) or not step:
                 step, accepted = (labels[0], True) if len(labels) == 1 else QInputDialog.getItem(
@@ -943,9 +943,19 @@ class ManagerPanel(QWidget):
                 accepted = step in labels
             if not accepted:
                 return
+            phase = next(phase for phase in phases if phase.id == step)
+            connection = None
+            if RETRY_CONNECTION in phase.environment:
+                connection, accepted = QInputDialog.getText(
+                    self, 'Retry Android installation',
+                    'Wireless debugging IP address and port (optional). A verified address is saved for this device.',
+                    text=phase.environment[RETRY_CONNECTION])
+                if not accepted:
+                    return
             directory = self.result.parent
-            self.begin_preparation(lambda cancelled, progress: prepare(directory, step, authorized=True),
-                                   verification=True, device_retry=True)
+            self.begin_preparation(
+                lambda cancelled, progress: prepare(directory, step, authorized=True, connection=connection),
+                verification=True, device_retry=True)
         except (OSError, ValueError, RuntimeError, KeyError) as error:
             self.status.setText(self.redact(str(error)))
 

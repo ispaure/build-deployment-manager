@@ -17,6 +17,7 @@ from test_ui import OtherProject
 class DeviceRetryUITests(unittest.TestCase):
     setUp = fixtures.DeviceRetryTests.setUp
     save = fixtures.DeviceRetryTests.save
+    connection_failure = fixtures.DeviceRetryTests.connection_failure
 
     @classmethod
     def setUpClass(cls):
@@ -63,6 +64,18 @@ class DeviceRetryUITests(unittest.TestCase):
         self.assertTrue(all(card.findChild(QPushButton, 'cardAction') is None or
             card.findChild(QPushButton, 'cardAction').isHidden() for card, _, _ in
             panel.run_view.results_workspace.flow.canvas.cards.values()))
+        panel.set_busy(False)
+
+    def test_android_retry_prompts_for_replacement_endpoint(self):
+        self.connection_failure()
+        panel = self.panel()
+        with patch('build_manager.ui.QInputDialog.getText', return_value=('192.168.2.234:42821', True)) as prompt, \
+                patch.object(panel.session, 'launch') as launch:
+            panel.retry_device.click()
+            self.wait_prepared(panel)
+            prompt.assert_called_once()
+            launch.assert_called_once()
+        self.assertEqual(panel.plan.phases[-1].environment[fixtures.RETRY_CONNECTION], '192.168.2.234:42821')
         panel.set_busy(False)
 
     def test_changed_prepared_app_stops_before_launch(self):
