@@ -30,6 +30,8 @@ class CleanupPreview:
 
 
 CONSEQUENCES = {
+    'caches': ('Build Manager will remove rebuildable cache files. The next build may take longer. '
+               'Build packages, run history and test reports will be kept.'),
     'outputs': ('Selected build files will be removed. Preparing again may take time. '
                 'A retry or delivery that needs these exact files may no longer work. '
                 'Published releases and installed apps are unchanged.'),
@@ -71,7 +73,7 @@ def unavailable(row, action):
         return row['protected_descendant']
     if not row.get('identity'):
         return 'Location is unavailable. Refresh before reviewing cleanup.'
-    if action == 'outputs' and row['source'] != 'output':
+    if action in {'outputs', 'caches'} and row['source'] != 'output':
         return 'Use the separate saved-run cleanup actions.'
     if action in {'bulky', 'runs'} and row['source'] != 'evidence':
         return 'Use the build-file cleanup action.'
@@ -82,9 +84,33 @@ def unavailable(row, action):
     return ''
 
 
-def _current(project, cancelled, report):
+def _cache_only(row, by_key):
+    from .storage_inventory import CACHES
+    pending = [row]
+    while pending:
+        item = pending.pop()
+        if item['source'] != 'output' or item['category'] != CACHES:
+            return False
+        pending.extend(by_key[key] for key in item['child_keys'])
+    return True
+
+
+def recommended_caches(project, snapshot):
+    if not supports(project, 'delete_storage'):
+        return []
+    return [row for row in snapshot['rows'] if not unavailable(row, 'caches')
+            and _cache_only(row, snapshot['by_key'])]
+
+
+def _current(project, cancelled, report, *, phase, done=0, total=0):
     from .storage_inventory import normalize, read_owned_inventory
-    outputs, evidence, workflows = read_owned_inventory(project, cancelled=cancelled, report=report)
+
+    def inventory_progress(_done, _total, message):
+        report(done, total, f'{phase} · {message}')
+
+    outputs, evidence, workflows = read_owned_inventory(project, cancelled=cancelled,
+                                                        report=inventory_progress)
+    inventory_progress(0, 0, 'Checking storage ownership and protections…')
     return normalize(outputs, evidence, workflows, cancelled=cancelled)
 
 
@@ -93,6 +119,8 @@ def _reviewed_rows(selected, current, action):
     for previous in selected:
         row = current['by_key'].get(previous['key'])
         reason = (unavailable(row, action) if row is not None else 'No longer in this project inventory.')
+        if not reason and action == 'caches' and not _cache_only(row, current['by_key']):
+            reason = 'This location also contains files outside the cache cleanup.'
         if not reason and _token(previous) != _token(row):
             reason = 'Files or ownership changed. Refresh and review again.'
         if reason:
@@ -118,12 +146,12 @@ def _reviewed_rows(selected, current, action):
 def prepare_preview(project, selected, action, *, cancelled=lambda: False,
                     report=lambda done, total, message: None):
     """Refresh eligibility before the user sees and confirms a concrete preview."""
-    if action not in {'outputs', 'bulky', 'runs'}:
+    if action not in {'outputs', 'caches', 'bulky', 'runs'}:
         raise ValueError('Choose a supported cleanup action.')
     identity = project_identity(project)
-    if action == 'outputs' and not supports(project, 'delete_storage'):
+    if action in {'outputs', 'caches'} and not supports(project, 'delete_storage'):
         raise ValueError('This project does not provide build-file cleanup.')
-    current = _current(project, cancelled, report)
+    current = _current(project, cancelled, report, phase='Reviewing cleanup selection')
     rows, skipped = _reviewed_rows(selected, current, action)
     if project_identity(project) != identity:
         raise ValueError('Project changed while reviewing storage. Reopen it.')
@@ -165,16 +193,22 @@ def execute(project, preview, *, cancelled=lambda: False,
     Group/name API-1 selection is not an atomic preview-inode token. Project
     owners retain their execution-time checks and no new authority is inferred.
     """
+    from .storage_inventory import StorageInventoryBusy
+
     result = dict(removed=[], skipped=list(preview.skipped), failed=[], cancelled=False)
     if cancelled():
         result['cancelled'] = True
         return result
     if project_identity(project) != preview.project_identity:
         raise ValueError('Project changed after preview. Reopen storage to review it.')
+    total = len(preview.rows)
     try:
-        current = _current(project, cancelled, report)
+        current = _current(project, cancelled, report, phase='Checking confirmed selection', total=total)
     except OperationCancelled:
         result['cancelled'] = True
+        return result
+    except StorageInventoryBusy as error:
+        result['blocked'] = str(error)
         return result
     rows, changed = _reviewed_rows(preview.rows, current, preview.action)
     # A stale plan does not quietly change its destructive membership.
@@ -182,7 +216,9 @@ def execute(project, preview, *, cancelled=lambda: False,
         result['skipped'].extend(changed)
         result['skipped'].extend(row['label'] + ': Nothing removed because the preview changed.' for row in rows)
         return result
+    processed = 0
     for index, row in enumerate(rows):
+        processed = index
         if cancelled():
             result['cancelled'] = True
             result['skipped'].extend(item['label'] + ': Stopped before removal.' for item in rows[index:])
@@ -193,19 +229,24 @@ def execute(project, preview, *, cancelled=lambda: False,
             # Re-read each remaining item after earlier actions: a new shared
             # declaration or protection can appear while the first item runs.
             if index:
-                fresh = _current(project, cancelled, report)
+                phase = f'Checking item {index + 1} of {total} · {row["label"]}'
+                try:
+                    fresh = _current(project, cancelled, report, phase=phase, done=index, total=total)
+                except StorageInventoryBusy as error:
+                    result['blocked'] = str(error)
+                    break
                 eligible, changed = _reviewed_rows((row,), fresh, preview.action)
                 if changed:
                     result['skipped'].extend(changed)
                     continue
                 row, = eligible
-            report(index, len(rows), 'Removing ' + row['label'])
+            report(index, total, 'Removing ' + row['label'] + '…')
             if cancelled():
                 result['cancelled'] = True
                 result['skipped'].extend(item['label'] + ': Stopped before removal.' for item in rows[index:])
                 break
             action = row['action']
-            if preview.action == 'outputs':
+            if preview.action in {'outputs', 'caches'}:
                 outcome = project.delete_storage({action['group']: [action['name']]})
             else:
                 from .test_storage import delete
@@ -218,8 +259,11 @@ def execute(project, preview, *, cancelled=lambda: False,
             break
         except (OSError, ValueError, RuntimeError) as error:
             result['failed'].append(row['label'] + ': ' + str(error))
+    else:
+        processed = len(rows)
     result['cancelled'] = result['cancelled'] or cancelled()
-    report(len(result['removed']), len(rows), 'Cleanup finished' if not result['cancelled'] else 'Cleanup stopped')
+    stopped = result['cancelled'] or result.get('blocked')
+    report(processed, total, 'Cleanup stopped' if stopped else 'Cleanup finished')
     return result
 
 

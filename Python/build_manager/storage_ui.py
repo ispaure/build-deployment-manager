@@ -68,11 +68,12 @@ class StorageTask(QRunnable):
         self.action, self.results = action, results
         self.project, self.generation = project, generation
         self.cancelled, self.done = Event(), Event()
-        self.progress = (0, 0, '')
+        self.progress = (0, 0, '', perf_counter())
 
     def report(self, done, total, message):
         # Replace progress rather than accumulating one queued event per file.
-        self.progress = (done, total, message)
+        _, _, previous, started = self.progress
+        self.progress = (done, total, message, started if message == previous else perf_counter())
 
     def publish(self, value):
         if not self.cancelled.is_set():
@@ -97,6 +98,7 @@ class StorageDialog(QDialog):
         super().__init__(parent)
         self.project, self.rows = project, []
         self.snapshot = None
+        self.quick_rows = []
         self.results = Queue()
         self.task = None
         self.busy = False
@@ -114,7 +116,7 @@ class StorageDialog(QDialog):
         self._project_identity = None
         self.cache = None
         self.setWindowTitle('Manage build storage')
-        self.resize(1000, 760)
+        self.resize(620, 205)
         layout = QVBoxLayout(self)
         self.scope_text = 'Storage for: ' + str(getattr(project, 'root', 'selected checkout'))
         self.scope = QLabel(self.scope_text)
@@ -125,9 +127,32 @@ class StorageDialog(QDialog):
         layout.addWidget(self.scope)
         self.totals = QLabel('Finding project-owned storage…')
         self.totals.setWordWrap(True)
+        self.totals.setStyleSheet('font-weight: 600;')
         self.totals.setTextFormat(Qt.TextFormat.PlainText)
         self.totals.setAccessibleName('Accounted storage and measurement status')
         layout.addWidget(self.totals)
+        self.cleanup_message = QLabel(
+            'Start with rebuildable caches. Build packages, run history and test reports stay available.')
+        self.cleanup_message.setWordWrap(True)
+        layout.addWidget(self.cleanup_message)
+        actions = QHBoxLayout()
+        self.quick_cleanup = QPushButton('Clean up caches…')
+        self.quick_cleanup.clicked.connect(lambda: self.begin_preview(self.quick_rows, 'caches'))
+        actions.addWidget(style_button(self.quick_cleanup, 'primary'))
+        self.overview_refresh = QPushButton('Refresh')
+        self.overview_refresh.clicked.connect(self.reload)
+        actions.addWidget(style_button(self.overview_refresh))
+        actions.addStretch()
+        self.more = QPushButton('Show storage details')
+        self.more.setCheckable(True)
+        self.more.toggled.connect(self.toggle_details)
+        actions.addWidget(style_button(self.more))
+        layout.addLayout(actions)
+        self.manual_panel = QWidget()
+        manual_layout = QVBoxLayout(self.manual_panel)
+        manual_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.manual_panel, 1)
+        self.manual_panel.hide()
         self.category_list = self.tree(['Category', 'Size on disk', 'Available to review'], 'Storage categories', StorageCategories)
         self.category_list.setMaximumHeight(126)
         self.category_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -135,26 +160,27 @@ class StorageDialog(QDialog):
         self.category_list.setColumnWidth(1, 130)
         self.category_list.itemActivated.connect(self.category_activated)
         self.category_list.itemClicked.connect(self.category_activated)
-        layout.addWidget(self.category_list)
-        self.category_explanation = QLabel('Builds may need preparing again. Caches can be rebuilt. '
-            'Saved runs keep diagnosis and delivery records. Available amounts are estimates, checked again before cleanup.')
+        manual_layout.addWidget(self.category_list)
+        self.category_explanation = QLabel(
+            'Builds and files contains prepared builds and caches. Saved runs contains reports and test evidence. '
+            'Advanced contains workflow holds and storage adoption.')
         self.category_explanation.setWordWrap(True)
-        layout.addWidget(self.category_explanation)
+        manual_layout.addWidget(self.category_explanation)
         self.chart_toggle = QToolButton()
         self.chart_toggle.setText('Show space chart')
         self.chart_toggle.setCheckable(True)
         self.chart_toggle.toggled.connect(self.toggle_chart)
-        layout.addWidget(self.chart_toggle)
+        manual_layout.addWidget(self.chart_toggle)
         self.chart = None
         self.chart_holder = QWidget()
         self.chart_holder.setMaximumHeight(200)
         self.chart_layout = QVBoxLayout(self.chart_holder)
         self.chart_layout.setContentsMargins(0, 0, 0, 0)
         self.chart_holder.hide()
-        layout.addWidget(self.chart_holder)
+        manual_layout.addWidget(self.chart_holder)
 
         self.tabs = QTabWidget()
-        layout.addWidget(self.tabs, 1)
+        manual_layout.addWidget(self.tabs, 1)
         outputs = QWidget()
         output_layout = QVBoxLayout(outputs)
         self.tabs.addTab(outputs, 'Builds and files')
@@ -254,6 +280,7 @@ class StorageDialog(QDialog):
         layout.addWidget(self.status)
         footer = QHBoxLayout()
         self.progress = QProgressBar()
+        self.progress.setAccessibleName('Storage progress')
         self.progress.setTextVisible(False)
         self.progress.setMaximumHeight(8)
         footer.addWidget(self.progress, 1)
@@ -265,6 +292,7 @@ class StorageDialog(QDialog):
         self.details_button.clicked.connect(self.open_details)
         self.details.textChanged.connect(lambda: self.details_button.setEnabled(bool(self.details.toPlainText())))
         footer.addWidget(self.details_button)
+        self.details_button.hide()
         self.close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self.close_buttons.rejected.connect(self.reject)
         style_dialog_buttons(self.close_buttons)
@@ -284,6 +312,17 @@ class StorageDialog(QDialog):
         self.adapt_layout()
         self.update_buttons()
         QTimer.singleShot(0, self.initial_reload)
+
+    def toggle_details(self, visible):
+        self.manual_panel.setVisible(visible)
+        self.details_button.setVisible(visible)
+        self.more.setText('Hide storage details' if visible else 'Show storage details')
+        if visible:
+            self.resize(max(self.width(), 900), max(self.height(), 680))
+            self.evidence_tab_changed(self.tabs.currentIndex())
+        else:
+            self.layout().activate()
+            self.resize(620, 205)
 
     def initial_reload(self):
         if self.closed or self.close_requested:
@@ -313,21 +352,22 @@ class StorageDialog(QDialog):
         self.mode, self._mutation = mode, mutation
         self.task = StorageTask(action, self.results, self.project, self.generation)
         self.busy = True
-        self.status.setText({'list': 'Reading project-owned storage…', 'preview': 'Checking the cleanup selection…',
-                             'delete': 'Rechecking cleanup eligibility…', 'retire': 'Retiring selected workflows…',
-                             'enroll': 'Adopting the reviewed location…'}[mode])
-        self.progress.setRange(0, 0)
+        self.task.report(0, 0, {
+            'list': 'Reading project-owned storage…', 'refresh': 'Reading project-owned storage…',
+            'preview': 'Checking the cleanup selection…', 'delete': 'Rechecking cleanup eligibility…',
+            'retire': 'Retiring selected workflows…', 'enroll': 'Adopting the reviewed location…',
+        }[mode])
+        self.update_progress()
         self.update_buttons()
         self.timer.start()
         QThreadPool.globalInstance().start(self.task)
         return True
 
     def inventory(self, task):
-        from .storage_inventory import gather
+        from .storage_inventory import gather, storage_cache
         from .storage_cleanup import project_identity
-        from commonUtils.filesystem.index import DirectoryCache
         if self.cache is None:
-            self.cache = DirectoryCache()
+            self.cache = storage_cache()
         identity = project_identity(task.project)
         def publish(value):
             value = dict(value, project_identity=identity)
@@ -341,22 +381,36 @@ class StorageDialog(QDialog):
             raise ValueError('Project changed during discovery. Reopen storage.')
         return dict(value, project_identity=identity)
 
-    def reload(self):
+    def reload(self, *, after_cleanup=False):
         if self.busy or self.close_requested or self.closed:
             return
         if self.snapshot:
             self.totals.setText('Refreshing — previously shown sizes are stale estimates.')
             self.details.clear()
-        self.start(self.inventory, 'list')
+        self.start(self.inventory, 'refresh' if after_cleanup else 'list')
+
+    def update_progress(self):
+        done, total, message, started = self.task.progress
+        if self.mode == 'delete' and total:
+            message = f'Cleanup · {done} of {total} processed · {message}'
+        elif self.mode == 'refresh':
+            message = f'Refreshing after cleanup · {message}'
+        if self.task.cancelled.is_set():
+            stopping = ('Stopping after the current item finishes…' if self._mutation
+                        else 'Stopping storage work…')
+            message = f'{stopping}\n{message}'
+        minutes, seconds = divmod(int(perf_counter() - started), 60)
+        status = f'{message} ({minutes}:{seconds:02d} in this step)'
+        if status != self.status.text():
+            self.status.setText(status)
+        if self.progress.maximum() != total:
+            self.progress.setRange(0, total)
+        if total and self.progress.value() != done:
+            self.progress.setValue(done)
 
     def completed(self):
-        if self.task and not self.close_requested:
-            done, total, message = self.task.progress
-            if message and not self.task.cancelled.is_set():
-                self.status.setText(message)
-                self.progress.setRange(0, total if total else 0)
-                if total:
-                    self.progress.setValue(done)
+        if self.task:
+            self.update_progress()
         for _ in range(8):
             try:
                 task, kind, value, error = self.results.get_nowait()
@@ -399,7 +453,7 @@ class StorageDialog(QDialog):
                     QMessageBox.information(self, 'Storage adopted', 'The reviewed location is now project-owned. Refreshing its inventory.')
                 else:
                     self.show_outcome(value)
-                self.reload()
+                self.reload(after_cleanup=self.mode == 'delete')
                 return
             elif task.cancelled.is_set():
                 self._render_jobs.clear()
@@ -409,7 +463,7 @@ class StorageDialog(QDialog):
             elif error:
                 self.status.setText('Storage request failed: ' + str(error))
                 self._project_identity = None
-            elif self.mode == 'list':
+            elif self.mode in {'list', 'refresh'}:
                 self.accept_snapshot(value)
             elif self.mode == 'preview':
                 self._preview = value
@@ -427,6 +481,12 @@ class StorageDialog(QDialog):
         self.outputs_loaded = self.evidence_loaded = self.workflows_loaded = False
         self.category_list.clear()
         from .storage_inventory import BUILDS, CACHES, SAVED_RUNS
+        from .storage_cleanup import recommended_caches
+        self.quick_rows = recommended_caches(self.project, value)
+        self.cleanup_message.setText(
+            'Start with rebuildable caches. Build packages, run history and test reports stay available.'
+            if self.quick_rows else
+            'No rebuildable caches are available to clean up. Open storage details to review other files.')
         descriptions = {BUILDS: 'Build preparations, snapshots and workspaces',
                         CACHES: 'Project-described caches; rebuilding takes time',
                         SAVED_RUNS: 'Run records, reports and diagnosis evidence'}
@@ -450,9 +510,8 @@ class StorageDialog(QDialog):
             qualifiers.append('cached or reported estimates; refreshing' if self.task else 'cached or reported estimate')
         elif value.get('estimated'):
             qualifiers.append('reported estimate')
-        self.totals.setText(size_text(value['allocated_bytes']) + ' accounted for · Size on disk' +
-                            (' · ' + '; '.join(qualifiers) if qualifiers else '') +
-                            '. Shared and nested locations counted once. Other locations are outside this inventory.')
+        self.totals.setText(size_text(value['allocated_bytes']) + ' in build storage and saved results'
+                            + (' · ' + '; '.join(qualifiers) if qualifiers else ''))
         previous = self.group.currentData()
         self.group.blockSignals(True)
         self.group.clear()
@@ -465,8 +524,8 @@ class StorageDialog(QDialog):
         self.evidence_tab_changed(self.tabs.currentIndex())
         if not cached:
             issues = value.get('issues', ())
-            self.status.setText(f'{len(value["rows"])} storage entries. Select items to review what cleanup would remove.' +
-                                (f' {len(issues)} scan issues; inspect item details.' if issues else ''))
+            self.status.setText('Some sizes could not be measured. Open storage details for more information.'
+                                if issues else '')
 
     def category_activated(self, item, column=0):
         from .storage_inventory import SAVED_RUNS
@@ -626,7 +685,7 @@ class StorageDialog(QDialog):
 
     def evidence_tab_changed(self, index):
         self.details.clear()
-        if not self.snapshot or self.close_requested:
+        if not self.snapshot or self.close_requested or not self.more.isChecked():
             return
         if index == 0 and not self.outputs_loaded:
             self.render()
@@ -695,7 +754,8 @@ class StorageDialog(QDialog):
             return
         from .storage_cleanup import unavailable
         ready = not self.busy and not self.close_requested and bool(self._project_identity)
-        for button in (self.refresh, self.evidence_refresh):
+        self.quick_cleanup.setEnabled(ready and bool(self.quick_rows))
+        for button in (self.overview_refresh, self.refresh, self.evidence_refresh):
             button.setEnabled(not self.busy and not self.close_requested)
         self.selected.setEnabled(ready and any(not unavailable(row, 'outputs') for row in self.selected_rows(self.table)))
         self.all.setEnabled(ready and bool(self.rows))
@@ -706,6 +766,9 @@ class StorageDialog(QDialog):
             if hasattr(self, name):
                 getattr(self, name).setEnabled(ready)
         self.stop.setEnabled(self.busy and not self.close_requested)
+        self.stop.setVisible(self.busy)
+        self.progress.setVisible(self.busy)
+        self.status.setVisible(self.busy or bool(self.status.text()))
         if not self.busy:
             self.progress.setRange(0, 1)
             self.progress.setValue(1)
@@ -744,13 +807,21 @@ class StorageDialog(QDialog):
             self.update_buttons()
             return
         estimate = size_text(preview.estimated_bytes) + ' estimated'
-        box = QMessageBox(QMessageBox.Icon.Warning, 'Review cleanup',
-                          f'Remove {len(preview.rows)} selected entries? {estimate}.\n'
-                          f'Measurement: {preview.measurement_summary}.\n\n' + preview.consequence,
+        if preview.action == 'caches':
+            units = 'cache folder' if len(preview.rows) == 1 else 'cache folders'
+            size = f'Estimated space to free: {size_text(preview.estimated_bytes)}.'
+            if preview.unknown_count:
+                size += ' Some cache sizes are unknown.'
+            message = f'Remove {len(preview.rows)} {units}? {size}\n\n' + preview.consequence
+        else:
+            message = (f'Remove {len(preview.rows)} selected entries? {estimate}.\n'
+                       f'Measurement: {preview.measurement_summary}.\n\n' + preview.consequence)
+        box = QMessageBox(QMessageBox.Icon.Warning, 'Review cleanup', message,
                           QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self)
         box.setDefaultButton(QMessageBox.StandardButton.No)
         box.button(QMessageBox.StandardButton.Yes).setText(
-            {'outputs': 'Delete reviewed files', 'bulky': 'Remove bulky files', 'runs': 'Delete entire runs'}[preview.action])
+            {'outputs': 'Delete reviewed files', 'caches': 'Remove caches',
+             'bulky': 'Remove bulky files', 'runs': 'Delete entire runs'}[preview.action])
         details = []
         for row in preview.rows:
             amount = row['action'].get('bulky_bytes') if preview.action == 'bulky' else row.get('allocated_bytes')
@@ -770,6 +841,8 @@ class StorageDialog(QDialog):
                     return execute(project, preview, cancelled=task.cancelled.is_set, report=task.report)
                 finally:
                     if cache:
+                        done, total, _, _ = task.progress
+                        task.report(done, total, 'Marking saved size measurements for refresh…')
                         for row in preview.rows:
                             cache.invalidate(Path(row['path']))
             self.start(remove, 'delete', mutation=True)
@@ -783,6 +856,8 @@ class StorageDialog(QDialog):
         message = f'{count} entries ' + ('retired; evidence kept.' if 'retired' in result else 'removed.')
         if result.get('cancelled'):
             message += ' Stopped before starting further items.'
+        if result.get('blocked'):
+            message += '\n\nCleanup stopped before starting further removals. ' + result['blocked']
         for key, label in (('skipped', 'Skipped or incomplete'), ('failed', 'Failed')):
             if result.get(key):
                 message += '\n' + label + ':\n' + '\n'.join(result[key])
@@ -831,7 +906,7 @@ class StorageDialog(QDialog):
     def cancel(self):
         if self.task:
             self.task.cancelled.set()
-            self.status.setText('Stopping after the current item finishes…' if self._mutation else 'Stopping storage work…')
+            self.update_progress()
         else:
             self._render_jobs.clear()
             self.render_timer.stop()

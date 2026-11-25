@@ -17,6 +17,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtTest import QTest
 from build_manager.storage_ui import StorageDialog
 from build_manager import retention
+from commonUtils.filesystem.index import directory_index_path
+from commonUtils.persistence.locking import file_lock
 
 
 class StorageLifecycleTests(unittest.TestCase):
@@ -29,6 +31,11 @@ class StorageLifecycleTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.environment = patch.dict(os.environ, COMMONUTILS_STORAGE_ROOT=str(self.root / 'shared'))
         self.environment.start()
+        self.manager_directory = self.root / 'BuildDeploymentManager'
+        manager_directory = patch('build_manager.storage_inventory.config_directory',
+                                  return_value=self.manager_directory)
+        manager_directory.start()
+        self.addCleanup(manager_directory.stop)
         self.dialogs = []
         self.gates = []
         root = self.root
@@ -77,8 +84,10 @@ class StorageLifecycleTests(unittest.TestCase):
         dialog.show()
         return dialog
 
-    def ready(self):
+    def ready(self, *, details=True):
         dialog = self.dialog()
+        if details:
+            dialog.more.click()
         self.wait(lambda: not dialog.busy)
         self.assertIsNotNone(dialog.snapshot)
         return dialog
@@ -93,6 +102,18 @@ class StorageLifecycleTests(unittest.TestCase):
             return gather(*args, **kwargs)
         return entered, release, delayed
 
+    def test_storage_loads_with_the_shared_index_writer_held(self):
+        shared_database = directory_index_path()
+        shared_database.parent.mkdir(parents=True)
+        with file_lock(shared_database.with_suffix('.lock')) as acquired:
+            self.assertTrue(acquired)
+            dialog = self.ready()
+        self.assertEqual(dialog.cache.database,
+                         self.manager_directory / 'cache' / 'storage-index.sqlite3')
+        self.assertTrue(dialog.cache.database.is_file())
+        self.assertFalse(shared_database.exists())
+        self.assertIsNotNone(dialog.snapshot['allocated_bytes'])
+
     def test_initial_view_is_deferred_and_storage_lists_are_available(self):
         with patch('build_manager.storage_inventory.gather', wraps=__import__(
                 'build_manager.storage_inventory', fromlist=['gather']).gather) as gather:
@@ -101,6 +122,10 @@ class StorageLifecycleTests(unittest.TestCase):
             self.assertTrue(dialog.busy)
             gather.assert_not_called()
             dialog.show()
+            self.wait(lambda: not dialog.busy)
+            self.assertFalse(dialog.tabs.isVisible())
+            self.assertEqual(dialog.table.topLevelItemCount(), 0)
+            dialog.more.click()
             self.wait(lambda: not dialog.busy)
             self.assertEqual(dialog.table.topLevelItemCount(), 1)
             self.assertEqual(dialog.evidence.topLevelItemCount(), 0)
@@ -178,6 +203,42 @@ class StorageLifecycleTests(unittest.TestCase):
             self.assertIn('Stopped', dialog.status.text())
             self.assertFalse(dialog.selected.isEnabled())
 
+    def test_overview_cleanup_removes_only_reviewed_rebuildable_caches(self):
+        outputs = self.root / 'outputs'
+        old = outputs / 'cache'
+        pinned = outputs / 'pinned'
+        for path in (old, pinned):
+            path.mkdir()
+            (path / '.owned').touch()
+            (path / 'data').write_text('cache data')
+        (pinned / '.keep').touch()
+        inventory = self.project.storage_inventory
+
+        def categorized():
+            return [dict(row, category='Rebuildable caches') if row['name'] in {'cache', 'pinned'} else row
+                    for row in inventory()]
+
+        self.project.storage_inventory = categorized
+        dialog = self.ready(details=False)
+        self.assertFalse(dialog.tabs.isVisible())
+        self.assertTrue(dialog.quick_cleanup.isEnabled())
+        messages = []
+
+        def approve(box):
+            self.assertEqual(box.defaultButton(), box.button(QMessageBox.StandardButton.No))
+            self.assertTrue((old / 'data').is_file())
+            messages.append(box.text())
+            return QMessageBox.StandardButton.Yes
+
+        with patch.object(QMessageBox, 'exec', approve), patch.object(QMessageBox, 'information'):
+            dialog.quick_cleanup.click()
+            self.wait(lambda: not dialog.busy)
+        self.assertIn('1 cache folder', messages[0])
+        self.assertFalse(old.exists())
+        self.assertTrue((pinned / 'data').is_file())
+        self.assertTrue((outputs / 'one/data').is_file())
+        self.assertFalse(dialog.quick_cleanup.isEnabled())
+
     def test_bulk_selection_does_not_delete_and_preview_defaults_to_no(self):
         dialog = self.ready()
         dialog.all.click()
@@ -209,6 +270,61 @@ class StorageLifecycleTests(unittest.TestCase):
         self.assertEqual(dialog.table.topLevelItemCount(), 0)
         self.assertEqual(dialog.details.toPlainText(), '')
         self.assertFalse(dialog.details_button.isEnabled())
+
+    def test_cleanup_progress_through_removal_recheck_and_refresh(self):
+        first, second = (self.root / 'outputs' / name for name in ('one', 'two'))
+        second.mkdir()
+        (second / '.owned').touch()
+        dialog = self.ready()
+        deleting, rechecking, refreshing = Event(), Event(), Event()
+        finish_delete, finish_recheck, finish_refresh = Event(), Event(), Event()
+        self.gates.extend((finish_delete, finish_recheck, finish_refresh))
+        delete, inventory = self.project.delete_storage, self.project.storage_inventory
+
+        def slow_delete(selection):
+            if selection == {'Prepared files': ['one']}:
+                deleting.set()
+                finish_delete.wait(4)
+            return delete(selection)
+
+        def slow_inventory():
+            if not first.exists() and second.exists():
+                rechecking.set()
+                finish_recheck.wait(4)
+            elif not second.exists():
+                refreshing.set()
+                finish_refresh.wait(4)
+            return inventory()
+
+        self.project.delete_storage = slow_delete
+        self.project.storage_inventory = slow_inventory
+        with patch.object(QMessageBox, 'exec', return_value=QMessageBox.StandardButton.Yes), \
+                patch.object(QMessageBox, 'information') as outcome:
+            dialog.all.click()
+            dialog.selected.click()
+            self.wait(lambda: deleting.is_set() and 'Removing one' in dialog.status.text())
+            self.assertIn('0 of 2 processed', dialog.status.text())
+            self.assertEqual((dialog.progress.value(), dialog.progress.maximum()), (0, 2))
+            with patch('build_manager.storage_ui.perf_counter', side_effect=lambda: time.perf_counter() + 65):
+                dialog.completed()
+                self.assertRegex(dialog.status.text(), r'\(1:\d\d in this step\)')
+            finish_delete.set()
+            self.wait(lambda: rechecking.is_set() and 'Checking item 2 of 2' in dialog.status.text())
+            self.assertIn('1 of 2 processed', dialog.status.text())
+            self.assertIn('two · Reading owned build files', dialog.status.text())
+            self.assertEqual((dialog.progress.value(), dialog.progress.maximum()), (1, 2))
+            finish_recheck.set()
+            self.wait(lambda: refreshing.is_set() and 'Refreshing after cleanup' in dialog.status.text())
+            outcome.assert_called_once()
+            self.assertEqual(dialog.progress.maximum(), 0)
+            finish_refresh.set()
+            self.wait(lambda: not dialog.busy)
+            dialog.refresh.click()
+            self.assertTrue(dialog.busy)
+            self.assertNotIn('Refreshing after cleanup', dialog.status.text())
+            self.wait(lambda: not dialog.busy)
+        self.assertEqual(dialog.last_outcome['removed'], [str(first), str(second)])
+        self.assertFalse(dialog.progress.isVisible())
 
     def test_small_window_with_chart_keeps_readable_item_rows_and_states(self):
         dialog = self.ready()

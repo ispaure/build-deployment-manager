@@ -7,15 +7,19 @@ from contextlib import ExitStack, nullcontext
 import json
 import os
 from pathlib import Path
+from subprocess import CompletedProcess
 import sys
 from tempfile import TemporaryDirectory
 from threading import Event
 from time import time
 import unittest
+from unittest.mock import patch
 
 from build_manager import Phase, Plan, retention
+from build_manager.bridge import ProjectBridge
+from build_manager.locking import workspace_lock
 from build_manager.registry import Registry
-from build_manager.storage_cleanup import execute, prepare_preview
+from build_manager.storage_cleanup import execute, prepare_preview, recommended_caches
 from build_manager.storage_inventory import normalize, read_owned_inventory
 
 
@@ -132,6 +136,99 @@ class StorageCleanupTests(unittest.TestCase):
         self.assertFalse(selected.exists())
         self.assertTrue(unselected.is_dir())
         self.assertTrue(unowned.is_dir())
+
+    def test_api1_inventory_retries_the_workspace_lock_diagnostic(self):
+        project = self.project
+        project.write_descriptor(dict(project.descriptor, adapter_actions=['storage_inventory']))
+        interpreter = project.root / project.descriptor['interpreter']
+        interpreter.parent.mkdir(parents=True)
+        interpreter.touch()
+        (project.root / project.descriptor['bridge']).touch()
+        bridge = ProjectBridge(project.registry, project.key)
+        busy = CompletedProcess([], 1, '', 'Earlier diagnostic\nAnother operation owns this workspace.\n')
+        success = CompletedProcess([], 0, '{"schema":1,"result":[]}', '')
+        with patch('build_manager.bridge_process.run', side_effect=[busy, success]) as run:
+            self.assertEqual(read_owned_inventory(bridge)[0], ())
+        self.assertEqual(run.call_count, 2)
+
+        failure = CompletedProcess([], 1, '', 'Unrelated adapter failure\n')
+        with patch('build_manager.bridge_process.run', return_value=failure) as run:
+            with self.assertRaisesRegex(ValueError, 'Unrelated adapter failure'):
+                read_owned_inventory(bridge)
+        run.assert_called_once()
+
+    def test_cleanup_retries_a_transient_retention_lock_before_deleting(self):
+        candidate = self.project.output('candidate')
+        preview = self.preview(candidate)
+        with ExitStack() as held:
+            held.enter_context(workspace_lock(candidate.parent / '.retention.lock'))
+
+            def release_on_retry(_done, _total, message):
+                if 'Retrying inventory' in message:
+                    self.assertTrue(candidate.is_dir())
+                    self.assertEqual(self.project.calls, [])
+                    held.close()
+
+            result = execute(self.project, preview, report=release_on_retry)
+        self.assertEqual(result['removed'], [str(candidate)])
+        self.assertFalse(candidate.exists())
+
+    def test_cleanup_stops_safely_if_inventory_stays_locked(self):
+        paths = [self.project.output(name) for name in ('a-first', 'b-second', 'c-third')]
+        preview = self.preview(*paths)
+        lock = paths[0].parent / '.retention.lock'
+        with patch('build_manager.storage_inventory._INVENTORY_LOCK_WAIT', 0):
+            with workspace_lock(lock):
+                result = execute(self.project, preview)
+                self.assertIn('Another operation is using project storage', result['blocked'])
+                self.assertEqual(result['removed'], [])
+                self.assertEqual(self.project.calls, [])
+
+            with ExitStack() as held:
+                def occupy_after_first(_done, _total, message):
+                    if message.startswith('Checking item 2 of 3'):
+                        held.enter_context(workspace_lock(lock))
+
+                result = execute(self.project, preview, report=occupy_after_first)
+            self.assertIn('Another operation is using project storage', result['blocked'])
+            self.assertEqual(result['removed'], [str(paths[0])])
+            self.assertEqual(self.project.calls, [{'Build outputs': ['a-first']}])
+            self.assertTrue(all(path.is_dir() for path in paths[1:]))
+
+    def test_stop_cancels_a_busy_inventory_before_retrying_or_deleting(self):
+        candidate = self.project.output('candidate')
+        preview = self.preview(candidate)
+        stop = Event()
+        reads = self.project.inventory_calls
+
+        def stop_on_retry(_done, _total, message):
+            if 'Retrying inventory' in message:
+                stop.set()
+
+        with workspace_lock(candidate.parent / '.retention.lock'):
+            result = execute(self.project, preview, cancelled=stop.is_set, report=stop_on_retry)
+        self.assert_stopped(result)
+        self.assertEqual(self.project.inventory_calls, reads + 1)
+        self.assertEqual(self.project.calls, [])
+        self.assertTrue(candidate.is_dir())
+
+    def test_cache_shortcut_keeps_a_build_declared_inside_a_reviewed_cache(self):
+        cache_root = self.project.root / 'caches'
+        cache_root.mkdir()
+        self.project.groups['Rebuildable caches'] = cache_root
+        cache = self.project.output('cache', group='Rebuildable caches')
+        inventory = normalize(*read_owned_inventory(self.project))
+        preview = prepare_preview(self.project, recommended_caches(self.project, inventory), 'caches')
+        self.assertEqual([row['path'] for row in preview.rows], [str(cache)])
+
+        self.project.groups['Nested builds'] = cache
+        package = self.project.output('package', group='Nested builds')
+        result = execute(self.project, preview)
+        self.assertEqual(result['removed'], [])
+        self.assertEqual(self.project.calls, [])
+        self.assertTrue(package.is_dir())
+        inventory = normalize(*read_owned_inventory(self.project))
+        self.assertEqual(recommended_caches(self.project, inventory), [])
 
     def test_repeated_alias_of_same_owner_is_reviewed_and_removed_once(self):
         candidate = self.project.output('duplicate')
@@ -387,7 +484,12 @@ class StorageCleanupTests(unittest.TestCase):
                 raise OSError('fixture adapter failed')
 
         project.before_delete = intervene
-        result = execute(project, preview)
+        progress = []
+        result = execute(project, preview, report=lambda *update: progress.append(update))
+        self.assertEqual(progress[0], (0, 4, 'Checking confirmed selection · Reading owned build files…'))
+        self.assertIn((1, 4, 'Checking item 2 of 4 · b-owner-kept · Reading owned build files…'), progress)
+        self.assertIn((3, 4, 'Removing d-next-completed…'), progress)
+        self.assertEqual(progress[-1], (4, 4, 'Cleanup finished'))
         self.assertEqual(result['removed'], [str(removed), str(final)])
         self.assertEqual(len(result['skipped']), 1)
         self.assertIn('Pinned by .keep', result['skipped'][0])

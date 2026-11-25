@@ -25,8 +25,10 @@ The separate Available to review estimate uses non-overlapping eligible output
 footprints and bulky evidence bytes. It excludes entire-run history deletion
 and known protections, and never replaces a fresh cleanup preflight.
 
-Inventory work uses commonUtils `DirectoryCache` at the existing
-`directory_index_path()` location. Scope scans to current inventory paths,
+Inventory uses commonUtils `DirectoryCache` with a Build Manager database and
+writer lock under `cache/` in the Manager's application-data folder. The database
+is named `storage-index.sqlite3`. The Manager creates it when storage is first
+measured, then reuses it across sessions. Scope scans to current inventory paths,
 reuse covered descendants and reject linked ancestor chains. Discover candidates
 from ownership declarations before indexing. A cached snapshot is a stale
 estimate while the worker revalidates and refreshes. Close readers after use and

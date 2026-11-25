@@ -104,6 +104,7 @@ class TestEvidenceCleanup(unittest.TestCase):
 
         finish_worker()
         self.assertEqual(dialog.evidence.topLevelItemCount(), 0)
+        dialog.more.click()
         dialog.tabs.setCurrentIndex(dialog.evidence_tab)
         finish_worker()
         items = {dialog.evidence.topLevelItem(index).text(0): dialog.evidence.topLevelItem(index)

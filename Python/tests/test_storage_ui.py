@@ -91,6 +91,7 @@ class SettingsAndStorageUITests(unittest.TestCase):
                 results_directory = root / 'runs'
             dialog = StorageDialog(Project())
             self.wait(dialog)
+            dialog.more.click()
             # Workflow controls are deferred until their Advanced view is opened.
             dialog.tabs.setCurrentIndex(dialog.advanced_tab)
             self.wait(dialog)

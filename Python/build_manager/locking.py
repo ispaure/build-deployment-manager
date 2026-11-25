@@ -7,6 +7,13 @@ from pathlib import Path
 from commonUtils.persistence.locking import file_lock
 
 
+WORKSPACE_BUSY_MESSAGE = 'Another operation owns this workspace.'
+
+
+class WorkspaceBusy(RuntimeError):
+    """The workspace lock is held by another operation."""
+
+
 def operation_lock_path(workspace):
     """Keep an operation's lifetime lock outside its disposable directory."""
     workspace = Path(workspace)
@@ -24,5 +31,5 @@ def workspace_lock(path, *, timeout=0):
     path.parent.mkdir(parents=True, exist_ok=True)
     with file_lock(path, timeout=timeout) as acquired:
         if not acquired:
-            raise RuntimeError('Another operation owns this workspace.')
+            raise WorkspaceBusy(WORKSPACE_BUSY_MESSAGE)
         yield

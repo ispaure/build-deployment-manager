@@ -15,6 +15,7 @@ from unittest.mock import patch
 from commonUtils.filesystem import FolderStats
 from commonUtils.filesystem.index import DirectoryCache, directory_index_path
 from commonUtils.filesystem.index.allocation import allocated_size
+from commonUtils.persistence.locking import file_lock
 from commonUtils.runtime.operations import OperationCancelled
 
 from build_manager.models import Phase, Plan
@@ -313,6 +314,21 @@ class StorageInventoryTests(unittest.TestCase):
                    publish_cached=stop_after_cached)
         self.assertEqual(self.cache.peeks, [owned])
         self.assertFalse(self.cache.scans)
+
+    def test_default_measurement_uses_the_manager_index(self):
+        data = self.file('owned/artifact', 17)
+        project = Project(self.root, [output(data.parent)])
+        directory = self.root / 'BuildDeploymentManager'
+        shared = directory_index_path()
+        shared.parent.mkdir(parents=True)
+        deadline = time.monotonic() + 5
+        with patch('build_manager.storage_inventory.config_directory', return_value=directory), \
+                file_lock(shared.with_suffix('.lock')) as acquired:
+            self.assertTrue(acquired)
+            inventory = gather(project, cancelled=lambda: time.monotonic() >= deadline)
+        self.assertEqual(inventory['rows'][0]['logical_bytes'], 17)
+        self.assertTrue((directory / 'cache' / 'storage-index.sqlite3').is_file())
+        self.assertFalse(shared.exists())
 
     def test_headless_import_does_not_import_qt(self):
         check = subprocess.run([sys.executable, '-c', '''

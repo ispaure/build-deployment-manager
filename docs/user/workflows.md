@@ -209,10 +209,14 @@ unknown outcomes retain their outputs even when no build process is running.
 
 ## Manage build storage
 
-Open **More → Manage build storage…**. The selected checkout and scan status
-appear first. The overview then shows estimates for project-declared build
-storage and saved evidence from declared results folders as measurements become
-available.
+Open **More → Manage build storage…** and choose **Clean up caches…** for the
+quickest cleanup. Review the estimated space and confirm to remove eligible,
+project-declared rebuildable caches. Prepared builds, saved runs, test evidence,
+and pinned or in-use files are kept. The next build may take longer while it
+rebuilds its caches.
+
+Choose **Show storage details** to inspect build files, saved runs, or workflow
+holds. The detailed view shows these categories as sizes become available.
 
 | Category | What it includes |
 | --- | --- |
@@ -262,6 +266,15 @@ Active runs, runs held for review or continuation, pinned evidence and unresolve
 delivery outcomes are protected.
 
 ### Stop a scan or cleanup
+
+During cleanup, the status shows how many selected entries have been processed,
+which entry is being checked or removed, and how long the current step has been
+running. Processed entries include removals, skips and failures. A folder
+removal can take time, and project adapters report results when the entry
+finishes. The status identifies the storage refresh after the cleanup result.
+If another operation holds the project storage lock, Build Manager briefly
+retries the inventory check. If the lock stays busy, cleanup stops before any
+further removals. Refresh storage after the other operation finishes.
 
 Use **Stop** to cancel a scan. During cleanup, **Stop** lets the current deletion
 finish and skips entries that have yet to start. If you choose **Close** while an

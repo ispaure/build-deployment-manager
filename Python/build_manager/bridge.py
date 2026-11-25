@@ -135,7 +135,7 @@ class ProjectBridge:
         # The GUI's running checkout is unrelated to that installation authority.
         if action not in {'tooling_status', 'tooling_update'}:
             request['manager_checkout'] = str(self.runner_directory)
-        if action == 'run_storage_maintenance':
+        if action in {'run_storage_maintenance', 'storage_inventory', 'delete_storage'}:
             request['manager_python'] = self.interpreter if not getattr(sys, 'frozen', False) else None
             request['results_directory'] = str(checked_writer(self.root, self.results_directory))
         payload = json.dumps(request)
@@ -150,6 +150,11 @@ class ProjectBridge:
         redact = Redactor(environment.get(name) for name in ('GH_TOKEN','GITHUB_TOKEN','FIREBASE_TOKEN'))
         context = f"{descriptor['name']} adapter action {action!r} ({script})"
         if process.returncode:
+            if action == 'storage_inventory' and process.returncode == 1:
+                from .locking import WORKSPACE_BUSY_MESSAGE, WorkspaceBusy
+                # API-1 adapters may return lock contention as a diagnostic on stderr.
+                if stderr.rstrip().splitlines()[-1:] == [WORKSPACE_BUSY_MESSAGE]:
+                    raise WorkspaceBusy(WORKSPACE_BUSY_MESSAGE)
             raise ValueError(redact(f'{context} exited with code {process.returncode}: '
                                     + (stderr[-3000:] or 'No diagnostic output.')))
         try:

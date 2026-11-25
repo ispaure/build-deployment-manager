@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
-from time import monotonic
+from time import monotonic, sleep
 
 from commonUtils.filesystem.index import DirectoryCache
 from commonUtils.filesystem.index.allocation import allocated_size
@@ -16,6 +16,8 @@ from commonUtils.filesystem.native_paths import native_path
 from commonUtils.runtime.operations import check_cancelled
 
 from .adapter_sdk import supports
+from .locking import WorkspaceBusy
+from .registry import config_directory
 from .run_retirement import list_held_or_retired_runs
 from .test_storage import inventory as evidence_inventory, result_roots
 
@@ -24,6 +26,16 @@ BUILDS = 'Builds and working files'
 CACHES = 'Rebuildable caches'
 SAVED_RUNS = 'Saved runs and test results'
 CATEGORIES = (BUILDS, CACHES, SAVED_RUNS)
+_INVENTORY_LOCK_WAIT = 4.0
+
+
+class StorageInventoryBusy(RuntimeError):
+    """The project inventory stayed locked after a short retry window."""
+
+
+def storage_cache():
+    """Open the Manager's own index for build storage measurements."""
+    return DirectoryCache(database=config_directory() / 'cache' / 'storage-index.sqlite3')
 
 
 def read_owned_inventory(project, *, cancelled=lambda: False,
@@ -34,12 +46,29 @@ def read_owned_inventory(project, *, cancelled=lambda: False,
     outputs = ()
     if supports(project, 'storage_inventory'):
         request = project.with_cancellation(cancelled) if hasattr(project, 'with_cancellation') else project
-        check_cancelled(cancelled)
-        try:
-            outputs = tuple(request.storage_inventory())
-        except Exception:
+        deadline = None
+        while True:
             check_cancelled(cancelled)
-            raise
+            try:
+                outputs = tuple(request.storage_inventory())
+            except WorkspaceBusy as error:
+                check_cancelled(cancelled)
+                now = monotonic()
+                if deadline is None:
+                    deadline = now + _INVENTORY_LOCK_WAIT
+                remaining = deadline - now
+                if remaining <= 0:
+                    raise StorageInventoryBusy(
+                        'Another operation is using project storage. Wait for it to finish, then refresh storage.'
+                    ) from error
+                report(0, 0, 'Retrying inventory after a project storage lock…')
+                check_cancelled(cancelled)
+                sleep(min(.2, remaining))
+            except Exception:
+                check_cancelled(cancelled)
+                raise
+            else:
+                break
     check_cancelled(cancelled)
     report(0, 0, 'Reading saved runs and test results…')
     evidence = tuple(evidence_inventory(project))
@@ -423,7 +452,7 @@ def gather(project, *, cache=None, cancelled=lambda: False,
     groups = _scan_groups(scopes, cancelled)
     roots = tuple(Path(group[0]['path']) for group in groups)
     issues = []
-    with DirectoryCache() if cache is None else nullcontext(cache) as owned_cache:
+    with storage_cache() if cache is None else nullcontext(cache) as owned_cache:
         if publish_cached is not None:
             report(0, len(groups), 'Reading saved size measurements…')
             cached_rows = {key: dict(row) for key, row in rows.items()}

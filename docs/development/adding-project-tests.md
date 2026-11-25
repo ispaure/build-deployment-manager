@@ -62,16 +62,18 @@ so they need no shell activation or custom import-path setting.
 
 ## 2. Register, prepare and inspect
 
-Use a dedicated example registry to avoid changing your normal selected project:
+Use a dedicated example registry to avoid changing your normal selected project.
+Keep the walkthrough output together under the Manager's ignored tmp folder:
 
 ```sh
-.venv/bin/python -m build_manager.cli --registry test-results/onboarding-registry add Python/tests/fixtures/testing_project
-.venv/bin/python -m build_manager.cli --registry test-results/onboarding-registry capabilities --project org.example.manager-testing-walkthrough
-.venv/bin/python -m build_manager.cli --registry test-results/onboarding-registry plan \
+mkdir -p tmp/test-results/onboarding
+.venv/bin/python -m build_manager.cli --registry tmp/test-results/onboarding/registry add Python/tests/fixtures/testing_project
+.venv/bin/python -m build_manager.cli --registry tmp/test-results/onboarding/registry capabilities --project org.example.manager-testing-walkthrough
+.venv/bin/python -m build_manager.cli --registry tmp/test-results/onboarding/registry plan \
   --project org.example.manager-testing-walkthrough \
   --operation Test --target host --backend Local --suite labels \
-  --output test-results/onboarding-plan.json
-.venv/bin/python -m build_manager.cli show-plan test-results/onboarding-plan.json
+  --output tmp/test-results/onboarding/plan.json
+.venv/bin/python -m build_manager.cli show-plan tmp/test-results/onboarding/plan.json
 ```
 
 The capabilities contain the named unit-test suite. The plan contains one test
@@ -85,8 +87,8 @@ Unknown suites, focused patterns and non-working-tree revisions are rejected.
 ## 3. Run and inspect real results
 
 ```sh
-.venv/bin/python -m build_manager.cli run test-results/onboarding-plan.json --output test-results/onboarding-run
-.venv/bin/python -m build_manager.cli status test-results/onboarding-run
+.venv/bin/python -m build_manager.cli run tmp/test-results/onboarding/plan.json --output tmp/test-results/onboarding/run
+.venv/bin/python -m build_manager.cli status tmp/test-results/onboarding/run
 ```
 
 Use a fresh run-output directory for every attempt. The run should pass and retain
@@ -112,14 +114,14 @@ When finished, use the `registration` UUID returned by `add` (or shown by
 `remove` requires that UUID:
 
 ```sh
-.venv/bin/python -m build_manager.cli --registry test-results/onboarding-registry remove REGISTRATION_ID
+.venv/bin/python -m build_manager.cli --registry tmp/test-results/onboarding/registry remove REGISTRATION_ID
 ```
 
 If you also added the project in the GUI, remove that registration separately.
 Registration removal does not delete source or output. After preserving needed
-evidence, delete only the example's `.venv/` and `test-results/`, plus the manager's
-`test-results/onboarding-registry/`, `onboarding-plan.json` and `onboarding-run/`
-and any additional run folders you explicitly created for this exercise. In a real
+evidence, delete the example's `.venv/` and `test-results/`, along with the Manager's
+`tmp/test-results/onboarding/` folder and any additional run folders you explicitly
+created for this exercise. In a real
 project, use its retention policy and retain useful failure evidence first. Do not
 remove this manager's own environment, other registrations or unrelated results.
 
